@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Battle Line</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <h1 class="title">Battle Line <span class="tag">PROTOTYPE</span></h1>
+        <p class="subtitle">Front units clash first. When one falls, the next steps up to face the survivor. Drag a card to swap its position before the fight.</p>
+      </div>
+    </header>
+
+    <div class="field-frame">
+      <div class="battlefield">
+        <div class="army army-a" id="armyA">
+          <div class="army-label"><span class="dot"></span>Your Army</div>
+        </div>
+
+        <div class="clash" id="clash">
+          <div class="vs-badge" id="vsBadge">⚔ VS</div>
+          <div class="status" id="status">Front line: lane 1</div>
+        </div>
+
+        <div class="army army-b" id="armyB">
+          <div class="army-label"><span class="dot"></span>Enemy</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn primary" id="startBtn">Start Battle</button>
+      <button class="btn ghost" id="resetBtn" disabled>Reset</button>
+      <button class="btn ghost" id="shuffleBtn">Randomize Enemy</button>
+      <button class="btn ghost" id="cineBtn">Cinematic: On</button>
+    </div>
+
+    <div class="hint" id="hint">✋ Drag any unit to swap its lane position</div>
+
+    <div class="log">
+      <h3>⚔ Battle Log</h3>
+      <div class="lines" id="logLines"></div>
+    </div>
+  </div>
+
+  <div id="cutscene" class="cutscene" aria-hidden="true"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+:root{
+  --bg:#0d1016;
+  --bg-2:#11161f;
+  --panel:#161c27;
+  --panel-2:#1c2433;
+  --line:rgba(255,255,255,0.08);
+  --line-strong:rgba(255,255,255,0.16);
+  --text:#e8edf4;
+  --muted:#8a97aa;
+
+  /* Your faction — steel cyan */
+  --a:#38bdf8;
+  --a-deep:#0ea5e9;
+  --a-soft:rgba(56,189,248,0.14);
+
+  /* Enemy faction — ember rose */
+  --b:#fb7185;
+  --b-deep:#f43f5e;
+  --b-soft:rgba(251,113,133,0.14);
+
+  /* Clash accent — amber */
+  --clash:#fbbf24;
+
+  --hp-good:#4ade80;
+  --hp-mid:#facc15;
+  --hp-low:#f87171;
+
+  --radius:14px;
+  --shadow:0 10px 30px rgba(0,0,0,0.45);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #1a2233 0%, transparent 60%),
+    var(--bg);
+  color:var(--text);
+  font-family:Inter, system-ui, -apple-system, sans-serif;
+  min-height:100dvh;
+  -webkit-font-smoothing:antialiased;
+  padding:18px 14px 40px;
+}
+
+.wrap{max-width:980px;margin:0 auto}
+
+header.top{
+  display:flex;align-items:flex-end;justify-content:space-between;
+  gap:14px;margin-bottom:6px;flex-wrap:wrap;
+}
+.title{
+  font-family:Rajdhani, sans-serif;
+  font-weight:700;letter-spacing:0.14em;text-transform:uppercase;
+  font-size:clamp(22px,5vw,30px);line-height:1;
+  margin:0;display:flex;align-items:center;gap:10px;
+}
+.title .tag{
+  font-size:11px;letter-spacing:0.18em;color:var(--clash);
+  border:1px solid rgba(251,191,36,0.4);border-radius:999px;
+  padding:3px 8px;background:rgba(251,191,36,0.08);font-weight:600;
+}
+.subtitle{color:var(--muted);font-size:13px;margin:2px 0 0;max-width:520px}
+
+/* ---------- Controls ---------- */
+.controls{
+  display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center;
+  margin-top:20px;
+}
+button.btn{
+  font-family:Rajdhani,sans-serif;font-weight:700;letter-spacing:0.1em;
+  text-transform:uppercase;font-size:14px;
+  border:1px solid var(--line-strong);border-radius:11px;
+  padding:12px 22px;cursor:pointer;color:var(--text);
+  background:linear-gradient(180deg,var(--panel-2),var(--panel));
+  transition:transform .1s ease, box-shadow .2s ease, border-color .2s ease, opacity .2s;
+}
+button.btn:hover{transform:translateY(-2px)}
+button.btn:active{transform:translateY(0)}
+button.btn:focus-visible{outline:2px solid var(--clash);outline-offset:2px}
+button.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+button.btn.primary{
+  background:linear-gradient(180deg,#16d39a,#0fae7f);
+  color:#06150f;border-color:transparent;
+  box-shadow:0 8px 22px rgba(15,174,127,0.3);
+}
+button.btn.ghost{background:transparent}
+
+.hint{
+  text-align:center;color:var(--muted);font-size:12.5px;margin-top:14px;
+  display:flex;align-items:center;justify-content:center;gap:7px;
+}
+
+/* ---------- Log ---------- */
+.log{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.log h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;
+}
+.log .lines{max-height:180px;overflow-y:auto;padding:8px 14px 12px;font-size:13px}
+.log .lines p{margin:5px 0;line-height:1.45;color:#c6cfdc}
+.log .lines p .a{color:var(--a);font-weight:600}
+.log .lines p .b{color:var(--b);font-weight:600}
+.log .lines p.sys{color:var(--clash)}
+.log .lines:empty::after{content:"Arrange your units, then start the battle.";color:var(--muted)}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important;transition-duration:.08s !important}
+}
