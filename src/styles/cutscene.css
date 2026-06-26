@@ -59,6 +59,22 @@
 .cs-portrait svg{width:100%;height:auto;display:block;filter:drop-shadow(0 14px 30px rgba(0,0,0,.6))}
 .cs-portrait.right svg{transform:scaleX(-1)}
 
+/* Unit portrait IMAGE (magenta-keyed) — sized like the SVG bust, crisp upscale. */
+.cs-portrait .cs-portrait-img{
+  width:100%;height:auto;display:block;
+  image-rendering:pixelated;image-rendering:crisp-edges;
+  filter:drop-shadow(0 14px 30px rgba(0,0,0,.6));
+}
+.cs-portrait.right .cs-portrait-img{transform:scaleX(-1)} /* face inward */
+/* Attacker portrait pulses with its faction accent at the windup/impact. */
+.cs-portrait.attacker .cs-portrait-img{animation:portGlow 2.1s both}
+@keyframes portGlow{
+  0%,8%{filter:drop-shadow(0 14px 30px rgba(0,0,0,.6)) brightness(1)}
+  24%{filter:drop-shadow(0 0 16px var(--accent)) brightness(1.12)}
+  66%{filter:drop-shadow(0 0 26px var(--accent)) brightness(1.28)}
+  100%{filter:drop-shadow(0 14px 30px rgba(0,0,0,.6)) brightness(1.05)}
+}
+
 .port-inner.atk-r{animation:attackR 2.1s ease both}
 .port-inner.atk-l{animation:attackL 2.1s ease both}
 @keyframes attackR{0%{transform:scale(.92)}24%{transform:scale(1.07)}44%{transform:scale(1.04) translateX(0)}

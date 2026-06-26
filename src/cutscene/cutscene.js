@@ -3,15 +3,39 @@
 // timeline finishes or the player skips (tap / space / esc).
 
 import { accentFor, CUTSCENE } from "../config.js";
-import { CLASS_META } from "../data/classes.js";
+import { state } from "../core/state.js";
 import { portraitSVG } from "./portraits.js";
 import { effectSVG } from "./effects.js";
+import { spriteFor } from "../data/sprites.js";
+import { chromaKeyed } from "../ui/chroma.js";
 import { hpColor } from "../utils/helpers.js";
 
 let overlay;
 
 export function initCutscene() {
   overlay = document.getElementById("cutscene");
+}
+
+/**
+ * The dueling-portrait markup for one combatant. Prefers the unit's assigned
+ * portrait IMAGE (magenta-keyed); falls back to the procedural class SVG when a
+ * unit has no image sprite. The src is filled after mount (see keyPortraits).
+ */
+function portraitInner(unit, accent) {
+  const def = spriteFor(unit.sprite);
+  if (def && def.img) {
+    return `<img class="cs-portrait-img" data-src="${def.img}" alt="${unit.name}">`;
+  }
+  return portraitSVG(unit, accent);
+}
+
+/** Chroma-key any portrait images just mounted into the overlay. */
+function keyPortraits() {
+  overlay.querySelectorAll("img.cs-portrait-img[data-src]").forEach((img) => {
+    chromaKeyed(img.dataset.src)
+      .then((url) => { img.src = url; })
+      .catch(() => { img.src = img.dataset.src; }); // fall back to the raw (magenta) image
+  });
 }
 
 /**
@@ -25,7 +49,7 @@ export function playCutscene(att, attSide, def, defSide, dmg, before, after, max
     const dAcc = accentFor(defSide);
     const beforeR = before / maxHp;
     const afterR = after / maxHp;
-    const meta = CLASS_META[att.cls] || {};
+    const meta = state.classes[att.cls] || {};
     const attackName = meta.attackName || "Strike";
 
     overlay.innerHTML = `
@@ -39,10 +63,10 @@ export function playCutscene(att, attSide, def, defSide, dmg, before, after, max
       <div class="cs-stage">
         <div class="cs-speedlines"></div>
         <div class="cs-portrait ${attLeft ? "left" : "right"} attacker" style="--accent:${aAcc}">
-          <div class="port-inner ${attLeft ? "atk-r" : "atk-l"}">${portraitSVG(att, aAcc)}</div>
+          <div class="port-inner ${attLeft ? "atk-r" : "atk-l"}">${portraitInner(att, aAcc)}</div>
         </div>
         <div class="cs-portrait ${attLeft ? "right" : "left"} defender" style="--accent:${dAcc}">
-          <div class="port-inner ${attLeft ? "recoil-r" : "recoil-l"}">${portraitSVG(def, dAcc)}</div>
+          <div class="port-inner ${attLeft ? "recoil-r" : "recoil-l"}">${portraitInner(def, dAcc)}</div>
         </div>
         <div class="cs-fx ${attLeft ? "dir-lr" : "dir-rl"}">${effectSVG(meta.fx, aAcc)}</div>
         <div class="cs-flash"></div>
@@ -59,6 +83,7 @@ export function playCutscene(att, attSide, def, defSide, dmg, before, after, max
 
     overlay.classList.add("show");
     overlay.setAttribute("aria-hidden", "false");
+    keyPortraits();
 
     const dFill = overlay.querySelector(".cs-hpfill");
     const tImpact = setTimeout(() => {

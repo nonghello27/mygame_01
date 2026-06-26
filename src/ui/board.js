@@ -5,6 +5,7 @@ import { state } from "../core/state.js";
 import { firstAlive } from "../core/units.js";
 import { hpColor } from "../utils/helpers.js";
 import { enableDragSwap } from "./dragdrop.js";
+import { spriteEl } from "./sprite.js";
 
 let elA, elB, labelA, labelB;
 
@@ -43,27 +44,31 @@ function buildCard(u, side, lane) {
   const posLabel = (side === "a" ? "A" : "B") + lane;
 
   card.innerHTML = `
-    <span class="badge-pos">${posLabel}</span>
-    <span class="front-flag">FRONT</span>
-    <div class="unit-head">
-      <div class="unit-emoji">${u.emoji}</div>
-      <div>
+    <div class="unit-portrait-top"></div>
+    <div class="unit-plate">
+      <span class="badge-pos">${posLabel}</span>
+      <span class="front-flag">FRONT</span>
+      <div class="unit-head">
         <div class="unit-name">${u.name}</div>
         <div class="unit-class">${u.cls}</div>
       </div>
-    </div>
-    <div class="hp-wrap">
-      <div class="hp-top">
-        <span class="lbl">HP</span>
-        <span class="val"><span class="hp-now">${Math.max(0, Math.round(u.hp))}</span>/${u.maxHp}</span>
+      <div class="hp-wrap">
+        <div class="hp-top">
+          <span class="lbl">HP</span>
+          <span class="val"><span class="hp-now">${Math.max(0, Math.round(u.hp))}</span>/${u.maxHp}</span>
+        </div>
+        <div class="hp-bar"><div class="hp-fill" style="width:${ratio * 100}%;background:${hpColor(ratio)}"></div></div>
       </div>
-      <div class="hp-bar"><div class="hp-fill" style="width:${ratio * 100}%;background:${hpColor(ratio)}"></div></div>
-    </div>
-    <div class="stats">
-      <div class="stat" title="Attack"><span class="s-ico">⚔️</span><span class="s-val">${u.atk}</span></div>
-      <div class="stat" title="Speed"><span class="s-ico">⚡</span><span class="s-val">${u.spd}</span></div>
+      <div class="stats">
+        <div class="stat" title="Attack"><span class="s-ico">⚔️</span><span class="s-val">${u.atk}</span></div>
+        <div class="stat" title="Speed"><span class="s-ico">⚡</span><span class="s-val">${u.spd}</span></div>
+      </div>
     </div>
   `;
+
+  // Mount the unit's portrait (or emoji fallback) above the info plate. The
+  // card is built on the front lane idle by default; combat can swap actions.
+  card.querySelector(".unit-portrait-top").appendChild(spriteEl(u, u.alive ? "idle" : "dead"));
 
   if (state.phase === "setup") enableDragSwap(card, side, renderBoard);
   return card;

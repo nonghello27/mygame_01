@@ -4,9 +4,10 @@
 
 import "./styles/base.css";
 import "./styles/board.css";
+import "./styles/sprite.css";
 import "./styles/cutscene.css";
 
-import { state, resetState } from "./core/state.js";
+import { state, resetState, initContent } from "./core/state.js";
 import { runBattle } from "./core/battle.js";
 import { initBoard, renderBoard } from "./ui/board.js";
 import { initLog, clearLog } from "./ui/log.js";
@@ -75,8 +76,8 @@ function onCinematicToggle() {
 initBoard();
 initLog();
 initCutscene();
-resetState();
-renderBoard();
+// Content loads through the async services boundary (local today, DB later).
+initContent().then(renderBoard);
 
 startBtn.addEventListener("click", onStart);
 resetBtn.addEventListener("click", onReset);

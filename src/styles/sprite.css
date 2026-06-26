@@ -1,0 +1,35 @@
+/* CSS PNG-sprite playback. A .sprite is a fixed cell-sized window onto a sheet;
+   the action's ROW is selected by --row-y (background-position-y) and its frames
+   are played across the sheet's COLUMNS with steps(--cols).
+
+   Custom props (set by ui/sprite.js):
+     --cell    cell size (e.g. 96px)        --sheet   url(...) of the sheet
+     --cols    frames per action            --sheet-w cols * cell
+     --row-y   -(row * cell) for the action --dur     loop duration
+*/
+.sprite{
+  width:var(--cell);
+  height:var(--cell);
+  background-image:var(--sheet);
+  background-repeat:no-repeat;
+  background-position:0 var(--row-y);
+  /* crisp 8-bit upscaling */
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+  animation:sprite-play var(--dur) steps(var(--cols)) infinite;
+}
+
+/* Step from frame 0 to the last frame; the row is held by background-position-y
+   via the longhand below so this keyframe only moves X. */
+@keyframes sprite-play{
+  from{ background-position-x:0; }
+  to  { background-position-x:calc(-1 * var(--sheet-w)); }
+}
+
+/* One-shot actions (attack/defend/dead) play once and hold the last frame.
+   ui/sprite.js sets data-action; logic can add .once when it wants no loop. */
+.sprite.once{ animation-iteration-count:1; animation-fill-mode:forwards; }
+.sprite[data-action="dead"]{ animation-iteration-count:1; animation-fill-mode:forwards; }
+
+/* Enemy army faces left: flip horizontally (art is authored facing right). */
+.army-b .sprite{ transform:scaleX(-1); }

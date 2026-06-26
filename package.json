@@ -7,9 +7,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:seed": "node db/seed.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
   },
   "devDependencies": {
+    "dotenv": "^16.4.5",
     "vite": "^5.4.0"
   }
 }

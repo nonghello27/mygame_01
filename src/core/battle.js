@@ -1,17 +1,23 @@
-// The combat engine. Pure-ish orchestration: it owns the rules (who strikes,
-// in what order, when a unit falls) and delegates all presentation to the UI
-// and cutscene modules. UI-only concerns (status text, winner banner) are
-// injected as hooks so the engine never reaches into page chrome directly.
+// The battle REPLAYER. The outcome is no longer computed here — the server
+// (api/battle.js, via the shared core/resolve.js engine) resolves the whole
+// fight from authoritative stats and returns an ordered event log. This module
+// only animates that log: cutscenes, HP bars, the battle text, and shifting the
+// lanes forward as units fall. A tampered client can therefore only lie to its
+// own screen; it cannot change who actually won.
+//
+// UI-only concerns (status text, winner banner) are still injected as hooks so
+// this module never reaches into page chrome directly.
 
 import { state } from "./state.js";
-import { firstAlive, aliveCount } from "./units.js";
+import { requestBattle } from "../services/content.js";
 import { sleep } from "../utils/helpers.js";
 import { log, nameSpan } from "../ui/log.js";
 import { renderBoard, cardEl, updateCardHp, floatDamage } from "../ui/board.js";
 import { playCutscene } from "../cutscene/cutscene.js";
 
 /**
- * Run a full battle to completion.
+ * Run a full battle to completion by asking the server to resolve it, then
+ * replaying the returned events.
  * @param {{ setStatus:(t:string)=>void, showWinner:(youWin:boolean, survivor:object)=>void }} hooks
  */
 export async function runBattle({ setStatus, showWinner }) {
@@ -20,73 +26,91 @@ export async function runBattle({ setStatus, showWinner }) {
   renderBoard();
   log("Battle begins!", true);
 
-  while (aliveCount(state.armyA) && aliveCount(state.armyB)) {
-    const a = firstAlive(state.armyA);
-    const b = firstAlive(state.armyB);
-    setStatus(`${a.name} vs ${b.name}`);
-    log(`— ${nameSpan(a, "a")} (${a.cls}) faces ${nameSpan(b, "b")} (${b.cls}) —`, true);
-    await sleep(state.cinematic ? 250 : 500);
+  // The only thing the client decides is the lane ORDER of each army.
+  const playerOrder = state.armyA.map((u) => u.idx);
+  const enemyOrder = state.armyB.map((u) => u.idx);
 
-    // Duel: trade blows until one falls. Higher SPD strikes first; tie favors you.
-    let aFirst = a.spd >= b.spd;
-    while (a.alive && b.alive && a.hp > 0 && b.hp > 0) {
-      const first = aFirst ? a : b;
-      const second = aFirst ? b : a;
-      const fSide = aFirst ? "a" : "b";
-      const sSide = aFirst ? "b" : "a";
-
-      await strike(first, fSide, second, sSide);
-      if (second.hp <= 0) { await fall(second, sSide); break; }
-      await strike(second, sSide, first, fSide);
-      if (first.hp <= 0) { await fall(first, fSide); break; }
-    }
+  let result;
+  try {
+    result = await requestBattle(playerOrder, enemyOrder);
+  } catch (e) {
+    log(`Battle could not be resolved: ${e.message}`, true);
+    setStatus("Connection error — try again");
+    state.phase = "setup";
+    return;
   }
 
-  const youWin = aliveCount(state.armyA) > 0;
-  const survivor = firstAlive(youWin ? state.armyA : state.armyB);
+  for (const ev of result.events) {
+    if (ev.t === "duel") await replayDuel(ev, setStatus);
+    else if (ev.t === "strike") await replayStrike(ev);
+    else if (ev.t === "fall") await replayFall(ev);
+  }
+
+  const survivor = result.survivor ? unitByRef(result.survivor) : null;
   state.phase = "over";
-  showWinner(youWin, survivor);
-  log(
-    youWin
-      ? `Your army wins! ${nameSpan(survivor, "a")} stands victorious.`
-      : `The enemy wins. ${nameSpan(survivor, "b")} stands victorious.`,
-    true
-  );
+  showWinner(result.youWin, survivor);
+  if (survivor) {
+    log(
+      result.youWin
+        ? `Your army wins! ${nameSpan(survivor, "a")} stands victorious.`
+        : `The enemy wins. ${nameSpan(survivor, "b")} stands victorious.`,
+      true
+    );
+  }
+}
+
+/** Find the live client-side unit a server event refers to (by side + lane idx). */
+function unitByRef(ref) {
+  const arr = ref.side === "a" ? state.armyA : state.armyB;
+  return arr.find((u) => u.idx === ref.idx) || null;
+}
+
+/** New matchup: announce the two front-liners. */
+async function replayDuel(ev, setStatus) {
+  const a = unitByRef(ev.a);
+  const b = unitByRef(ev.b);
+  if (a && b) {
+    setStatus(`${a.name} vs ${b.name}`);
+    log(`— ${nameSpan(a, "a")} (${a.cls}) faces ${nameSpan(b, "b")} (${b.cls}) —`, true);
+  }
+  await sleep(state.cinematic ? 250 : 500);
 }
 
 /**
- * One unit hits another. This is the single damage choke point — hook future
- * mechanics (defense, crit, status ticks, skill triggers) here.
+ * Replay one hit. HP comes from the event (server-authoritative), not from any
+ * local calculation — this is the old damage choke point, now a display step.
  */
-async function strike(att, attSide, def, defSide) {
-  const dmg = att.atk;
-  const before = def.hp;
-  const after = Math.max(0, def.hp - dmg);
+async function replayStrike(ev) {
+  const att = unitByRef(ev.att);
+  const def = unitByRef(ev.def);
+  if (!att || !def) return;
 
   if (state.cinematic) {
-    await playCutscene(att, attSide, def, defSide, dmg, before, after, def.maxHp);
+    await playCutscene(att, ev.att.side, def, ev.def.side, ev.dmg, ev.before, ev.after, def.maxHp);
   }
 
-  def.hp = after;
+  def.hp = ev.after;
 
   const dCard = cardEl(def.id);
-  if (dCard && !state.cinematic) floatDamage(dCard, dmg);
+  if (dCard && !state.cinematic) floatDamage(dCard, ev.dmg);
   updateCardHp(def);
 
-  log(`${nameSpan(att, attSide)} hits ${nameSpan(def, defSide)} for <b>${dmg}</b>.`);
+  log(`${nameSpan(att, ev.att.side)} hits ${nameSpan(def, ev.def.side)} for <b>${ev.dmg}</b>.`);
   await sleep(state.cinematic ? 180 : 620);
 }
 
-/** Mark a unit defeated and bring the next lane forward. */
-async function fall(unit, side) {
+/** Replay a unit's defeat and bring the next lane forward. */
+async function replayFall(ev) {
+  const unit = unitByRef(ev);
+  if (!unit) return;
   unit.alive = false;
-  log(`${nameSpan(unit, side)} has fallen.`, true);
+  log(`${nameSpan(unit, ev.side)} has fallen.`, true);
   cardEl(unit.id)?.classList.add("dead");
 
-  // Wait for the death animation to finish, then remove the unit from the
-  // army array so the remaining units physically shift forward on the board.
+  // Wait for the death animation, then remove the unit so the survivors shift
+  // forward on the board.
   await sleep(state.cinematic ? 350 : 550);
-  const army = side === "a" ? state.armyA : state.armyB;
+  const army = ev.side === "a" ? state.armyA : state.armyB;
   const idx = army.indexOf(unit);
   if (idx !== -1) army.splice(idx, 1);
 

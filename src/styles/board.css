@@ -34,44 +34,65 @@
 .army-b .army-label{color:var(--b)}
 .army-label .dot{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
 
-/* unit card */
+/* unit card = a transparent wrapper: a big portrait standing ABOVE a shorter
+   info "plate". The card itself carries no background/border anymore. */
 .unit-card{
   position:relative;width:150px;
-  background:linear-gradient(180deg,var(--panel-2),var(--panel));
-  border:1px solid var(--line-strong);border-radius:var(--radius);
-  padding:12px 12px 11px;display:flex;flex-direction:column;gap:9px;
+  display:flex;flex-direction:column;align-items:stretch;
   touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;
-  transition:transform .18s ease, box-shadow .18s ease, opacity .35s ease, border-color .18s ease;
+  transition:transform .18s ease, opacity .35s ease;
 }
 .unit-card.no-drag{cursor:default}
-.army-a .unit-card{border-top:3px solid var(--a-deep)}
-.army-b .unit-card{border-top:3px solid var(--b-deep)}
 
-.unit-card .badge-pos{
-  position:absolute;top:-9px;left:10px;
+/* Portrait sits above the plate. Magenta is keyed out (ui/chroma.js) so the
+   character floats on the battlefield; its base overlaps the plate's top edge. */
+.unit-portrait-top{
+  height:92px;display:flex;align-items:flex-end;justify-content:center;
+  margin-bottom:-8px;pointer-events:none;position:relative;z-index:2;
+  filter:drop-shadow(0 6px 6px rgba(0,0,0,.45));
+}
+.unit-portrait-top .portrait-img{
+  max-width:128px;max-height:92px;width:auto;height:auto;object-fit:contain;
+  image-rendering:pixelated;image-rendering:crisp-edges;
+}
+/* Enemy army faces inward (art is authored facing right/forward). */
+.army-b .unit-portrait-top .portrait-img{transform:scaleX(-1)}
+/* Fallbacks (no image yet) shown big in the portrait area. */
+.unit-portrait-top .unit-emoji{font-size:52px;line-height:1;background:none;border:none}
+.unit-portrait-top .sprite{transform:scale(.9)}
+.army-b .unit-portrait-top .sprite{transform:scale(.9) scaleX(-1)}
+
+/* the info "plate": the bordered box, now shorter without the portrait inside */
+.unit-plate{
+  position:relative;z-index:1;
+  background:linear-gradient(180deg,var(--panel-2),var(--panel));
+  border:1px solid var(--line-strong);border-radius:var(--radius);
+  padding:11px 12px 10px;display:flex;flex-direction:column;gap:8px;
+  transition:box-shadow .18s ease, border-color .18s ease;
+}
+.army-a .unit-plate{border-top:3px solid var(--a-deep)}
+.army-b .unit-plate{border-top:3px solid var(--b-deep)}
+
+.badge-pos{
+  position:absolute;top:-9px;left:10px;z-index:3;
   font-family:Rajdhani,sans-serif;font-weight:700;font-size:11px;letter-spacing:0.08em;
   padding:2px 7px;border-radius:6px;color:#0b0e14;
 }
 .army-a .badge-pos{background:var(--a)}
 .army-b .badge-pos{background:var(--b)}
 
-.unit-card.front{
+.unit-card.front .unit-plate{
   box-shadow:0 0 0 1px var(--clash), 0 0 22px rgba(251,191,36,0.18);
   border-color:rgba(251,191,36,0.45);
 }
-.unit-card .front-flag{
-  position:absolute;top:-9px;right:10px;display:none;
+.front-flag{
+  position:absolute;top:-9px;right:10px;display:none;z-index:3;
   font-family:Rajdhani,sans-serif;font-weight:700;font-size:10px;letter-spacing:0.08em;
   color:#0b0e14;background:var(--clash);padding:2px 7px;border-radius:6px;
 }
 .unit-card.front .front-flag{display:inline-block}
 
-.unit-head{display:flex;align-items:center;gap:10px}
-.unit-emoji{
-  font-size:26px;line-height:1;width:40px;height:40px;
-  display:grid;place-items:center;border-radius:10px;
-  background:rgba(255,255,255,0.04);border:1px solid var(--line);flex:none;
-}
+.unit-head{text-align:center}
 .unit-name{font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.04em;font-size:16px;line-height:1.05}
 .unit-class{font-size:11px;color:var(--muted);margin-top:1px}
 
@@ -93,7 +114,8 @@
 
 /* states */
 .unit-card.dragging-src{opacity:.35}
-.unit-card.drop-target{transform:translateY(-3px) scale(1.03);border-color:var(--clash);box-shadow:0 0 0 2px var(--clash)}
+.unit-card.drop-target{transform:translateY(-3px) scale(1.03)}
+.unit-card.drop-target .unit-plate{border-color:var(--clash);box-shadow:0 0 0 2px var(--clash)}
 .unit-card.engaged{transform:scale(1.04)}
 .unit-card.hit{animation:shake .32s ease}
 .unit-card.dead{opacity:0;transform:scale(.85);filter:grayscale(1)}
