@@ -21,6 +21,10 @@ export function enableDragSwap(card, side, onSwap) {
     const rect = card.getBoundingClientRect();
     const clone = card.cloneNode(true);
     clone.classList.add("drag-clone");
+    // The clone is reparented to <body>, losing its `.army-a`/`.army-b`
+    // ancestor — re-add the side class so army-scoped styling (notably the
+    // enemy sprite's left-facing flip) still applies while dragging.
+    clone.classList.add("army-" + side);
     clone.style.width = rect.width + "px";
     clone.style.left = rect.left + "px";
     clone.style.top = rect.top + "px";
