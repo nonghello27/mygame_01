@@ -1,9 +1,8 @@
-// Content boundary — the single place the game asks for its DATA (rosters,
-// classes, sprite manifest). Rosters + classes now come from Postgres (Neon)
-// via the serverless API in /api; core/ and ui/ are untouched because they
-// already await these functions. Sprites stay a local manifest for now (pure
-// visual config, consumed synchronously by ui/sprite.js) — migrate it the same
-// way by adding /api/sprites and switching loadSprites() to getJson.
+// Content boundary — the single place the game asks for its DATA (matches,
+// classes, sprite manifest) or posts battle choices. Everything authoritative
+// comes from the serverless API in /api; core/ and ui/ are untouched because
+// they already await these functions. Sprites stay a local manifest for now
+// (pure visual config, consumed synchronously by ui/sprite.js).
 
 import { SPRITES } from "../data/sprites.js";
 
@@ -26,11 +25,6 @@ async function postJson(path, body) {
   return data;
 }
 
-/** @returns {Promise<{armyA: object[], armyB: object[]}>} unit DEFINITIONS (not live instances). */
-export async function loadRosters() {
-  return getJson("/api/rosters");
-}
-
 /** @returns {Promise<Record<string, object>>} class metadata keyed by class name. */
 export async function loadClasses() {
   return getJson("/api/classes");
@@ -42,12 +36,23 @@ export async function loadSprites() {
 }
 
 /**
- * Resolve a battle on the server. Sends only the chosen lane ORDERS (permutations
- * of each army's indices); the server owns the stats and decides the outcome.
+ * Open a match session. The server assembles YOUR team from your owned
+ * monsters (granting starters on the very first call) and picks + freezes the
+ * enemy team and lane order. Requires login.
+ * @returns {Promise<{matchId:string, you:object[], enemy:object[]}>}
+ */
+export async function createMatch() {
+  return postJson("/api/match", {});
+}
+
+/**
+ * Resolve a match on the server. The only choice the client sends is the lane
+ * ORDER of its own army (a permutation of idx); the server owns the stats,
+ * the enemy, and the outcome. Each match resolves exactly once.
+ * @param {string} matchId
  * @param {number[]} playerOrder player army lane indices, front-first
- * @param {number[]} enemyOrder  enemy army lane indices, front-first
  * @returns {Promise<{youWin:boolean, survivor:{side:string,idx:number}|null, events:object[]}>}
  */
-export async function requestBattle(playerOrder, enemyOrder) {
-  return postJson("/api/battle", { playerOrder, enemyOrder });
+export async function requestBattle(matchId, playerOrder) {
+  return postJson("/api/battle", { matchId, playerOrder });
 }

@@ -2,12 +2,14 @@
 // can read it; mutations should flow through here or the battle loop.
 
 import { cloneRoster } from "./units.js";
-import { loadRosters, loadClasses } from "../services/content.js";
+import { loadClasses, createMatch } from "../services/content.js";
 
 export const state = {
-  /** @type {object[]} index 0 = front lane */
+  /** current match session id (null until the first match is opened) */
+  matchId: null,
+  /** @type {object[]} index 0 = front lane — YOUR monsters */
   armyA: [],
-  /** @type {object[]} index 0 = front lane */
+  /** @type {object[]} index 0 = front lane — server-picked enemy, order fixed */
   armyB: [],
   /** class metadata keyed by class name (attackName + fx); loaded from the DB */
   classes: {},
@@ -17,26 +19,29 @@ export const state = {
   cinematic: true,
 };
 
-// Roster DEFINITIONS, fetched once through the content service. Cached here so
-// resetState() stays synchronous for callers while the source can become a DB.
-let defs = { armyA: [], armyB: [] };
+// The current match's lane definitions (server snapshots, already idx-tagged).
+// Cached so resetState() can rebuild live rosters synchronously.
+let defs = { you: [], enemy: [] };
 
-/** Fetch rosters + class data via the content boundary, then enter setup. Call once at boot. */
+/** Load static content (class metadata). Call once at boot. */
 export async function initContent() {
-  const [rosters, classes] = await Promise.all([loadRosters(), loadClasses()]);
-  defs = rosters;
-  // Tag each def with its lane index (front-first, as delivered). This `idx` is
-  // the stable key the server and client agree on: the player rearranges units
-  // (idx travels with them), and a chosen order is just the list of their idx.
-  defs.armyA.forEach((d, i) => { d.idx = i; });
-  defs.armyB.forEach((d, i) => { d.idx = i; });
-  state.classes = classes;
+  state.classes = await loadClasses();
+}
+
+/**
+ * Open a fresh match session for the logged-in trainer: your monsters vs a
+ * new server-picked opponent. Replaces the previous match entirely.
+ */
+export async function newMatch() {
+  const match = await createMatch();
+  state.matchId = match.matchId;
+  defs = { you: match.you, enemy: match.enemy };
   resetState();
 }
 
-/** Restore both armies to full strength and return to setup. */
+/** Restore both armies of the CURRENT match to full strength, back to setup. */
 export function resetState() {
-  state.armyA = cloneRoster(defs.armyA);
-  state.armyB = cloneRoster(defs.armyB);
+  state.armyA = cloneRoster(defs.you);
+  state.armyB = cloneRoster(defs.enemy);
   state.phase = "setup";
 }

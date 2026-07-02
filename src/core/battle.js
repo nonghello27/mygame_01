@@ -26,13 +26,13 @@ export async function runBattle({ setStatus, showWinner }) {
   renderBoard();
   log("Battle begins!", true);
 
-  // The only thing the client decides is the lane ORDER of each army.
+  // The only thing the client decides is the lane ORDER of its own army;
+  // the enemy's composition and order were frozen when the match was created.
   const playerOrder = state.armyA.map((u) => u.idx);
-  const enemyOrder = state.armyB.map((u) => u.idx);
 
   let result;
   try {
-    result = await requestBattle(playerOrder, enemyOrder);
+    result = await requestBattle(state.matchId, playerOrder);
   } catch (e) {
     log(`Battle could not be resolved: ${e.message}`, true);
     setStatus("Connection error — try again");

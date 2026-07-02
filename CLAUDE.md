@@ -23,10 +23,9 @@ The vision and plans live in `docs/` — treat them as part of this file:
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — target directory layout,
   data model (master/instance tables), battle **engine v2** spec, API surface.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — phased build order. **When asked
-  "what next?", answer from here.** Current position: Phases 0–1 complete
-  (auth = Firebase; to go live, enable the Google provider in Firebase
-  console and set the Vercel env vars — see `.env.example`); next up is
-  Phase 2 (owned monsters & match sessions).
+  "what next?", answer from here.** Current position: Phases 0–2 complete
+  (Firebase auth; owned monsters; tamper-proof match sessions); next up is
+  Phase 3 (battle engine v2).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -86,12 +85,13 @@ per roadmap phase, don't big-bang rename.)
 │   ├── auth/login.js       # POST -> verify Firebase ID token, set session cookie
 │   ├── auth/logout.js      # POST -> clear session cookie
 │   ├── me.js               # GET  -> trainer for the session (401 when logged out)
-│   ├── rosters.js          # GET  /api/rosters  -> unit defs from Postgres
 │   ├── classes.js          # GET  /api/classes  -> class metadata
-│   └── battle.js           # POST /api/battle   -> resolves the fight server-side
+│   ├── match.js            # POST -> open a match: server picks/freezes enemy + seed
+│   └── battle.js           # POST {matchId, playerOrder} -> resolve once, persist
 ├── server/                 # server-only logic (imported by api/, never by src/)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
-│   └── repos/trainers.js   # trainers SQL (upsert on login, get by id)
+│   ├── repos/              # SQL: trainers, species, monsters, matches
+│   └── services/matches.js # createMatch()/resolveMatch() + applyOrder() gate
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
@@ -119,16 +119,22 @@ per roadmap phase, don't big-bang rename.)
 
 ### Current data model & combat flow
 
-A unit def: `{ name, cls, emoji, hp, atk, spd, sprite? }` + a stable `idx`
-(original lane index) — the only identity the client and server exchange.
-Two linking keys: **`cls`** → attack name/fx (`data/classes.js` → cutscene),
-**`sprite`** → sheet in `data/sprites.js` (falls back to `emoji`).
-Nothing in `core/`/`ui/` imports rosters directly — always via
-`services/content.js`.
+Master/instance in action: `monster_species` (master, seeded from
+`src/data/units.js`; `starter` species are granted to new trainers on their
+first match) → `monsters` (instance rows owned by a trainer). A battle lane is
+`{ idx, monsterId, speciesId, name, cls, emoji, sprite, hp, atk, spd }`; the
+stable `idx` (lane index in the match snapshot) is the only identity the
+client and server exchange. Two linking keys: **`cls`** → attack name/fx
+(`data/classes.js` → cutscene), **`sprite`** → sheet in `data/sprites.js`
+(falls back to `emoji`). Nothing in `core/`/`ui/` calls the API directly —
+always via `services/content.js`.
 
-Flow: `setup` → drag to arrange → `POST /api/battle` with the two lane orders
-(permutations of `idx`; server validates via `applyOrder()`) → server runs
-`resolveBattle()` from DB stats → client replays `duel`/`strike`/`fall`
+Flow: login → `POST /api/match` (server assembles YOUR team from `monsters`,
+picks + freezes the enemy team/order, mints + stores the seed in `matches`) →
+drag your lanes only → `POST /api/battle {matchId, playerOrder}` (permutation
+gate `applyOrder()` in `server/services/matches.js`; each match resolves
+exactly once — replays get 409) → server runs `resolveBattle()` from the
+snapshots and persists the result → client replays `duel`/`strike`/`fall`
 events (cutscenes, HP bars, lane shifts). Damage has ONE choke point:
 `strike()` in `shared/engine/resolve.js`. Combat rules change ⇒ change the
 engine (its golden tests will diff — regenerate via `node tests/golden/regen.mjs`
@@ -137,16 +143,17 @@ compute outcomes client-side.
 
 ## 4. Recipes for TODAY's code
 
-- **Add a unit:** entry in `src/data/units.js`, then `npm run db:seed` to push
-  it; armies are whatever length the roster is.
+- **Add a species:** entry in `src/data/units.js` (ROSTER_A = starters,
+  ROSTER_B = wild pool), then `npm run db:seed` to upsert `monster_species`.
 - **Add sprite art:** sheet per `public/sprites/TEMPLATE.md` (96px cells,
   rows idle/attack/defend/dead ×4 frames) → `public/sprites/units/uNN.png` →
   entry in `src/data/sprites.js` → `sprite: "uNN"` on the def.
 - **Add a unit class:** `data/classes.js` entry → `cutscene/portraits.js`
   case → `cutscene/effects.js` case + `.fx-<fx>` keyframes in
   `styles/cutscene.css` → use in a roster.
-- **Add a stat:** def + `units` table + `SELECT`s in `api/rosters.js` /
-  `api/battle.js` → card markup in `ui/board.js` → apply in `strike()`.
+- **Add a stat:** def + `monster_species`/`monsters` columns (new migration)
+  + repos/`toLane()` in `server/services/matches.js` → card markup in
+  `ui/board.js` → apply in `strike()`.
 - **Bigger mechanics (statuses, skills, new stats):** these belong to battle
   **engine v2** — follow ARCHITECTURE §5 and the roadmap phase, don't bolt
   them onto v1.
@@ -172,12 +179,9 @@ compute outcomes client-side.
 
 ## 6. Known gaps (today)
 
-- Armies fixed at 3; flat damage; no defense/crit/variance (all addressed by
-  engine v2, roadmap Phase 3).
-- The client still picks the **enemy** order — a strategy exploit, not
-  result-tampering. Fixed by the `matches` session in roadmap **Phase 2**
-  (`POST /api/match` snapshots a server-chosen defender + seed; battle
-  results become persisted; replays rejected).
-- Battle results aren't persisted yet, no sound, no AI opponent.
-- Auth exists (Firebase login → our session cookie) but the battle endpoints
-  don't require it yet; they become per-trainer in Phase 2.
+- Teams fixed at 3; flat damage; no defense/crit/variance/elements/skills
+  (all addressed by engine v2, roadmap Phase 3).
+- Monsters don't grow yet — no exp/training, gold is always 0 (Phase 4);
+  battle wins award nothing.
+- Opponents are random species teams, not other trainers' formations
+  (PVP defense formations are Phase 5). No sound.

@@ -17,8 +17,12 @@ import {
 
 let els = {};
 let mode = "signin"; // "signin" | "register"
+let onAuthed = () => {};
 
-export async function initAuth() {
+/** @param {() => void} authedCallback runs once the session is confirmed —
+ *  main.js uses it to open the first match and unlock the board. */
+export async function initAuth(authedCallback) {
+  onAuthed = authedCallback || onAuthed;
   els = {
     app: document.getElementById("app"),
     screen: document.getElementById("authScreen"),
@@ -138,11 +142,12 @@ function friendlyError(e) {
   }
 }
 
-/** Reveal the game and fill the header. */
+/** Reveal the game, fill the header, and hand control to the game boot. */
 function enterGame(trainer) {
   els.screen.hidden = true;
   els.app.hidden = false;
   showProfile(trainer);
+  onAuthed();
 }
 
 /** Update the header bar; also called by later phases after gold/exp changes. */

@@ -8,7 +8,7 @@ import "./styles/sprite.css";
 import "./styles/cutscene.css";
 import "./styles/auth.css";
 
-import { state, resetState, initContent } from "./core/state.js";
+import { state, resetState, initContent, newMatch } from "./core/state.js";
 import { runBattle } from "./core/battle.js";
 import { initBoard, renderBoard } from "./ui/board.js";
 import { initLog, clearLog } from "./ui/log.js";
@@ -46,27 +46,46 @@ async function onStart() {
   await runBattle({ setStatus, showWinner });
 }
 
+/** Back to setup. A finished match is spent (the server resolves each match
+ *  exactly once), so after a battle this opens a fresh one; before a battle
+ *  it just restores the current layout. */
 function onReset() {
-  resetState();
+  return backToSetup(state.phase === "over" ? openMatch : resetState);
+}
+
+/** Ask the server for a fresh match: new opponent team, new frozen order. */
+function onNewOpponent() {
+  return backToSetup(openMatch);
+}
+
+async function backToSetup(loader) {
+  if (state.phase === "battle") return;
+  shuffleBtn.disabled = true;
+  try {
+    await loader();
+  } catch {
+    return; // status line already explains; keep current board
+  } finally {
+    shuffleBtn.disabled = false;
+  }
   clearLog();
   vsBadge.style.display = "";
   vsBadge.classList.remove("pulse");
   setStatus("Front line: lane 1");
   startBtn.disabled = false;
-  shuffleBtn.disabled = false;
   resetBtn.disabled = true;
   hint.style.display = "";
   renderBoard();
 }
 
-function onShuffle() {
-  if (state.phase !== "setup") return;
-  const b = state.armyB;
-  for (let i = b.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [b[i], b[j]] = [b[j], b[i]];
+/** Open a new match, surfacing server errors on the status line. */
+async function openMatch() {
+  try {
+    await newMatch();
+  } catch (e) {
+    setStatus(`Could not start a match: ${e.message}`);
+    throw e;
   }
-  renderBoard();
 }
 
 function onCinematicToggle() {
@@ -78,12 +97,21 @@ function onCinematicToggle() {
 initBoard();
 initLog();
 initCutscene();
-// Login gate + profile bar; the board keeps loading behind the gate.
-initAuth();
-// Content loads through the async services boundary (local today, DB later).
-initContent().then(renderBoard);
+// The landing/login screen owns the start: once the session is confirmed it
+// calls startSession(), which loads content and opens the first match.
+initAuth(startSession);
+
+async function startSession() {
+  try {
+    await initContent();
+    await newMatch();
+    renderBoard();
+  } catch (e) {
+    setStatus(`Could not load the game: ${e.message}`);
+  }
+}
 
 startBtn.addEventListener("click", onStart);
 resetBtn.addEventListener("click", onReset);
-shuffleBtn.addEventListener("click", onShuffle);
+shuffleBtn.addEventListener("click", onNewOpponent);
 cineBtn.addEventListener("click", onCinematicToggle);

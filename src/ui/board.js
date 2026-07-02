@@ -70,7 +70,9 @@ function buildCard(u, side, lane) {
   // card is built on the front lane idle by default; combat can swap actions.
   card.querySelector(".unit-portrait-top").appendChild(spriteEl(u, u.alive ? "idle" : "dead"));
 
-  if (state.phase === "setup") enableDragSwap(card, side, renderBoard);
+  // Only YOUR army is arrangeable — the enemy's lane order is part of the
+  // server's match snapshot (rearranging it client-side would be a lie).
+  if (state.phase === "setup" && side === "a") enableDragSwap(card, side, renderBoard);
   return card;
 }
 

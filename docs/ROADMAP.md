@@ -42,22 +42,28 @@ sign-in method and add the Vercel domain under Authorized domains; set
 vars (already in local `.env`); then verify two Google accounts see two
 different trainers.
 
-## Phase 2 — Owned monsters & tamper-proof matches
+## Phase 2 — Owned monsters & tamper-proof matches ✅ DONE (2026-07-02)
 
-Turns "two hardcoded armies" into "your monsters vs a server-picked enemy".
+Turned "two hardcoded armies" into "your monsters vs a server-picked enemy".
 
-- Migrations: `monster_species` (seed from current `units` data),
-  `monsters`, `formations`, `formation_slots`, `matches`.
-- New trainers receive starter monsters (copied from species master).
-- Collection screen + formation editor (reuse `ui/dragdrop.js`).
-- `POST /api/match` (server snapshots the defender + seed) and rework
-  `POST /api/battle` to `{ matchId, playerOrder }`, persisting the result —
-  this closes the long-standing "client picks enemy order" hole and starts
-  persisting battle results.
+- ✅ `003_monsters_matches.sql`: `monster_species` (master, seeded from the
+  old roster data; army A = starter species), `monsters` (instances),
+  `matches` (seed + frozen attacker/defender snapshots + persisted result);
+  the obsolete `units` table dropped.
+- ✅ Starter monsters granted lazily on a trainer's first match.
+- ✅ `POST /api/match` (auth required; server picks + freezes the enemy team
+  AND its lane order, mints the seed) and `POST /api/battle
+  { matchId, playerOrder }` (permutation-validated, resolves exactly once,
+  result persisted, replays rejected 409). `api/rosters.js` retired.
+- ✅ Client: your army comes from your monsters; the enemy side is
+  drag-locked; "New Opponent" opens a fresh match; battles require login.
+- Deferred by design: `formations`/`formation_slots` tables and a dedicated
+  collection screen belong to Phase 5 (defense formations for PVP), where
+  they're first needed — the board itself is the formation editor until then.
 
-**Start here:** the species/monsters migrations + seed.
-**Done when:** a logged-in player fights their own formation vs a
-server-chosen enemy; replaying a matchId is rejected; results are in the DB.
+**Done when (verified):** a logged-in player fights their own monsters vs a
+server-chosen enemy; illegal orders and replayed matchIds are rejected;
+results are rows in `matches`.
 
 ## Phase 3 — Battle engine v2 (the heart; biggest phase)
 
