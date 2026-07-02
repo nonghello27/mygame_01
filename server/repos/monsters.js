@@ -16,6 +16,8 @@ function shape(r) {
     targeting: r.targeting,
     base: { hp: r.hp, atk: r.atk, spd: r.spd },
     attrs: { str: r.str, agi: r.agi, vit: r.vit, int: r.intl, dex: r.dex },
+    busyUntil: r.busy_until ?? null,
+    busyKind: r.busy_kind ?? null,
     skills: r.skills,
   };
 }
@@ -23,7 +25,7 @@ function shape(r) {
 export async function listMonstersByTrainer(sql, trainerId) {
   const rows = await sql`
     SELECT m.id, m.species_id, m.nickname, m.hp, m.atk, m.spd,
-           m.str, m.agi, m.vit, m.intl, m.dex,
+           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind,
            s.name AS species_name, s.cls, s.emoji, s.sprite,
            s.element, s.attack_kind, s.attack_style, s.targeting,
            COALESCE(
@@ -58,4 +60,20 @@ export async function grantStarters(sql, trainerId, starterSpecies) {
       WHERE species_id = ${s.id}`;
   }
   return listMonstersByTrainer(sql, trainerId);
+}
+
+/**
+ * Take the busy lock for a job — atomically, so two simultaneous requests
+ * can't double-book: the WHERE only matches an owned, currently-free monster
+ * and the first caller's UPDATE wins. Returns the busy_until timestamp the
+ * activity row must share, or null when the claim failed (busy / not yours).
+ */
+export async function claimMonsterForJob(sql, trainerId, monsterId, durationS, kind) {
+  const rows = await sql`
+    UPDATE monsters
+    SET busy_until = now() + make_interval(secs => ${durationS}), busy_kind = ${kind}
+    WHERE id = ${monsterId} AND trainer_id = ${trainerId}
+      AND (busy_until IS NULL OR busy_until <= now())
+    RETURNING busy_until`;
+  return rows[0]?.busy_until ?? null;
 }

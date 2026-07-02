@@ -46,6 +46,24 @@ export async function createMatch() {
 }
 
 /**
+ * The farm: job list, your monsters with busy state, running assignments.
+ * Reading it also SETTLES anything that finished (lazy time) — `settled`
+ * carries what this read paid out, `trainer` the fresh gold/exp.
+ * @returns {Promise<{trainer:object, settled:object[], jobs:object[], monsters:object[], active:object[]}>}
+ */
+export async function loadFarm() {
+  return getJson("/api/activities");
+}
+
+/**
+ * Assign a monster to a job. Two ids — duration and rewards are the server's
+ * business. Responds with the same shape as loadFarm().
+ */
+export async function startJob(monsterId, jobId) {
+  return postJson("/api/activities", { monsterId, jobId });
+}
+
+/**
  * Resolve a match on the server. The only choice the client sends is the lane
  * ORDER of its own army (a permutation of idx); the server owns the stats,
  * the enemy, and the outcome. Each match resolves exactly once.

@@ -11,18 +11,13 @@
 import { randomUUID } from "node:crypto";
 import { resolveBattle } from "../../shared/engine/resolve.js";
 import { deriveStats } from "../../shared/rules/formulas.js";
+import { httpError } from "../http.js";
 import { listSpecies, listStarterSpecies } from "../repos/species.js";
 import { listMonstersByTrainer, grantStarters } from "../repos/monsters.js";
 import { insertMatch, getMatch, claimResolve } from "../repos/matches.js";
+import { settleActivities } from "./activities.js";
 
 const TEAM_SIZE = 3;
-
-/** Error with an HTTP status the api/ layer can pass through. */
-function httpError(status, message) {
-  const e = new Error(message);
-  e.status = status;
-  return e;
-}
 
 /** @returns {Promise<{matchId:string, you:object[], enemy:object[]}>} */
 export async function createMatch(sql, trainerId) {
@@ -30,11 +25,19 @@ export async function createMatch(sql, trainerId) {
   // everything else). Wire shape: idx is the lane identity the client and
   // server exchange; stats ride along for display but the DB copy is what
   // the resolve step will use.
+  //
+  // Settle finished jobs first, then honor the busy lock: a monster that is
+  // out working or training can't be frozen into a new match snapshot.
+  await settleActivities(sql, trainerId);
   let roster = await listMonstersByTrainer(sql, trainerId);
   if (roster.length === 0) {
     roster = await grantStarters(sql, trainerId, await listStarterSpecies(sql));
   }
-  const attacker = roster.slice(0, TEAM_SIZE).map(toLane);
+  const available = roster.filter((m) => !m.busyUntil || new Date(m.busyUntil) <= new Date());
+  if (available.length < TEAM_SIZE) {
+    throw httpError(409, "not enough available monsters — some are still working or training");
+  }
+  const attacker = available.slice(0, TEAM_SIZE).map(toLane);
 
   // Server-picked opponent: random species, random lane order, frozen in the
   // snapshot. (Phase 5 swaps this for another trainer's defense formation.)

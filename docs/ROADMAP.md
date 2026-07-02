@@ -93,18 +93,34 @@ ARCHITECTURE §5 implemented in `shared/engine/` + `shared/rules/`, test-first.
 golden logs; a real match resolves through the full pipeline (passive buffs,
 skills, misses, burns, stuns) and replays in the client.
 
-## Phase 4 — Economy: work & training
+## Phase 4 — Economy: work & training ✅ DONE (2026-07-02)
 
-The first out-of-battle loop; introduces gold as a real currency.
+The first out-of-battle loop; gold is now a real currency.
 
-- `job_defs` + `activities` migrations; lazy resolution in `GET /api/me`
-  (ARCHITECTURE §6); `busy_until` locking (busy monsters can't fight/train).
-- Work jobs pay trainer gold + exp; training jobs raise monster attributes
-  (small pools first — balance later).
-- Farm/HQ screen: assign, see countdowns, collect.
+- ✅ `005_economy.sql`: `job_defs` (master, seeded from `src/data/jobs.js`) +
+  `activities` (instance rows with persisted outcomes) + `monsters.busy_until`
+  / `busy_kind` locking. Nine jobs: four work tiers (1m–2h) and one training
+  job per attribute (+1 STR/AGI/VIT/INT/DEX).
+- ✅ Lazy time, for real (ARCHITECTURE §6): no cron — `settleActivities()`
+  runs on every authenticated read (`GET /api/me`, `/api/activities`, match
+  creation). Each payout is ONE atomic claim+pay SQL statement (CTE), so a
+  racing read settles an activity exactly once; the busy clear is guarded so
+  it can't wipe a newer job's lock.
+- ✅ `GET/POST /api/activities` — the client sends `{ monsterId, jobId }`,
+  two ids; durations/rewards/gains are read from `job_defs`. The busy lock is
+  taken atomically (owned + currently free, first caller wins) and the
+  activity shares the lock's exact timestamp.
+- ✅ Busy monsters are excluded at match creation (409 when fewer than 3 are
+  free); training gains land in `monsters` attrs and flow into the next match
+  snapshot via `deriveStats()` — growth finally feeds the engine.
+- ✅ Farm/HQ panel (`src/ui/farm.js`, toggled from the controls): assign via
+  job picker, live countdowns, collect on return; header gold/exp chips
+  update from settlement.
 
-**Done when:** send a monster to work, come back after the duration, gold is
-there, and the monster was unusable meanwhile.
+**Done when (verified):** monster sent to work; while busy it can't take a
+second job (409) and no match can open (409); after the duration a plain
+`GET /api/me` pays +gold/+exp exactly once; training raised STR by 1 and the
+monster was freed. Full E2E run against the live DB.
 
 ## Phase 5 — PVP ladder & trainer progression
 

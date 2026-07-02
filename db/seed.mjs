@@ -17,6 +17,7 @@ import { migrate } from "./migrate.mjs";
 import { ROSTER_A, ROSTER_B } from "../src/data/units.js";
 import { SKILLS } from "../src/data/skills.js";
 import { CLASS_META } from "../src/data/classes.js";
+import { JOBS } from "../src/data/jobs.js";
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is not set. Put it in .env (see .env.example).");
@@ -86,11 +87,25 @@ async function main() {
     }
   }
 
+  // 5. Jobs (work & training master data; upsert so balance edits land).
+  for (const j of JOBS) {
+    await pool.query(
+      `INSERT INTO job_defs (id, kind, name, duration_s, rewards)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (id) DO UPDATE SET
+         kind = EXCLUDED.kind, name = EXCLUDED.name,
+         duration_s = EXCLUDED.duration_s, rewards = EXCLUDED.rewards`,
+      [j.id, j.kind, j.name, j.durationS, JSON.stringify(j.rewards)]
+    );
+  }
+
   const c = await pool.query(`SELECT count(*)::int AS count FROM classes`);
   const sp = await pool.query(`SELECT count(*)::int AS count FROM monster_species`);
   const sk = await pool.query(`SELECT count(*)::int AS count FROM skills`);
+  const jb = await pool.query(`SELECT count(*)::int AS count FROM job_defs`);
   console.log(
-    `Seed complete: ${c.rows[0].count} classes, ${sp.rows[0].count} species, ${sk.rows[0].count} skills.`
+    `Seed complete: ${c.rows[0].count} classes, ${sp.rows[0].count} species, ` +
+    `${sk.rows[0].count} skills, ${jb.rows[0].count} jobs.`
   );
 }
 

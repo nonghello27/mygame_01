@@ -23,9 +23,10 @@ The vision and plans live in `docs/` — treat them as part of this file:
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — target directory layout,
   data model (master/instance tables), battle **engine v2** spec, API surface.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — phased build order. **When asked
-  "what next?", answer from here.** Current position: Phases 0–3 complete
-  (Firebase auth; owned monsters; tamper-proof matches; battle engine v2);
-  next up is Phase 4 (economy: work & training).
+  "what next?", answer from here.** Current position: Phases 0–4 complete
+  (Firebase auth; owned monsters; tamper-proof matches; battle engine v2;
+  work & training economy); next up is Phase 5 (PVP ladder & trainer
+  progression).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -84,14 +85,16 @@ per roadmap phase, don't big-bang rename.)
 │   ├── _db.js              # Neon connection + sendJson()/readJson()
 │   ├── auth/login.js       # POST -> verify Firebase ID token, set session cookie
 │   ├── auth/logout.js      # POST -> clear session cookie
-│   ├── me.js               # GET  -> trainer for the session (401 when logged out)
+│   ├── me.js               # GET  -> trainer for the session; settles finished jobs first
 │   ├── classes.js          # GET  /api/classes  -> class metadata
+│   ├── activities.js       # GET farm state | POST {monsterId, jobId} start a job
 │   ├── match.js            # POST -> open a match: server picks/freezes enemy + seed
 │   └── battle.js           # POST {matchId, playerOrder} -> resolve once, persist
 ├── server/                 # server-only logic (imported by api/, never by src/)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
-│   ├── repos/              # SQL: trainers, species, monsters, matches
-│   └── services/matches.js # createMatch()/resolveMatch() + applyOrder() gate
+│   ├── http.js             # httpError(status, msg), shared by services
+│   ├── repos/              # SQL: trainers, species, monsters, matches, activities
+│   └── services/           # matches.js (applyOrder gate), activities.js (lazy settle)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
@@ -106,14 +109,14 @@ per roadmap phase, don't big-bang rename.)
 └── src/
     ├── main.js             # ENTRY: imports CSS, inits modules, wires buttons
     ├── config.js           # COLORS, accentFor(), cutscene timings
-    ├── styles/             # base.css (tokens) | board.css | cutscene.css | sprite.css
-    ├── data/               # seed content: classes.js, sprites.js, units.js, skills.js
+    ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm
+    ├── data/               # seed content: classes, sprites, units, skills, jobs
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js
     ├── core/
     │   ├── units.js        # makeUnit(), cloneRoster()
     │   ├── state.js        # shared state + initContent()/resetState()
     │   └── battle.js       # client REPLAYER: requestBattle() + animate events
-    ├── ui/                 # board.js, sprite.js, dragdrop.js, log.js, chroma.js, auth.js
+    ├── ui/                 # board, sprite, dragdrop, log, chroma, auth, farm
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -153,6 +156,16 @@ must not add engine branches. Combat rules change ⇒ change the engine/rules
 same commit) and usually add an event field for the replayer; never compute
 outcomes client-side.
 
+Economy (Phase 4): `job_defs` (master, seeded from `src/data/jobs.js`) →
+`activities` (instance; `ends_at` + persisted `outcome`). Lazy time in
+practice: `settleActivities()` (`server/services/activities.js`) runs on
+every authenticated read (`/api/me`, `/api/activities`, match creation) and
+pays out finished jobs — work → trainer gold/exp, training → +1 monster
+attribute — each in ONE atomic claim+pay statement, exactly once. Busy lock:
+`monsters.busy_until`/`busy_kind`, taken atomically at job start; busy
+monsters are excluded from new matches and can't take a second job. The farm
+panel (`src/ui/farm.js`) is pure display; "collect" is just a re-read.
+
 ## 4. Recipes for TODAY's code
 
 - **Add a species:** entry in `src/data/units.js` (ROSTER_A = starters,
@@ -167,6 +180,9 @@ outcomes client-side.
   passive grammar) → assign in a species' `skills` in `units.js` →
   `npm run db:seed`. No engine change. New status id or targeting rule ⇒ one
   entry in `shared/rules/statuses.js` / `targeting.js`.
+- **Add a job:** row in `src/data/jobs.js` (work: `{gold, trainerExp}` |
+  training: `{attr, gain}`) → `npm run db:seed`. No code change — settlement
+  interprets rewards by kind; `tests/jobs.test.mjs` guards the grammar.
 - **Add a stat:** attrs live in `monster_species`/`monsters` (new migration);
   derived stats in `shared/rules/formulas.js` `deriveStats()`; consumed via
   `toLane()` in `server/services/matches.js` → card markup in `ui/board.js`.
@@ -196,7 +212,10 @@ outcomes client-side.
 
 - Teams fixed at 3; no DEF/mitigation stat; trainer skills don't join the
   battle yet (Phase 5); runes/equipment don't exist yet (Phase 6).
-- Monsters don't grow yet — no exp/training, gold is always 0 (Phase 4);
-  battle wins award nothing.
+- Battle wins still award nothing (gold/exp come from work jobs only);
+  monsters have no level/exp of their own — training raises attributes
+  directly. Gold has nothing to buy yet (marketplace/summons are Phase 6).
 - Opponents are random species teams, not other trainers' formations
   (PVP defense formations are Phase 5). No sound.
+- Migration runner splits statements on `;` after stripping full-line
+  comments — don't put semicolons inside inline `--` comments in migrations.

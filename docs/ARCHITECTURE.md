@@ -152,7 +152,8 @@ matches (                    -- the anti-cheat session (CLAUDE.md §roadmap, now
 )
 
 -- activities (work / training / adventure steps) ------------------------------
-job_defs(id, kind 'work'|'training', duration_s INT, unlock_condition JSONB, rewards JSONB)
+job_defs(id, kind 'work'|'training', name, duration_s INT, rewards JSONB, unlock JSONB)
+  -- rewards by kind: work {gold, trainerExp} | training {attr, gain}
 activities(id, trainer_id, monster_id, job_id, started_at, ends_at,
            resolved BOOL DEFAULT false, outcome JSONB)
 
@@ -266,6 +267,8 @@ GET  /api/monsters            owned monsters
 POST /api/formation           save formation (choices only: positions + monster ids)
 POST /api/match               create match session (server picks defender + seed)
 POST /api/battle              { matchId, playerOrder } → persisted result + events
+GET  /api/activities          the farm: jobs + monsters + running assignments
+                              (settles finished ones first — lazy time)
 POST /api/activities          start work/training { monsterId, jobId }
 POST /api/adventure/*         session create / step
 GET  /api/market  POST /api/market/*    listings / buy / sell
