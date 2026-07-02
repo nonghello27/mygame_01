@@ -242,8 +242,10 @@ battles before it grows features.
 ## 7. Auth
 
 **Firebase Authentication** handles the login UX on the client
-(`src/services/firebase.js`; Google popup today, more providers are a
-Firebase-console toggle). Firebase is the identity *provider only* — the game
+(`src/services/firebase.js`; Google popup and email/password — register +
+password reset — today, more providers are a Firebase-console toggle). The
+client shows a landing/login screen and keeps the game (`#app`) hidden until
+`GET /api/me` confirms a session. Firebase is the identity *provider only* — the game
 session is ours: the client POSTs the Firebase ID token to `api/auth/login`,
 the server verifies it locally (RS256 against Google's published securetoken
 certs; audience = `FIREBASE_PROJECT_ID`, issuer checked — no firebase-admin

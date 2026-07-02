@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap" id="app" hidden>
     <header class="top">
       <div>
         <h1 class="title">Battle Line <span class="tag">PROTOTYPE</span></h1>
@@ -55,11 +55,27 @@
     </div>
   </div>
 
-  <div class="auth-gate" id="authGate" hidden>
+  <div class="auth-gate" id="authScreen" hidden>
     <div class="auth-card">
       <h2>Battle Line</h2>
-      <p>Sign in to create your trainer. Your monsters, gold, and battle record will live on your account.</p>
-      <button class="btn primary" id="googleSignInBtn">Continue with Google</button>
+      <p id="authIntro">Sign in to create your trainer. Your monsters, gold, and battle record will live on your account.</p>
+
+      <button class="btn primary auth-wide" id="googleSignInBtn">Continue with Google</button>
+
+      <div class="auth-divider"><span>or use email</span></div>
+
+      <form class="auth-form" id="emailForm">
+        <input type="text" id="authName" placeholder="Trainer name" autocomplete="nickname" hidden />
+        <input type="email" id="authEmail" placeholder="Email" autocomplete="email" required />
+        <input type="password" id="authPassword" placeholder="Password (6+ characters)" autocomplete="current-password" required minlength="6" />
+        <button class="btn ghost auth-wide" id="emailSubmitBtn" type="submit">Sign in with Email</button>
+      </form>
+
+      <div class="auth-links">
+        <button class="link" id="modeToggle" type="button">New trainer? Create an account</button>
+        <button class="link" id="forgotBtn" type="button">Forgot password?</button>
+      </div>
+
       <div class="auth-msg" id="authGateMsg"></div>
     </div>
   </div>

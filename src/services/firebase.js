@@ -8,7 +8,16 @@
 // from Firebase rules + our server-side token verification, not secrecy).
 
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile,
+} from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDa5bBYbLBMXUfd9hwlLaOXc4vVV14z-Qo",
@@ -38,6 +47,29 @@ export async function initAnalytics() {
 export async function signInWithGoogle() {
   const cred = await signInWithPopup(auth, new GoogleAuthProvider());
   return cred.user.getIdToken();
+}
+
+/**
+ * Email/password registration. The chosen trainer name is stored as the
+ * Firebase displayName, then the token is force-refreshed so its `name`
+ * claim is present — that's what the server uses to name the new trainer.
+ * @returns a Firebase ID token
+ */
+export async function registerWithEmail(name, email, password) {
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  if (name) await updateProfile(cred.user, { displayName: name });
+  return cred.user.getIdToken(true);
+}
+
+/** Email/password sign-in. @returns a Firebase ID token. */
+export async function signInWithEmail(email, password) {
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return cred.user.getIdToken();
+}
+
+/** Sends Firebase's password-reset email. */
+export function resetPassword(email) {
+  return sendPasswordResetEmail(auth, email);
 }
 
 /** Forget the Firebase session (the server cookie is cleared separately). */

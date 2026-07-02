@@ -38,6 +38,68 @@
   line-height: 1.5;
 }
 .auth-msg { min-height: 1.2em; color: var(--b, #e66); font-size: 12px; }
+.auth-msg.ok { color: var(--hp-good); }
+
+.auth-wide { width: 100%; }
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.auth-form input {
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.auth-form input::placeholder { color: var(--muted); }
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--a);
+}
+.auth-form input[hidden] { display: none; }
+
+.auth-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+.auth-links .link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.auth-links .link:hover { color: var(--text); }
+.auth-links .link[hidden] { display: none; }
+.auth-links .link:disabled { opacity: 0.5; cursor: default; }
 
 .profile {
   display: flex;

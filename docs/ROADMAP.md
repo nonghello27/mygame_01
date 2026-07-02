@@ -24,13 +24,15 @@ Locked in the practices everything else relies on.
 
 ## Phase 1 — Accounts & trainers ✅ CODE COMPLETE (2026-07-02)
 
-- ✅ **Firebase Auth** (Google popup; more providers = console toggle) →
+- ✅ **Firebase Auth** (Google popup + email/password with register &
+  password reset; more providers = console toggle) →
   `POST /api/auth/login` verifies the Firebase ID token server-side (RS256
   vs Google certs, ARCHITECTURE §7) → upsert `trainers` (`002_trainers.sql`,
   applied; keyed by Firebase uid) → HttpOnly HMAC session cookie
   (`server/auth.js`; `trainer_id` is only ever read from the session).
-- ✅ `GET /api/me`, `POST /api/auth/logout`; login gate + profile bar
-  (name/gold/exp) in front of the game (`src/ui/auth.js`).
+- ✅ `GET /api/me`, `POST /api/auth/logout`; full landing/login screen —
+  the game stays hidden until the session is confirmed — plus the header
+  profile bar (name/gold/exp) (`src/ui/auth.js`).
 - ✅ `server/` established: `server/auth.js`, `server/repos/trainers.js`;
   session tests in `tests/auth-session.test.mjs`.
 
