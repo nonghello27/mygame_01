@@ -22,17 +22,21 @@ Locked in the practices everything else relies on.
 - ✅ Seeded PRNG `shared/engine/rng.js` (mulberry32 + int/chance/pick),
   tested incl. a golden sequence — ready for engine v2 and match seeds.
 
-## Phase 1 — Accounts & trainers
+## Phase 1 — Accounts & trainers ✅ CODE COMPLETE (2026-07-02)
 
-- Google Sign-In → `POST /api/auth/login` → verify → upsert `trainers` →
-  HttpOnly session cookie (ARCHITECTURE §7).
-- `GET /api/me`; minimal profile UI (name, exp, gold placeholder) and a
-  login screen in front of the current game.
-- `server/` directory established: `server/auth.js`, `server/repos/trainers.js`.
+- ✅ Google Sign-In → `POST /api/auth/login` → verify → upsert `trainers`
+  (`002_trainers.sql`, applied) → HttpOnly HMAC session cookie
+  (`server/auth.js`; `trainer_id` is only ever read from the session).
+- ✅ `GET /api/me`, `POST /api/auth/logout`; login gate + profile bar
+  (name/gold/exp) in front of the game (`src/ui/auth.js`); when
+  `VITE_GOOGLE_CLIENT_ID` is unset the game still runs in guest mode.
+- ✅ `server/` established: `server/auth.js`, `server/repos/trainers.js`;
+  session tests in `tests/auth-session.test.mjs`.
 
-**Start here:** the `trainers` migration + `api/auth/login.js`.
-**Done when:** two different Google accounts see two different trainers;
-`trainer_id` is only ever read from the session.
+**Remaining (operator step):** create the Google OAuth web client, set
+`GOOGLE_CLIENT_ID` / `VITE_GOOGLE_CLIENT_ID` / `SESSION_SECRET` in `.env` and
+in Vercel env vars (see `.env.example`), then verify two Google accounts see
+two different trainers.
 
 ## Phase 2 — Owned monsters & tamper-proof matches
 

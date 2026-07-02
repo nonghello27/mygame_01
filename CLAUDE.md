@@ -23,8 +23,9 @@ The vision and plans live in `docs/` — treat them as part of this file:
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — target directory layout,
   data model (master/instance tables), battle **engine v2** spec, API surface.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — phased build order. **When asked
-  "what next?", answer from here.** Current position: Phase 0 complete;
-  next up is Phase 1 (accounts & trainers).
+  "what next?", answer from here.** Current position: Phases 0–1 complete
+  (Phase 1 needs the Google OAuth env vars set to go live — see
+  `.env.example`); next up is Phase 2 (owned monsters & match sessions).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -79,11 +80,17 @@ per roadmap phase, don't big-bang rename.)
 ```
 ├── index.html              # static shell + DOM the app mounts into
 ├── vite.config.js          # base:'./'; serves api/ via dev middleware
-├── api/                    # serverless functions
+├── api/                    # serverless functions (thin: parse → auth → server/ → respond)
 │   ├── _db.js              # Neon connection + sendJson()/readJson()
+│   ├── auth/login.js       # POST -> verify Google credential, set session cookie
+│   ├── auth/logout.js      # POST -> clear session cookie
+│   ├── me.js               # GET  -> trainer for the session (401 when logged out)
 │   ├── rosters.js          # GET  /api/rosters  -> unit defs from Postgres
 │   ├── classes.js          # GET  /api/classes  -> class metadata
 │   └── battle.js           # POST /api/battle   -> resolves the fight server-side
+├── server/                 # server-only logic (imported by api/, never by src/)
+│   ├── auth.js             # Google token verify + HMAC session + cookie helpers
+│   └── repos/trainers.js   # trainers SQL (upsert on login, get by id)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
@@ -99,12 +106,12 @@ per roadmap phase, don't big-bang rename.)
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board.css | cutscene.css | sprite.css
     ├── data/               # static content: classes.js, sprites.js, units.js
-    ├── services/           # I/O boundary: content.js (fetch), storage.js (localStorage)
+    ├── services/           # I/O boundary: content.js, auth.js (fetch), storage.js
     ├── core/
     │   ├── units.js        # makeUnit(), cloneRoster()
     │   ├── state.js        # shared state + initContent()/resetState()
     │   └── battle.js       # client REPLAYER: requestBattle() + animate events
-    ├── ui/                 # board.js, sprite.js, dragdrop.js, log.js, chroma.js
+    ├── ui/                 # board.js, sprite.js, dragdrop.js, log.js, chroma.js, auth.js
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -170,4 +177,6 @@ compute outcomes client-side.
   result-tampering. Fixed by the `matches` session in roadmap **Phase 2**
   (`POST /api/match` snapshots a server-chosen defender + seed; battle
   results become persisted; replays rejected).
-- No auth, no persistence of results, no sound, no AI opponent.
+- Battle results aren't persisted yet, no sound, no AI opponent.
+- Auth exists (Google → session cookie) but the battle endpoints don't
+  require it yet; they become per-trainer in Phase 2.

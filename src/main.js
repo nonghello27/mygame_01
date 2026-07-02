@@ -6,12 +6,14 @@ import "./styles/base.css";
 import "./styles/board.css";
 import "./styles/sprite.css";
 import "./styles/cutscene.css";
+import "./styles/auth.css";
 
 import { state, resetState, initContent } from "./core/state.js";
 import { runBattle } from "./core/battle.js";
 import { initBoard, renderBoard } from "./ui/board.js";
 import { initLog, clearLog } from "./ui/log.js";
 import { initCutscene } from "./cutscene/cutscene.js";
+import { initAuth } from "./ui/auth.js";
 
 const startBtn = document.getElementById("startBtn");
 const resetBtn = document.getElementById("resetBtn");
@@ -76,6 +78,8 @@ function onCinematicToggle() {
 initBoard();
 initLog();
 initCutscene();
+// Login gate + profile bar; the board keeps loading behind the gate.
+initAuth();
 // Content loads through the async services boundary (local today, DB later).
 initContent().then(renderBoard);
 
