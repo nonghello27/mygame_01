@@ -1,5 +1,6 @@
--- Battle Line — database schema (Neon / Postgres).
--- Run via `npm run db:seed` (db/seed.mjs executes this then loads the rows).
+-- 001_init — Battle Line base tables (Neon / Postgres).
+-- Applied by db/migrate.mjs (`npm run db:migrate`; `npm run db:seed` also
+-- migrates first, then loads master-data rows).
 -- Ids are the same stable strings the game already uses (class name, sprite id),
 -- so they double as the DB keys.
 

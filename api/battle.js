@@ -10,7 +10,7 @@
 // database here, so a hacked client cannot inflate atk/hp or add/drop units.
 
 import { db, sendJson, readJson } from "./_db.js";
-import { resolveBattle } from "../src/core/resolve.js";
+import { resolveBattle } from "../shared/engine/resolve.js";
 
 export default async function handler(req, res) {
   try {

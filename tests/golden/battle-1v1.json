@@ -1,0 +1,95 @@
+{
+  "youWin": false,
+  "survivor": {
+    "side": "b",
+    "idx": 0
+  },
+  "events": [
+    {
+      "t": "duel",
+      "a": {
+        "side": "a",
+        "idx": 0
+      },
+      "b": {
+        "side": "b",
+        "idx": 0
+      }
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 0
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 12,
+      "before": 30,
+      "after": 18
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 0
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 10,
+      "before": 25,
+      "after": 15
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 0
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 12,
+      "before": 18,
+      "after": 6
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 0
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 10,
+      "before": 15,
+      "after": 5
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 0
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 12,
+      "before": 6,
+      "after": 0
+    },
+    {
+      "t": "fall",
+      "side": "a",
+      "idx": 0
+    }
+  ]
+}

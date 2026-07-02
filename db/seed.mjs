@@ -1,6 +1,7 @@
-// One-shot DB setup + seed. Creates the tables (db/schema.sql) and loads them
-// from the current src/data/ modules, so the database starts as an exact copy
-// of the local content. Re-runnable: classes upsert, units are replaced.
+// One-shot DB setup + seed. Applies pending migrations (db/migrations/) and
+// loads master data from the current src/data/ modules, so the database starts
+// as an exact copy of the local content. Re-runnable: classes upsert, units
+// are replaced.
 //
 //   npm run db:seed          (reads DATABASE_URL from .env)
 //
@@ -11,8 +12,8 @@
 // API in /api uses the lighter neon() HTTP tagged-template instead.
 
 import "dotenv/config";
-import { readFile } from "node:fs/promises";
 import { Pool } from "@neondatabase/serverless";
+import { migrate } from "./migrate.mjs";
 import { ROSTER_A, ROSTER_B } from "../src/data/units.js";
 import { CLASS_META } from "../src/data/classes.js";
 
@@ -24,13 +25,8 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function main() {
-  // 1. Create tables (idempotent DDL from schema.sql). Strip line comments first
-  // so a stray ';' inside a comment can't split a statement.
-  const ddl = (await readFile(new URL("./schema.sql", import.meta.url), "utf8"))
-    .replace(/^\s*--.*$/gm, "");
-  for (const stmt of ddl.split(";").map((s) => s.trim()).filter(Boolean)) {
-    await pool.query(stmt);
-  }
+  // 1. Bring the schema up to date.
+  await migrate(pool);
 
   // 2. Classes (upsert so re-running keeps the table in sync).
   for (const [cls, m] of Object.entries(CLASS_META)) {

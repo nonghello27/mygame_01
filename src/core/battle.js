@@ -1,5 +1,5 @@
 // The battle REPLAYER. The outcome is no longer computed here — the server
-// (api/battle.js, via the shared core/resolve.js engine) resolves the whole
+// (api/battle.js, via the shared/engine/resolve.js engine) resolves the whole
 // fight from authoritative stats and returns an ordered event log. This module
 // only animates that log: cutscenes, HP bars, the battle text, and shifting the
 // lanes forward as units fall. A tampered client can therefore only lie to its
