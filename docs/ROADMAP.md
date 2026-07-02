@@ -58,7 +58,7 @@ Turned "two hardcoded armies" into "your monsters vs a server-picked enemy".
 - ✅ Client: your army comes from your monsters; the enemy side is
   drag-locked; "New Opponent" opens a fresh match; battles require login.
 - Deferred by design: `formations`/`formation_slots` tables and a dedicated
-  collection screen belong to Phase 5 (defense formations for PVP), where
+  collection screen belong to Phase 6 (defense formations for PVP), where
   they're first needed — the board itself is the formation editor until then.
 
 **Done when (verified):** a logged-in player fights their own monsters vs a
@@ -86,7 +86,7 @@ ARCHITECTURE §5 implemented in `shared/engine/` + `shared/rules/`, test-first.
   units now act more often, which is the point). v1 was retired outright;
   v2 has its own golden suite (`battle-skirmish`, `battle-plain`) plus
   seed-independent behavior tests (`tests/engine.test.mjs`).
-- Not yet: DEF/mitigation stat, trainer skills in battle (Phase 5), monster
+- Not yet: DEF/mitigation stat, trainer skills in battle (Phase 6), monster
   growth feeding the attributes (Phase 4).
 
 **Done when (verified):** fixture battles with skills/statuses produce stable
@@ -122,7 +122,44 @@ second job (409) and no match can open (409); after the duration a plain
 `GET /api/me` pays +gold/+exp exactly once; training raised STR by 1 and the
 monster was freed. Full E2E run against the live DB.
 
-## Phase 5 — PVP ladder & trainer progression
+## Phase 5 — Admin console: master-data management ✅ CODE COMPLETE (2026-07-02)
+
+Operate the game's content from inside the game. An admin-only area (menu
+entry → sub-menu per table) to add/edit/delete every master table and the
+relations between them, replacing hand-editing `src/data/*.js` + re-seeding
+as the only content workflow. Anything with an image (sprites, emoji
+portraits) is shown as an image, not as an id string.
+
+- `006_admin.sql`: `trainers.is_admin`; accounts listed in the
+  `ADMIN_EMAILS` env var are promoted at login (promotion only — demotion is
+  a manual SQL statement, so a bad env edit can't lock everyone out).
+- `api/admin/*`: one GET returning all master data + the engine's enum
+  registries (elements, targeting rules, statuses, skill slots) so the UI's
+  dropdowns can never drift from the engine; upsert/delete per table for
+  `classes`, `skills`, `monster_species` (+ its `species_skills` loadout),
+  `job_defs`. Every handler re-checks `is_admin` server-side (403).
+- Validation lives server-side (`server/services/`): enum membership, skill
+  `data` / job `rewards` grammar, loadout slot types (0–1 passive, 2 normal,
+  3 ultimate). Deletes are guarded: a row referenced by instances (monsters,
+  activities, loadouts) answers 409 with what blocks it.
+- Admin panel (`src/ui/admin.js`): ⚙ button (admins only) → tabs Classes |
+  Skills | Species | Jobs | Sprites. Species editor wires the relations:
+  class dropdown, per-slot skill dropdowns filtered by slot type, sprite
+  picker with live image previews (chroma-keyed portraits / sheet
+  thumbnails / emoji fallback). Sprites tab is a read-only gallery showing
+  each sheet, its metadata, and which species use it.
+- Caveat (documented in the panel): `npm run db:seed` upserts from
+  `src/data/*.js` and will overwrite admin edits to rows that share ids —
+  the DB is the source of truth once you edit it live.
+
+**Remaining (operator step):** set `ADMIN_EMAILS` in `.env` (done locally)
+and in Vercel env vars; log in with that account once so the flag is granted.
+
+**Done when:** an admin account sees the console, a non-admin gets 403s;
+a new species created entirely in the UI (class, skills, sprite) appears in
+the next match; deleting an in-use skill is refused with a clear message.
+
+## Phase 6 — PVP ladder & trainer progression
 
 - Defense formations; matchmaking by rank bracket against **stored** defense
   teams (async — defender offline); rating points; `seasons` +
@@ -135,7 +172,7 @@ monster was freed. Full E2E run against the live DB.
 **Done when:** two real accounts can attack each other's defense teams and
 climb a visible ladder.
 
-## Phase 6 — Acquisition & itemization
+## Phase 7 — Acquisition & itemization
 
 Order within this phase is flexible:
 
@@ -147,7 +184,7 @@ Order within this phase is flexible:
 - **Marketplace** (escrowed gold transfers; needs SQL transactions — the one
   place to be extra careful).
 
-## Phase 7 — Social & events (later)
+## Phase 8 — Social & events (later)
 
 Guilds + GVG, tournaments (server-resolved brackets), messages/notifications,
 and — last, once there's an audience and moderation plan — the **photo quest**

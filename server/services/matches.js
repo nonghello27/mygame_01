@@ -40,7 +40,7 @@ export async function createMatch(sql, trainerId) {
   const attacker = available.slice(0, TEAM_SIZE).map(toLane);
 
   // Server-picked opponent: random species, random lane order, frozen in the
-  // snapshot. (Phase 5 swaps this for another trainer's defense formation.)
+  // snapshot. (Phase 6 swaps this for another trainer's defense formation.)
   const species = await listSpecies(sql);
   const defender = shuffle(species).slice(0, TEAM_SIZE).map(toLane);
   if (attacker.length === 0 || defender.length === 0) {

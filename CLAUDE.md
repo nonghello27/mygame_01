@@ -23,10 +23,10 @@ The vision and plans live in `docs/` — treat them as part of this file:
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — target directory layout,
   data model (master/instance tables), battle **engine v2** spec, API surface.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — phased build order. **When asked
-  "what next?", answer from here.** Current position: Phases 0–4 complete
+  "what next?", answer from here.** Current position: Phases 0–5 complete
   (Firebase auth; owned monsters; tamper-proof matches; battle engine v2;
-  work & training economy); next up is Phase 5 (PVP ladder & trainer
-  progression).
+  work & training economy; admin console for master data); next up is
+  Phase 6 (PVP ladder & trainer progression).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -89,12 +89,16 @@ per roadmap phase, don't big-bang rename.)
 │   ├── classes.js          # GET  /api/classes  -> class metadata
 │   ├── activities.js       # GET farm state | POST {monsterId, jobId} start a job
 │   ├── match.js            # POST -> open a match: server picks/freezes enemy + seed
-│   └── battle.js           # POST {matchId, playerOrder} -> resolve once, persist
+│   ├── battle.js           # POST {matchId, playerOrder} -> resolve once, persist
+│   └── admin/              # admin-only master-data CRUD (is_admin re-checked per call)
+│       ├── master.js       # GET everything: 4 master tables + engine enum registries
+│       └── {classes,skills,species,jobs}.js  # POST upsert | DELETE (guarded)
 ├── server/                 # server-only logic (imported by api/, never by src/)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg), shared by services
-│   ├── repos/              # SQL: trainers, species, monsters, matches, activities
-│   └── services/           # matches.js (applyOrder gate), activities.js (lazy settle)
+│   ├── repos/              # SQL: trainers, species, monsters, matches, activities, admin
+│   └── services/           # matches.js (applyOrder gate), activities.js (lazy settle),
+│                           # admin.js (gate + CRUD) + adminValidate.js (pure grammar)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
@@ -109,14 +113,14 @@ per roadmap phase, don't big-bang rename.)
 └── src/
     ├── main.js             # ENTRY: imports CSS, inits modules, wires buttons
     ├── config.js           # COLORS, accentFor(), cutscene timings
-    ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm
+    ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm | admin
     ├── data/               # seed content: classes, sprites, units, skills, jobs
-    ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js
+    ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js, admin.js
     ├── core/
     │   ├── units.js        # makeUnit(), cloneRoster()
     │   ├── state.js        # shared state + initContent()/resetState()
     │   └── battle.js       # client REPLAYER: requestBattle() + animate events
-    ├── ui/                 # board, sprite, dragdrop, log, chroma, auth, farm
+    ├── ui/                 # board, sprite, dragdrop, log, chroma, auth, farm, admin
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -166,8 +170,23 @@ attribute — each in ONE atomic claim+pay statement, exactly once. Busy lock:
 monsters are excluded from new matches and can't take a second job. The farm
 panel (`src/ui/farm.js`) is pure display; "collect" is just a re-read.
 
+Admin console (Phase 5): accounts whose email is in the `ADMIN_EMAILS` env
+var get `trainers.is_admin` at login (promotion only; demote by SQL). The
+⚙ Admin button (admins only, `src/ui/admin.js`) opens tabs over the four
+master tables + a sprite gallery; `/api/admin/master` returns them plus the
+enum registries from `shared/rules/` so dropdowns can't drift from the
+engine. Writes are validated server-side (`server/services/adminValidate.js`
+— pure, tested in `tests/admin-validate.test.mjs`); deletes 409 while
+instance rows reference the master row. CAVEAT: `npm run db:seed` upserts
+from `src/data/*.js` and overwrites admin edits to rows with the same ids —
+once you edit live, the DB is the source of truth for those rows.
+
 ## 4. Recipes for TODAY's code
 
+- **Add a species / skill / class / job (live):** admin console (⚙ button)
+  — validated writes straight to the master tables, no redeploy. The
+  `src/data/*.js` routes below still work for content meant to ship with
+  the repo (they seed via `npm run db:seed`, which overwrites same-id rows).
 - **Add a species:** entry in `src/data/units.js` (ROSTER_A = starters,
   ROSTER_B = wild pool), then `npm run db:seed` to upsert `monster_species`.
 - **Add sprite art:** sheet per `public/sprites/TEMPLATE.md` (96px cells,
@@ -211,11 +230,11 @@ panel (`src/ui/farm.js`) is pure display; "collect" is just a re-read.
 ## 6. Known gaps (today)
 
 - Teams fixed at 3; no DEF/mitigation stat; trainer skills don't join the
-  battle yet (Phase 5); runes/equipment don't exist yet (Phase 6).
+  battle yet (Phase 6); runes/equipment don't exist yet (Phase 7).
 - Battle wins still award nothing (gold/exp come from work jobs only);
   monsters have no level/exp of their own — training raises attributes
-  directly. Gold has nothing to buy yet (marketplace/summons are Phase 6).
+  directly. Gold has nothing to buy yet (marketplace/summons are Phase 7).
 - Opponents are random species teams, not other trainers' formations
-  (PVP defense formations are Phase 5). No sound.
+  (PVP defense formations are Phase 6). No sound.
 - Migration runner splits statements on `;` after stripping full-line
   comments — don't put semicolons inside inline `--` comments in migrations.

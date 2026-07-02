@@ -6,6 +6,7 @@
 // never trusts the client about who is playing.
 
 import { fetchMe, loginWithCredential, logout } from "../services/auth.js";
+import { setAdminVisible } from "./admin.js";
 import {
   signInWithGoogle,
   signInWithEmail,
@@ -156,4 +157,6 @@ export function showProfile(trainer) {
   els.profileName.textContent = trainer.name;
   els.profileGold.textContent = trainer.gold.toLocaleString();
   els.profileExp.textContent = trainer.exp.toLocaleString();
+  // The button is chrome only — every /api/admin request re-checks the flag.
+  setAdminVisible(trainer.isAdmin === true);
 }

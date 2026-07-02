@@ -273,6 +273,11 @@ POST /api/activities          start work/training { monsterId, jobId }
 POST /api/adventure/*         session create / step
 GET  /api/market  POST /api/market/*    listings / buy / sell
 (existing: GET /api/rosters, /api/classes — become monster/species reads)
+
+# admin console (Phase 5) — every call re-checks trainers.is_admin (403)
+GET    /api/admin/master      all 4 master tables + engine enum registries
+POST   /api/admin/{classes,skills,species,jobs}   validated upsert
+DELETE /api/admin/{classes,skills,species,jobs}   guarded delete (409 in use)
 ```
 
 Handler contract: authenticate → load DB state → validate the client's

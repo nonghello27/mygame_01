@@ -10,6 +10,7 @@
 import { db, sendJson, readJson } from "../_db.js";
 import { verifyFirebaseToken, signSession, sessionSetCookie } from "../../server/auth.js";
 import { upsertTrainer } from "../../server/repos/trainers.js";
+import { isAdminEmail } from "../../server/services/admin.js";
 
 export default async function handler(req, res) {
   try {
@@ -17,7 +18,7 @@ export default async function handler(req, res) {
 
     const { credential } = await readJson(req);
     const identity = await verifyFirebaseToken(credential);
-    const trainer = await upsertTrainer(db(), identity);
+    const trainer = await upsertTrainer(db(), identity, isAdminEmail(identity.email));
 
     res.setHeader("Set-Cookie", sessionSetCookie(signSession(trainer.id)));
     sendJson(res, 200, { trainer });

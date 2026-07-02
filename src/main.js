@@ -8,6 +8,7 @@ import "./styles/sprite.css";
 import "./styles/cutscene.css";
 import "./styles/auth.css";
 import "./styles/farm.css";
+import "./styles/admin.css";
 
 import { state, resetState, initContent, newMatch } from "./core/state.js";
 import { runBattle } from "./core/battle.js";
@@ -16,6 +17,7 @@ import { initLog, clearLog } from "./ui/log.js";
 import { initCutscene } from "./cutscene/cutscene.js";
 import { initAuth } from "./ui/auth.js";
 import { initFarm } from "./ui/farm.js";
+import { initAdmin } from "./ui/admin.js";
 
 const startBtn = document.getElementById("startBtn");
 const resetBtn = document.getElementById("resetBtn");
@@ -100,6 +102,7 @@ initBoard();
 initLog();
 initCutscene();
 initFarm();
+initAdmin();
 // The landing/login screen owns the start: once the session is confirmed it
 // calls startSession(), which loads content and opens the first match.
 initAuth(startSession);
