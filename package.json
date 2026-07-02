@@ -13,7 +13,8 @@
     "db:seed": "node db/seed.mjs"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^0.10.4"
+    "@neondatabase/serverless": "^0.10.4",
+    "firebase": "^12.15.0"
   },
   "devDependencies": {
     "dotenv": "^16.4.5",

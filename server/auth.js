@@ -1,10 +1,11 @@
-// Server-only auth: Google credential verification + the session cookie.
-// Imported by api/ handlers, never by src/ (client). The session token is a
-// minimal HMAC-signed blob — payload.signature, both base64url — carrying only
-// the trainer id and an expiry. trainer_id ALWAYS comes from this cookie;
+// Server-only auth: Firebase ID-token verification + the session cookie.
+// Imported by api/ handlers, never by src/ (client). Firebase is the identity
+// PROVIDER (login UX, multiple providers later); the game session is OURS —
+// a minimal HMAC-signed blob — payload.signature, both base64url — carrying
+// only the trainer id and an expiry. trainer_id ALWAYS comes from this cookie;
 // any handler that takes it from the request body instead is a bug (CLAUDE.md §1).
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, createPublicKey, timingSafeEqual, verify as cryptoVerify } from "node:crypto";
 
 const COOKIE_NAME = "bl_session";
 const SESSION_TTL_S = 30 * 24 * 60 * 60; // 30 days
@@ -15,32 +16,71 @@ function secret() {
   return s;
 }
 
-// --- Google ------------------------------------------------------------------
+// --- Firebase ID tokens --------------------------------------------------------
+
+// Firebase ID tokens are RS256 JWTs signed by Google's securetoken service.
+// We verify them locally against Google's published x509 certs (cached per
+// their Cache-Control header) — no firebase-admin dependency, no extra
+// network hop per login once the cert cache is warm.
+const CERTS_URL =
+  "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
+
+let certCache = { certs: null, expiresAt: 0 };
+
+async function googleCerts(now = Date.now()) {
+  if (certCache.certs && now < certCache.expiresAt) return certCache.certs;
+  const r = await fetch(CERTS_URL);
+  if (!r.ok) throw new Error("could not fetch Google signing certs");
+  const maxAge = Number(/max-age=(\d+)/.exec(r.headers.get("cache-control") || "")?.[1] ?? 3600);
+  certCache = { certs: await r.json(), expiresAt: now + maxAge * 1000 };
+  return certCache.certs;
+}
+
+const decodeJwtPart = (part) => {
+  try {
+    return JSON.parse(Buffer.from(part, "base64url").toString());
+  } catch {
+    throw new Error("missing or malformed credential");
+  }
+};
 
 /**
- * Verify a Google Identity Services ID token and extract the identity.
- * Uses Google's tokeninfo endpoint: adequate for the prototype (Google checks
- * the signature/expiry; we check audience + issuer). If login volume ever
- * matters, switch to local JWKS verification to avoid the extra round-trip.
- * @returns {Promise<{provider:'google', subject:string, name:string, email:string|null}>}
+ * Verify a Firebase ID token and extract the game identity. The subject is
+ * the Firebase uid — stable for the account even if more providers (email,
+ * Apple, ...) are linked to it later, so it's the right key for `trainers`.
+ * @returns {Promise<{provider:'firebase', subject:string, name:string, email:string|null}>}
  */
-export async function verifyGoogleCredential(credential) {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) throw new Error("GOOGLE_CLIENT_ID is not set (see .env.example)");
-  if (typeof credential !== "string" || !credential) throw new Error("missing credential");
-
-  const r = await fetch(
-    "https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(credential)
-  );
-  if (!r.ok) throw new Error("Google rejected the credential");
-  const t = await r.json();
-
-  if (t.aud !== clientId) throw new Error("credential is for a different app");
-  if (t.iss !== "https://accounts.google.com" && t.iss !== "accounts.google.com") {
-    throw new Error("unexpected credential issuer");
+export async function verifyFirebaseToken(idToken, now = Date.now()) {
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  if (!projectId) throw new Error("FIREBASE_PROJECT_ID is not set (see .env.example)");
+  if (typeof idToken !== "string" || idToken.split(".").length !== 3) {
+    throw new Error("missing or malformed credential");
   }
+
+  const [h, p, s] = idToken.split(".");
+  const header = decodeJwtPart(h);
+  if (header.alg !== "RS256") throw new Error("unexpected token algorithm");
+
+  const certPem = (await googleCerts(now))[header.kid];
+  if (!certPem) throw new Error("unknown signing key");
+  const ok = cryptoVerify(
+    "RSA-SHA256",
+    Buffer.from(`${h}.${p}`),
+    createPublicKey(certPem),
+    Buffer.from(s, "base64url")
+  );
+  if (!ok) throw new Error("invalid token signature");
+
+  const t = decodeJwtPart(p);
+  const nowS = Math.floor(now / 1000);
+  if (typeof t.exp !== "number" || t.exp < nowS) throw new Error("credential expired");
+  if (typeof t.iat !== "number" || t.iat > nowS + 300) throw new Error("credential from the future");
+  if (t.aud !== projectId) throw new Error("credential is for a different app");
+  if (t.iss !== `https://securetoken.google.com/${projectId}`) throw new Error("unexpected credential issuer");
+  if (typeof t.sub !== "string" || !t.sub) throw new Error("credential has no subject");
+
   return {
-    provider: "google",
+    provider: "firebase",
     subject: t.sub,
     name: t.name || (t.email ? t.email.split("@")[0] : "Trainer"),
     email: t.email ?? null,

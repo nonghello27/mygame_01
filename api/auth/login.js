@@ -1,14 +1,14 @@
 // POST /api/auth/login
-//   body: { credential }   (a Google Identity Services ID token)
+//   body: { credential }   (a Firebase ID token from the client SDK)
 //   -> Set-Cookie session + { trainer }
 //
-// Verifies the credential with Google, finds-or-creates the trainer for that
-// identity (auto-created on first login, per the game design), and issues the
-// HttpOnly session cookie. The client never learns or sends a trainer id —
-// identity lives in the cookie only.
+// Verifies the Firebase token cryptographically, finds-or-creates the trainer
+// for that identity (auto-created on first login, per the game design), and
+// issues OUR HttpOnly session cookie — Firebase authenticates, the game
+// session stays server-owned. The client never learns or sends a trainer id.
 
 import { db, sendJson, readJson } from "../_db.js";
-import { verifyGoogleCredential, signSession, sessionSetCookie } from "../../server/auth.js";
+import { verifyFirebaseToken, signSession, sessionSetCookie } from "../../server/auth.js";
 import { upsertTrainer } from "../../server/repos/trainers.js";
 
 export default async function handler(req, res) {
@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     if (req.method !== "POST") return sendJson(res, 405, { error: "POST only" });
 
     const { credential } = await readJson(req);
-    const identity = await verifyGoogleCredential(credential);
+    const identity = await verifyFirebaseToken(credential);
     const trainer = await upsertTrainer(db(), identity);
 
     res.setHeader("Set-Cookie", sessionSetCookie(signSession(trainer.id)));

@@ -24,19 +24,21 @@ Locked in the practices everything else relies on.
 
 ## Phase 1 — Accounts & trainers ✅ CODE COMPLETE (2026-07-02)
 
-- ✅ Google Sign-In → `POST /api/auth/login` → verify → upsert `trainers`
-  (`002_trainers.sql`, applied) → HttpOnly HMAC session cookie
+- ✅ **Firebase Auth** (Google popup; more providers = console toggle) →
+  `POST /api/auth/login` verifies the Firebase ID token server-side (RS256
+  vs Google certs, ARCHITECTURE §7) → upsert `trainers` (`002_trainers.sql`,
+  applied; keyed by Firebase uid) → HttpOnly HMAC session cookie
   (`server/auth.js`; `trainer_id` is only ever read from the session).
 - ✅ `GET /api/me`, `POST /api/auth/logout`; login gate + profile bar
-  (name/gold/exp) in front of the game (`src/ui/auth.js`); when
-  `VITE_GOOGLE_CLIENT_ID` is unset the game still runs in guest mode.
+  (name/gold/exp) in front of the game (`src/ui/auth.js`).
 - ✅ `server/` established: `server/auth.js`, `server/repos/trainers.js`;
   session tests in `tests/auth-session.test.mjs`.
 
-**Remaining (operator step):** create the Google OAuth web client, set
-`GOOGLE_CLIENT_ID` / `VITE_GOOGLE_CLIENT_ID` / `SESSION_SECRET` in `.env` and
-in Vercel env vars (see `.env.example`), then verify two Google accounts see
-two different trainers.
+**Remaining (operator step):** in Firebase console enable the **Google**
+sign-in method and add the Vercel domain under Authorized domains; set
+`FIREBASE_PROJECT_ID` + `SESSION_SECRET` (+ `DATABASE_URL`) in Vercel env
+vars (already in local `.env`); then verify two Google accounts see two
+different trainers.
 
 ## Phase 2 — Owned monsters & tamper-proof matches
 

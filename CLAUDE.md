@@ -24,8 +24,9 @@ The vision and plans live in `docs/` — treat them as part of this file:
   data model (master/instance tables), battle **engine v2** spec, API surface.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — phased build order. **When asked
   "what next?", answer from here.** Current position: Phases 0–1 complete
-  (Phase 1 needs the Google OAuth env vars set to go live — see
-  `.env.example`); next up is Phase 2 (owned monsters & match sessions).
+  (auth = Firebase; to go live, enable the Google provider in Firebase
+  console and set the Vercel env vars — see `.env.example`); next up is
+  Phase 2 (owned monsters & match sessions).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -82,14 +83,14 @@ per roadmap phase, don't big-bang rename.)
 ├── vite.config.js          # base:'./'; serves api/ via dev middleware
 ├── api/                    # serverless functions (thin: parse → auth → server/ → respond)
 │   ├── _db.js              # Neon connection + sendJson()/readJson()
-│   ├── auth/login.js       # POST -> verify Google credential, set session cookie
+│   ├── auth/login.js       # POST -> verify Firebase ID token, set session cookie
 │   ├── auth/logout.js      # POST -> clear session cookie
 │   ├── me.js               # GET  -> trainer for the session (401 when logged out)
 │   ├── rosters.js          # GET  /api/rosters  -> unit defs from Postgres
 │   ├── classes.js          # GET  /api/classes  -> class metadata
 │   └── battle.js           # POST /api/battle   -> resolves the fight server-side
 ├── server/                 # server-only logic (imported by api/, never by src/)
-│   ├── auth.js             # Google token verify + HMAC session + cookie helpers
+│   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   └── repos/trainers.js   # trainers SQL (upsert on login, get by id)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live)
@@ -106,7 +107,7 @@ per roadmap phase, don't big-bang rename.)
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board.css | cutscene.css | sprite.css
     ├── data/               # static content: classes.js, sprites.js, units.js
-    ├── services/           # I/O boundary: content.js, auth.js (fetch), storage.js
+    ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js
     ├── core/
     │   ├── units.js        # makeUnit(), cloneRoster()
     │   ├── state.js        # shared state + initContent()/resetState()
@@ -178,5 +179,5 @@ compute outcomes client-side.
   (`POST /api/match` snapshots a server-chosen defender + seed; battle
   results become persisted; replays rejected).
 - Battle results aren't persisted yet, no sound, no AI opponent.
-- Auth exists (Google → session cookie) but the battle endpoints don't
-  require it yet; they become per-trainer in Phase 2.
+- Auth exists (Firebase login → our session cookie) but the battle endpoints
+  don't require it yet; they become per-trainer in Phase 2.

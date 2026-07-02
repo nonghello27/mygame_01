@@ -13,7 +13,7 @@ export async function fetchMe() {
   }
 }
 
-/** Exchange a Google ID token for a session. @returns the trainer. */
+/** Exchange a Firebase ID token for a session. @returns the trainer. */
 export async function loginWithCredential(credential) {
   const r = await fetch("/api/auth/login", {
     method: "POST",

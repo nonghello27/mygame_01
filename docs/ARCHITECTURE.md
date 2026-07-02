@@ -241,12 +241,18 @@ battles before it grows features.
 
 ## 7. Auth
 
-Google Sign-In on the client → ID token POSTed to `api/auth/login` → server
-verifies signature/audience → upsert `trainers` row by `(provider, subject)`
-→ issue an HttpOnly signed session cookie (JWT). Every mutating endpoint
-reads the session; `trainer_id` always comes from the session, **never** the
-request body. Keep the provider abstraction thin so "or whatsoever" logins
-can be added as more `(provider, subject)` pairs.
+**Firebase Authentication** handles the login UX on the client
+(`src/services/firebase.js`; Google popup today, more providers are a
+Firebase-console toggle). Firebase is the identity *provider only* — the game
+session is ours: the client POSTs the Firebase ID token to `api/auth/login`,
+the server verifies it locally (RS256 against Google's published securetoken
+certs; audience = `FIREBASE_PROJECT_ID`, issuer checked — no firebase-admin
+dependency), upserts the `trainers` row keyed by `('firebase', uid)` (the uid
+stays stable when more providers are linked to the account), and issues an
+HttpOnly HMAC-signed session cookie. Every mutating endpoint reads the
+session; `trainer_id` always comes from the session, **never** the request
+body. The Firebase web config in the client is public by design; the only
+server secrets are `SESSION_SECRET` and `DATABASE_URL`.
 
 ## 8. API surface (grows with the roadmap)
 
