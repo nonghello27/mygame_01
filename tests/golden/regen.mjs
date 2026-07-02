@@ -8,11 +8,11 @@ import { writeFile } from "node:fs/promises";
 import { resolveBattle } from "../../shared/engine/resolve.js";
 import { BATTLES } from "../fixtures.mjs";
 
-for (const [name, { rosterA, rosterB }] of Object.entries(BATTLES)) {
-  const result = resolveBattle(rosterA, rosterB);
+for (const [name, { seed, rosterA, rosterB }] of Object.entries(BATTLES)) {
+  const result = resolveBattle(rosterA, rosterB, seed);
   await writeFile(
     new URL(`./${name}.json`, import.meta.url),
     JSON.stringify(result, null, 2) + "\n"
   );
-  console.log(`Wrote ${name}.json (${result.events.length} events)`);
+  console.log(`Wrote ${name}.json (${result.events.length} events, seed ${seed})`);
 }

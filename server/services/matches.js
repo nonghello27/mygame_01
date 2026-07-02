@@ -10,6 +10,7 @@
 
 import { randomUUID } from "node:crypto";
 import { resolveBattle } from "../../shared/engine/resolve.js";
+import { deriveStats } from "../../shared/rules/formulas.js";
 import { listSpecies, listStarterSpecies } from "../repos/species.js";
 import { listMonstersByTrainer, grantStarters } from "../repos/monsters.js";
 import { insertMatch, getMatch, claimResolve } from "../repos/matches.js";
@@ -66,7 +67,9 @@ export async function resolveMatch(sql, trainerId, matchId, playerOrder) {
   const rosterA = applyOrder(match.attackerSnapshot, playerOrder);
   const rosterB = match.defenderSnapshot; // lane order fixed at creation, by the server
 
-  const result = resolveBattle(rosterA, rosterB);
+  // Snapshots + stored seed in, deterministic event log out: this exact
+  // battle can be re-derived from the match row forever.
+  const result = resolveBattle(rosterA, rosterB, match.seed);
 
   if (!(await claimResolve(sql, match.id, result))) {
     throw httpError(409, "match already resolved — start a new one");
@@ -97,6 +100,11 @@ export function applyOrder(roster, order) {
   return out;
 }
 
+/**
+ * A snapshot lane: identity + traits + DERIVED battle stats + skills, frozen
+ * at match creation. Derivation happens exactly once, here — the engine and
+ * the client both consume these numbers as-is (single source of truth).
+ */
 const toLane = (m, i) => ({
   idx: i,
   // owned monsters have numeric ids; species-built (wild) lanes have none
@@ -106,9 +114,13 @@ const toLane = (m, i) => ({
   cls: m.cls,
   emoji: m.emoji,
   sprite: m.sprite,
-  hp: m.hp,
-  atk: m.atk,
-  spd: m.spd,
+  element: m.element,
+  attackKind: m.attackKind,
+  attackStyle: m.attackStyle,
+  targeting: m.targeting,
+  attrs: m.attrs,
+  ...deriveStats(m.base, m.attrs),
+  skills: m.skills ?? [],
 });
 
 /** Fisher–Yates on a copy. Match composition randomness is not part of battle

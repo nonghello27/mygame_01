@@ -3,15 +3,16 @@
 
 let uid = 0;
 
-/** Create a live unit instance from a definition. */
+/** Create a live unit instance from a snapshot lane (derived stats included). */
 export function makeUnit(def) {
+  const maxHp = def.maxHp ?? def.hp;
   return {
     ...def,
     id: "u" + uid++,
-    maxHp: def.hp,
-    hp: def.hp,
+    maxHp,
+    hp: maxHp,
     alive: true,
-    // Room to grow: statuses live here later, e.g. status: []
+    statuses: [], // status ids currently shown on the card
   };
 }
 

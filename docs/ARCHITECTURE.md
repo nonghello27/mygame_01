@@ -189,18 +189,19 @@ resolveBattle(battleState, seed) → { winner, events[], finalState }
   (`turn_start → control → choose action → choose targets → resolve →
   turn_end`). All damage flows through ONE `strike()`-equivalent choke point,
   as today.
-- **Effects are data.** An effect spec (stored in `skills.effects` etc.):
+- **Effects are data.** The implemented grammar (in `skills.data`, JSONB;
+  see `src/data/skills.js` for live examples):
 
   ```js
-  { trigger:   "battle_start" | "turn_start" | "on_hit" | "on_being_hit"
-             | "after_ally_turns" | "turn_end" | …,
-    condition: { … } | null,          // e.g. { targetHpBelowPct: 50 }
-    target:    "self"|"front_enemy"|"lowest_hp_ally"|"all_allies"|…,
-    op:        "stat_mod"|"damage"|"heal"|"apply_status"|"shield"|…,
-    amount:    { base: 10, perLevel: 2, kind: "pct"|"flat" },
-    duration:  3,                      // turns, where applicable
-    chance:    100 }                   // seeded roll
+  { power:   { scale: "phys"|"mag", pct: 120, perLevel: 5 },   // damage roll multiplier
+    target:  { rule: <targeting.js key>, count: n|"all" },     // defaults to species pattern
+    onHit:   [{ op: "apply_status", status, chance, turns, pct? }],
+    support: [{ op: "heal"|"apply_status", target: {rule,count}, … }],  // allies pool
+    passive: [{ when: "battle_start", op: "perm_stat", stat, pct?|flat? }] }
   ```
+
+  More triggers (`on_being_hit`, `after_ally_turns`, conditions) join this
+  grammar as later phases need them — as new keys, not engine branches.
 
   The engine implements the **closed set** of `trigger`s, `target` selectors,
   and `op`s in `shared/rules/`; content JSONB composes them. A genuinely new

@@ -50,7 +50,7 @@ function buildCard(u, side, lane) {
       <span class="front-flag">FRONT</span>
       <div class="unit-head">
         <div class="unit-name">${u.name}</div>
-        <div class="unit-class">${u.cls}</div>
+        <div class="unit-class">${u.cls}${elementIcon(u.element)}</div>
       </div>
       <div class="hp-wrap">
         <div class="hp-top">
@@ -60,7 +60,7 @@ function buildCard(u, side, lane) {
         <div class="hp-bar"><div class="hp-fill" style="width:${ratio * 100}%;background:${hpColor(ratio)}"></div></div>
       </div>
       <div class="stats">
-        <div class="stat" title="Attack"><span class="s-ico">⚔️</span><span class="s-val">${u.atk}</span></div>
+        <div class="stat" title="Attack"><span class="s-ico">⚔️</span><span class="s-val">${atkLabel(u)}</span></div>
         <div class="stat" title="Speed"><span class="s-ico">⚡</span><span class="s-val">${u.spd}</span></div>
       </div>
     </div>
@@ -74,6 +74,17 @@ function buildCard(u, side, lane) {
   // server's match snapshot (rearranging it client-side would be a lie).
   if (state.phase === "setup" && side === "a") enableDragSwap(card, side, renderBoard);
   return card;
+}
+
+const ELEMENT_ICONS = {
+  fire: "🔥", water: "💧", wind: "🌪️", earth: "⛰️", holy: "✨", dark: "🌑",
+};
+const elementIcon = (el) => (ELEMENT_ICONS[el] ? ` ${ELEMENT_ICONS[el]}` : "");
+
+/** "34–38" for v2 lanes (magic attackers show their MATK roll); plain atk otherwise. */
+function atkLabel(u) {
+  const [lo, hi] = u.attackStyle === "mag" ? [u.matkMin, u.matkMax] : [u.atkMin, u.atkMax];
+  return lo !== undefined ? `${lo}–${hi}` : u.atk;
 }
 
 function markFront() {
@@ -100,12 +111,12 @@ export function updateCardHp(unit) {
   setTimeout(() => card.classList.remove("hit"), 340);
 }
 
-/** Floating "-N" over a card (used when cinematic mode is off). */
+/** Floating "-N" (or a word like MISS) over a card. */
 export function floatDamage(card, dmg) {
   const r = card.getBoundingClientRect();
   const f = document.createElement("div");
   f.className = "dmg-float";
-  f.textContent = "-" + dmg;
+  f.textContent = typeof dmg === "number" ? "-" + dmg : dmg;
   f.style.left = r.left + r.width / 2 + "px";
   f.style.top = r.top + 8 + "px";
   document.body.appendChild(f);

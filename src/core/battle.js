@@ -41,9 +41,18 @@ export async function runBattle({ setStatus, showWinner }) {
   }
 
   for (const ev of result.events) {
-    if (ev.t === "duel") await replayDuel(ev, setStatus);
+    if (ev.t === "turn") await replayTurn(ev, setStatus);
+    else if (ev.t === "skill") replaySkill(ev);
     else if (ev.t === "strike") await replayStrike(ev);
+    else if (ev.t === "miss") await replayMiss(ev);
+    else if (ev.t === "dot") await replayDot(ev);
+    else if (ev.t === "status") replayStatus(ev);
+    else if (ev.t === "status_end") replayStatusEnd(ev);
+    else if (ev.t === "heal") await replayHeal(ev);
+    else if (ev.t === "buff") replayBuff(ev);
+    else if (ev.t === "skip") await replaySkip(ev);
     else if (ev.t === "fall") await replayFall(ev);
+    else if (ev.t === "draw") log("Neither side can finish it — the battle is a draw.", true);
   }
 
   const survivor = result.survivor ? unitByRef(result.survivor) : null;
@@ -65,15 +74,71 @@ function unitByRef(ref) {
   return arr.find((u) => u.idx === ref.idx) || null;
 }
 
-/** New matchup: announce the two front-liners. */
-async function replayDuel(ev, setStatus) {
-  const a = unitByRef(ev.a);
-  const b = unitByRef(ev.b);
-  if (a && b) {
-    setStatus(`${a.name} vs ${b.name}`);
-    log(`— ${nameSpan(a, "a")} (${a.cls}) faces ${nameSpan(b, "b")} (${b.cls}) —`, true);
-  }
-  await sleep(state.cinematic ? 250 : 500);
+/** A unit's readiness gauge filled — its turn begins. */
+async function replayTurn(ev, setStatus) {
+  const u = unitByRef(ev);
+  if (u) setStatus(`${u.name}'s turn`);
+  await sleep(state.cinematic ? 120 : 250);
+}
+
+function replaySkill(ev) {
+  const u = unitByRef(ev);
+  if (u) log(`${nameSpan(u, ev.side)} uses <b>${ev.name}</b>!`, true);
+}
+
+async function replayMiss(ev) {
+  const att = unitByRef(ev.att);
+  const def = unitByRef(ev.def);
+  if (!att || !def) return;
+  const card = cardEl(def.id);
+  if (card) floatDamage(card, "MISS");
+  log(`${nameSpan(att, ev.att.side)} misses ${nameSpan(def, ev.def.side)}.`);
+  await sleep(state.cinematic ? 240 : 400);
+}
+
+/** Burn/poison tick at the start of a unit's turn. */
+async function replayDot(ev) {
+  const u = unitByRef(ev);
+  if (!u) return;
+  u.hp = ev.after;
+  const card = cardEl(u.id);
+  if (card) floatDamage(card, ev.dmg);
+  updateCardHp(u);
+  log(`${nameSpan(u, ev.side)} suffers <b>${ev.dmg}</b> from ${ev.status}.`);
+  await sleep(300);
+}
+
+function replayStatus(ev) {
+  const u = unitByRef(ev);
+  if (!u) return;
+  if (!u.statuses.includes(ev.status)) u.statuses.push(ev.status);
+  log(`${nameSpan(u, ev.side)} is afflicted: <b>${ev.status}</b> (${ev.turns} turns).`);
+}
+
+function replayStatusEnd(ev) {
+  const u = unitByRef(ev);
+  if (u) u.statuses = u.statuses.filter((s) => s !== ev.status);
+}
+
+async function replayHeal(ev) {
+  const u = unitByRef(ev);
+  if (!u) return;
+  u.hp = ev.after;
+  updateCardHp(u);
+  log(`${nameSpan(u, ev.side)} recovers <b>${ev.amount}</b> HP.`);
+  await sleep(300);
+}
+
+function replayBuff(ev) {
+  const u = unitByRef(ev);
+  if (u) log(`${nameSpan(u, ev.side)}'s passive raises its ${ev.stat}.`);
+}
+
+async function replaySkip(ev) {
+  const u = unitByRef(ev);
+  if (!u) return;
+  log(`${nameSpan(u, ev.side)} is stunned and cannot act!`, true);
+  await sleep(400);
 }
 
 /**
@@ -95,7 +160,11 @@ async function replayStrike(ev) {
   if (dCard && !state.cinematic) floatDamage(dCard, ev.dmg);
   updateCardHp(def);
 
-  log(`${nameSpan(att, ev.att.side)} hits ${nameSpan(def, ev.def.side)} for <b>${ev.dmg}</b>.`);
+  const notes = [
+    ev.crit ? " <b>CRIT!</b>" : "",
+    ev.eff === "strong" ? " It's super effective!" : ev.eff === "weak" ? " It's resisted." : "",
+  ].join("");
+  log(`${nameSpan(att, ev.att.side)} hits ${nameSpan(def, ev.def.side)} for <b>${ev.dmg}</b>.${notes}`);
   await sleep(state.cinematic ? 180 : 620);
 }
 

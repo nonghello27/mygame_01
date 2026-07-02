@@ -1,5 +1,5 @@
 // SQL for the monster_species MASTER table (read-only at runtime; rows come
-// from db/seed.mjs).
+// from db/seed.mjs). Skills are aggregated in so a species row is battle-ready.
 
 function shape(r) {
   return {
@@ -7,24 +7,33 @@ function shape(r) {
     name: r.name,
     cls: r.cls,
     emoji: r.emoji,
-    hp: r.hp,
-    atk: r.atk,
-    spd: r.spd,
     sprite: r.sprite,
     starter: r.starter,
+    element: r.element,
+    attackKind: r.attack_kind,
+    attackStyle: r.attack_style,
+    targeting: r.targeting,
+    base: { hp: r.hp, atk: r.atk, spd: r.spd },
+    attrs: { str: r.str, agi: r.agi, vit: r.vit, int: r.intl, dex: r.dex },
+    skills: r.skills,
   };
 }
 
-export async function listSpecies(sql) {
+export async function listSpecies(sql, starterOnly = false) {
   const rows = await sql`
-    SELECT id, name, cls, emoji, hp, atk, spd, sprite, starter
-    FROM monster_species ORDER BY id`;
+    SELECT s.*,
+      COALESCE(
+        (SELECT json_agg(json_build_object(
+                  'id', sk.id, 'name', sk.name, 'slot', sk.slot,
+                  'cooldown', sk.cooldown, 'data', sk.data, 'level', 1)
+                ORDER BY ss.slot)
+         FROM species_skills ss JOIN skills sk ON sk.id = ss.skill_id
+         WHERE ss.species_id = s.id),
+        '[]'::json) AS skills
+    FROM monster_species s
+    WHERE s.starter OR NOT ${starterOnly}
+    ORDER BY s.id`;
   return rows.map(shape);
 }
 
-export async function listStarterSpecies(sql) {
-  const rows = await sql`
-    SELECT id, name, cls, emoji, hp, atk, spd, sprite, starter
-    FROM monster_species WHERE starter ORDER BY id`;
-  return rows.map(shape);
-}
+export const listStarterSpecies = (sql) => listSpecies(sql, true);

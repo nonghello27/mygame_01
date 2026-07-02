@@ -1,0 +1,879 @@
+{
+  "youWin": true,
+  "draw": false,
+  "survivor": {
+    "side": "a",
+    "idx": 0
+  },
+  "events": [
+    {
+      "t": "buff",
+      "side": "a",
+      "idx": 0,
+      "stat": "maxHp",
+      "skill": "sk_tough"
+    },
+    {
+      "t": "buff",
+      "side": "a",
+      "idx": 1,
+      "stat": "crit",
+      "skill": "sk_keen_eye"
+    },
+    {
+      "t": "buff",
+      "side": "a",
+      "idx": 2,
+      "stat": "spd",
+      "skill": "sk_swift"
+    },
+    {
+      "t": "buff",
+      "side": "b",
+      "idx": 0,
+      "stat": "maxHp",
+      "skill": "sk_tough"
+    },
+    {
+      "t": "buff",
+      "side": "b",
+      "idx": 1,
+      "stat": "crit",
+      "skill": "sk_keen_eye"
+    },
+    {
+      "t": "buff",
+      "side": "b",
+      "idx": 2,
+      "stat": "spd",
+      "skill": "sk_swift"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 1,
+      "skill": "sk_piercing_shot",
+      "name": "Piercing Shot"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 1
+      },
+      "dmg": 52,
+      "before": 171,
+      "after": 119,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_piercing_shot"
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 2,
+      "skill": "sk_water_bolt",
+      "name": "Water Bolt"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 2
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 6,
+      "before": 241,
+      "after": 235,
+      "crit": false,
+      "eff": "weak",
+      "skill": "sk_water_bolt"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 2,
+      "skill": "sk_fire_lance",
+      "name": "Fire Lance"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 2
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 46,
+      "before": 277,
+      "after": 231,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_fire_lance"
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 1,
+      "skill": "sk_dark_slash",
+      "name": "Dark Slash"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 41,
+      "before": 235,
+      "after": 194,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_dark_slash"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 1,
+      "skill": "sk_piercing_shot",
+      "name": "Piercing Shot"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 1
+      },
+      "dmg": 46,
+      "before": 119,
+      "after": 73,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_piercing_shot"
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 2,
+      "skill": "sk_water_bolt",
+      "name": "Water Bolt"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 2
+      },
+      "def": {
+        "side": "a",
+        "idx": 2
+      },
+      "dmg": 70,
+      "before": 153,
+      "after": 83,
+      "crit": true,
+      "eff": "strong",
+      "skill": "sk_water_bolt"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 0
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 0,
+      "skill": "sk_power_strike",
+      "name": "Power Strike"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 0
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 38,
+      "before": 231,
+      "after": 193,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_power_strike"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 2,
+      "skill": "sk_fire_lance",
+      "name": "Fire Lance"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 2
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 71,
+      "before": 193,
+      "after": 122,
+      "crit": true,
+      "eff": null,
+      "skill": "sk_fire_lance"
+    },
+    {
+      "t": "status",
+      "side": "b",
+      "idx": 0,
+      "status": "burn",
+      "turns": 2,
+      "from": {
+        "side": "a",
+        "idx": 2
+      }
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 1,
+      "skill": "sk_dark_slash",
+      "name": "Dark Slash"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 42,
+      "before": 194,
+      "after": 152,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_dark_slash"
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 2,
+      "skill": "sk_water_bolt",
+      "name": "Water Bolt"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 2
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 7,
+      "before": 152,
+      "after": 145,
+      "crit": false,
+      "eff": "weak",
+      "skill": "sk_water_bolt"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 1,
+      "skill": "sk_piercing_shot",
+      "name": "Piercing Shot"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 1
+      },
+      "dmg": 50,
+      "before": 73,
+      "after": 23,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_piercing_shot"
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 0
+    },
+    {
+      "t": "dot",
+      "side": "b",
+      "idx": 0,
+      "status": "burn",
+      "dmg": 22,
+      "before": 122,
+      "after": 100
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 0,
+      "skill": "sk_crush",
+      "name": "Crush"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 0
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 44,
+      "before": 145,
+      "after": 101,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_crush"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 2,
+      "skill": "sk_fire_lance",
+      "name": "Fire Lance"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 2
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 45,
+      "before": 100,
+      "after": 55,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_fire_lance"
+    },
+    {
+      "t": "status",
+      "side": "b",
+      "idx": 0,
+      "status": "burn",
+      "turns": 2,
+      "from": {
+        "side": "a",
+        "idx": 2
+      }
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 2,
+      "skill": "sk_water_bolt",
+      "name": "Water Bolt"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 2
+      },
+      "def": {
+        "side": "a",
+        "idx": 1
+      },
+      "dmg": 40,
+      "before": 112,
+      "after": 72,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_water_bolt"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 1,
+      "skill": "sk_arrow_rain",
+      "name": "Rain of Arrows"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 12,
+      "before": 55,
+      "after": 43,
+      "crit": false,
+      "eff": "strong",
+      "skill": "sk_arrow_rain"
+    },
+    {
+      "t": "miss",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 1
+      }
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 2
+      },
+      "dmg": 50,
+      "before": 110,
+      "after": 60,
+      "crit": true,
+      "eff": null,
+      "skill": "sk_arrow_rain"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 0
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 0,
+      "skill": "sk_power_strike",
+      "name": "Power Strike"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 0
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 40,
+      "before": 43,
+      "after": 3,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_power_strike"
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 1,
+      "skill": "sk_dark_slash",
+      "name": "Dark Slash"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 40,
+      "before": 101,
+      "after": 61,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_dark_slash"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 2,
+      "skill": "sk_fire_lance",
+      "name": "Fire Lance"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 2
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 47,
+      "before": 3,
+      "after": 0,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_fire_lance"
+    },
+    {
+      "t": "fall",
+      "side": "b",
+      "idx": 0
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 1,
+      "skill": "sk_piercing_shot",
+      "name": "Piercing Shot"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 2
+      },
+      "dmg": 46,
+      "before": 60,
+      "after": 14,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_piercing_shot"
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 2,
+      "skill": "sk_frost_nova",
+      "name": "Frost Nova"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 2
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 7,
+      "before": 61,
+      "after": 54,
+      "crit": false,
+      "eff": "weak",
+      "skill": "sk_frost_nova"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 2
+      },
+      "def": {
+        "side": "a",
+        "idx": 1
+      },
+      "dmg": 31,
+      "before": 72,
+      "after": 41,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_frost_nova"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 2
+      },
+      "def": {
+        "side": "a",
+        "idx": 2
+      },
+      "dmg": 36,
+      "before": 83,
+      "after": 47,
+      "crit": false,
+      "eff": "strong",
+      "skill": "sk_frost_nova"
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 1,
+      "skill": "sk_terror",
+      "name": "Terrorize"
+    },
+    {
+      "t": "miss",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      }
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 2,
+      "skill": "sk_inferno",
+      "name": "Inferno"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 2
+      },
+      "def": {
+        "side": "b",
+        "idx": 1
+      },
+      "dmg": 60,
+      "before": 23,
+      "after": 0,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_inferno"
+    },
+    {
+      "t": "fall",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 2
+    },
+    {
+      "t": "skill",
+      "side": "b",
+      "idx": 2,
+      "skill": "sk_water_bolt",
+      "name": "Water Bolt"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 2
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 7,
+      "before": 54,
+      "after": 47,
+      "crit": false,
+      "eff": "weak",
+      "skill": "sk_water_bolt"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 1,
+      "skill": "sk_piercing_shot",
+      "name": "Piercing Shot"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 2
+      },
+      "dmg": 12,
+      "before": 14,
+      "after": 2,
+      "crit": false,
+      "eff": null,
+      "skill": "sk_piercing_shot"
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 0
+    },
+    {
+      "t": "skill",
+      "side": "a",
+      "idx": 0,
+      "skill": "sk_power_strike",
+      "name": "Power Strike"
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 0
+      },
+      "def": {
+        "side": "b",
+        "idx": 2
+      },
+      "dmg": 48,
+      "before": 2,
+      "after": 0,
+      "crit": false,
+      "eff": "strong",
+      "skill": "sk_power_strike"
+    },
+    {
+      "t": "fall",
+      "side": "b",
+      "idx": 2
+    }
+  ]
+}

@@ -1,0 +1,465 @@
+{
+  "youWin": false,
+  "draw": false,
+  "survivor": {
+    "side": "b",
+    "idx": 1
+  },
+  "events": [
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 15,
+      "before": 100,
+      "after": 85,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 0
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 0
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 30,
+      "before": 120,
+      "after": 90,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 0
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 0
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 25,
+      "before": 85,
+      "after": 60,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 20,
+      "before": 90,
+      "after": 70,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 15,
+      "before": 60,
+      "after": 45,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 0
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 0
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 30,
+      "before": 70,
+      "after": 40,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 0
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 0
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 25,
+      "before": 45,
+      "after": 20,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 15,
+      "before": 20,
+      "after": 5,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 20,
+      "before": 40,
+      "after": 20,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 0
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 0
+      },
+      "def": {
+        "side": "b",
+        "idx": 0
+      },
+      "dmg": 30,
+      "before": 20,
+      "after": 0,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "fall",
+      "side": "b",
+      "idx": 0
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 0
+      },
+      "dmg": 15,
+      "before": 5,
+      "after": 0,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "fall",
+      "side": "a",
+      "idx": 0
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 1
+      },
+      "dmg": 15,
+      "before": 80,
+      "after": 65,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 1
+      },
+      "dmg": 20,
+      "before": 100,
+      "after": 80,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 1
+      },
+      "dmg": 15,
+      "before": 65,
+      "after": 50,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 1
+      },
+      "dmg": 20,
+      "before": 80,
+      "after": 60,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 1
+      },
+      "dmg": 15,
+      "before": 50,
+      "after": 35,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 1
+      },
+      "dmg": 15,
+      "before": 35,
+      "after": 20,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "a",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "a",
+        "idx": 1
+      },
+      "def": {
+        "side": "b",
+        "idx": 1
+      },
+      "dmg": 20,
+      "before": 60,
+      "after": 40,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 1
+      },
+      "dmg": 15,
+      "before": 20,
+      "after": 5,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "turn",
+      "side": "b",
+      "idx": 1
+    },
+    {
+      "t": "strike",
+      "att": {
+        "side": "b",
+        "idx": 1
+      },
+      "def": {
+        "side": "a",
+        "idx": 1
+      },
+      "dmg": 15,
+      "before": 5,
+      "after": 0,
+      "crit": false,
+      "eff": null,
+      "skill": null
+    },
+    {
+      "t": "fall",
+      "side": "a",
+      "idx": 1
+    }
+  ]
+}

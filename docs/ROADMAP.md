@@ -65,23 +65,33 @@ Turned "two hardcoded armies" into "your monsters vs a server-picked enemy".
 server-chosen enemy; illegal orders and replayed matchIds are rejected;
 results are rows in `matches`.
 
-## Phase 3 — Battle engine v2 (the heart; biggest phase)
+## Phase 3 — Battle engine v2 ✅ DONE (2026-07-02)
 
-Implement ARCHITECTURE §5 in `shared/engine/`, test-first.
+ARCHITECTURE §5 implemented in `shared/engine/` + `shared/rules/`, test-first.
 
-1. Readiness loop + seeded RNG, melee-only flat damage — must reproduce
-   v1 outcomes (golden tests) before anything new.
-2. Attributes (STR/AGI/VIT/INT/DEX → derived stats), ATK min–max rolls,
-   elements chart, melee/range + targeting registry + front-line penalty.
-3. Effect system (triggers/ops/targets from JSONB) + statuses
-   (stun, freeze, burn, poison, curse).
-4. Skills: master `skills` table, 4 slots, cooldowns, ultimates.
-5. Client replayer + cutscenes extended for the new event types
-   (skill cast, status applied/ticked, skip, multi-target).
+- ✅ Readiness (ATB) loop: gauges fill by effective SPD, threshold subtract
+  with overflow carry, seeded-rng tie-breaks; the stored match seed now
+  drives every roll. TURN_CAP → draw.
+- ✅ Attributes STR/AGI/VIT/INT/DEX → derived stats (`shared/rules/
+  formulas.js`, computed ONCE in the match snapshot), ATK/MATK min–max
+  rolls, crit/evade/accuracy, element chart, melee/range + targeting
+  registry + 25% front-line penalty for range.
+- ✅ Data-driven skills (master `skills` + `species_skills` + `monster_skills`
+  tables, 4 slots, ultimates start on cooldown) and statuses (stun, freeze,
+  burn, poison, atk up/down) interpreted from JSONB by a closed op set.
+- ✅ Replayer handles the new events (turn/skill/miss/dot/status/heal/buff/
+  skip/draw); cards show element + attack range.
+- Design note: the planned "v1 parity gate" was dropped deliberately — a
+  speed-gauge system cannot reproduce v1's strict alternating duels (faster
+  units now act more often, which is the point). v1 was retired outright;
+  v2 has its own golden suite (`battle-skirmish`, `battle-plain`) plus
+  seed-independent behavior tests (`tests/engine.test.mjs`).
+- Not yet: DEF/mitigation stat, trainer skills in battle (Phase 5), monster
+  growth feeding the attributes (Phase 4).
 
-**Start here:** engine skeleton + the v1-parity golden test.
-**Done when:** a scripted fixture battle with skills/statuses produces a
-stable golden log, and the client replays it watchably.
+**Done when (verified):** fixture battles with skills/statuses produce stable
+golden logs; a real match resolves through the full pipeline (passive buffs,
+skills, misses, burns, stuns) and replays in the client.
 
 ## Phase 4 — Economy: work & training
 

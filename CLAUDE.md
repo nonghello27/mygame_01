@@ -23,9 +23,9 @@ The vision and plans live in `docs/` — treat them as part of this file:
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — target directory layout,
   data model (master/instance tables), battle **engine v2** spec, API surface.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — phased build order. **When asked
-  "what next?", answer from here.** Current position: Phases 0–2 complete
-  (Firebase auth; owned monsters; tamper-proof match sessions); next up is
-  Phase 3 (battle engine v2).
+  "what next?", answer from here.** Current position: Phases 0–3 complete
+  (Firebase auth; owned monsters; tamper-proof matches; battle engine v2);
+  next up is Phase 4 (economy: work & training).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -97,16 +97,17 @@ per roadmap phase, don't big-bang rename.)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
-│   └── engine/
-│       ├── resolve.js      # the engine — runs on the server; source of truth
-│       └── rng.js          # seeded PRNG (mulberry32); ALL outcome randomness
+│   ├── engine/
+│   │   ├── resolve.js      # engine v2: readiness loop + turn pipeline; source of truth
+│   │   └── rng.js          # seeded PRNG (mulberry32); ALL outcome randomness
+│   └── rules/              # balance data: formulas, elements, targeting, statuses
 ├── tests/                  # node --test; fixtures.mjs + golden/ (regen.mjs)
 ├── public/sprites/         # uNN.png sheets + TEMPLATE.md (art spec)
 └── src/
     ├── main.js             # ENTRY: imports CSS, inits modules, wires buttons
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board.css | cutscene.css | sprite.css
-    ├── data/               # static content: classes.js, sprites.js, units.js
+    ├── data/               # seed content: classes.js, sprites.js, units.js, skills.js
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js
     ├── core/
     │   ├── units.js        # makeUnit(), cloneRoster()
@@ -119,12 +120,15 @@ per roadmap phase, don't big-bang rename.)
 
 ### Current data model & combat flow
 
-Master/instance in action: `monster_species` (master, seeded from
-`src/data/units.js`; `starter` species are granted to new trainers on their
-first match) → `monsters` (instance rows owned by a trainer). A battle lane is
-`{ idx, monsterId, speciesId, name, cls, emoji, sprite, hp, atk, spd }`; the
-stable `idx` (lane index in the match snapshot) is the only identity the
-client and server exchange. Two linking keys: **`cls`** → attack name/fx
+Master/instance in action: `monster_species` + `species_skills` (master,
+seeded from `src/data/units.js` + `skills.js`; `starter` species are granted
+to new trainers on their first match) → `monsters` + `monster_skills`
+(instance rows owned by a trainer; attributes and skill levels grow
+per-instance). A battle lane = identity (`idx`, monsterId, speciesId) +
+traits (element, attackKind, attackStyle, targeting) + DERIVED stats (maxHp,
+atkMin/Max, matkMin/Max, spd, crit, evade, acc — computed once by
+`deriveStats()` in the match snapshot) + `skills[]` with their JSONB data.
+The stable `idx` is the only identity the client and server exchange. Two linking keys: **`cls`** → attack name/fx
 (`data/classes.js` → cutscene), **`sprite`** → sheet in `data/sprites.js`
 (falls back to `emoji`). Nothing in `core/`/`ui/` calls the API directly —
 always via `services/content.js`.
@@ -133,13 +137,21 @@ Flow: login → `POST /api/match` (server assembles YOUR team from `monsters`,
 picks + freezes the enemy team/order, mints + stores the seed in `matches`) →
 drag your lanes only → `POST /api/battle {matchId, playerOrder}` (permutation
 gate `applyOrder()` in `server/services/matches.js`; each match resolves
-exactly once — replays get 409) → server runs `resolveBattle()` from the
-snapshots and persists the result → client replays `duel`/`strike`/`fall`
-events (cutscenes, HP bars, lane shifts). Damage has ONE choke point:
-`strike()` in `shared/engine/resolve.js`. Combat rules change ⇒ change the
-engine (its golden tests will diff — regenerate via `node tests/golden/regen.mjs`
-in the same commit) and usually add an event field for the replayer; never
-compute outcomes client-side.
+exactly once — replays get 409) → server runs `resolveBattle(A, B, seed)`
+from the snapshots and persists the result → client replays the event log
+(`turn`/`skill`/`strike`/`miss`/`dot`/`status`/`heal`/`buff`/`skip`/`fall`/
+`draw`) — cutscenes, HP bars, lane shifts; the replayer never does math.
+
+Engine v2 (`shared/engine/resolve.js`): readiness gauges fill by effective
+SPD (threshold subtract, overflow carries) → per turn: status ticks →
+control check → ultimate-if-ready else normal else basic attack → targeting
+registry → damage. ALL rolls go through the seeded rng; same snapshot + seed
+⇒ same log. Damage has ONE choke point: `strike()`. Skills/statuses are
+JSONB rows interpreted by the closed op set (`shared/rules/`); adding content
+must not add engine branches. Combat rules change ⇒ change the engine/rules
+(golden tests will diff — regenerate via `node tests/golden/regen.mjs` in the
+same commit) and usually add an event field for the replayer; never compute
+outcomes client-side.
 
 ## 4. Recipes for TODAY's code
 
@@ -151,12 +163,15 @@ compute outcomes client-side.
 - **Add a unit class:** `data/classes.js` entry → `cutscene/portraits.js`
   case → `cutscene/effects.js` case + `.fx-<fx>` keyframes in
   `styles/cutscene.css` → use in a roster.
-- **Add a stat:** def + `monster_species`/`monsters` columns (new migration)
-  + repos/`toLane()` in `server/services/matches.js` → card markup in
-  `ui/board.js` → apply in `strike()`.
-- **Bigger mechanics (statuses, skills, new stats):** these belong to battle
-  **engine v2** — follow ARCHITECTURE §5 and the roadmap phase, don't bolt
-  them onto v1.
+- **Add a skill:** row in `src/data/skills.js` (power/target/onHit/support/
+  passive grammar) → assign in a species' `skills` in `units.js` →
+  `npm run db:seed`. No engine change. New status id or targeting rule ⇒ one
+  entry in `shared/rules/statuses.js` / `targeting.js`.
+- **Add a stat:** attrs live in `monster_species`/`monsters` (new migration);
+  derived stats in `shared/rules/formulas.js` `deriveStats()`; consumed via
+  `toLane()` in `server/services/matches.js` → card markup in `ui/board.js`.
+- **Change balance:** numbers in `shared/rules/` + `src/data/` only; golden
+  tests will diff — regenerate intentionally in the same commit.
 
 ## 5. Conventions
 
@@ -179,8 +194,8 @@ compute outcomes client-side.
 
 ## 6. Known gaps (today)
 
-- Teams fixed at 3; flat damage; no defense/crit/variance/elements/skills
-  (all addressed by engine v2, roadmap Phase 3).
+- Teams fixed at 3; no DEF/mitigation stat; trainer skills don't join the
+  battle yet (Phase 5); runes/equipment don't exist yet (Phase 6).
 - Monsters don't grow yet — no exp/training, gold is always 0 (Phase 4);
   battle wins award nothing.
 - Opponents are random species teams, not other trainers' formations
