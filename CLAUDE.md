@@ -23,10 +23,10 @@ The vision and plans live in `docs/` — treat them as part of this file:
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — target directory layout,
   data model (master/instance tables), battle **engine v2** spec, API surface.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — phased build order. **When asked
-  "what next?", answer from here.** Current position: Phases 0–5 complete
+  "what next?", answer from here.** Current position: Phases 0–6 complete
   (Firebase auth; owned monsters; tamper-proof matches; battle engine v2;
-  work & training economy; admin console for master data); next up is
-  Phase 6 (PVP ladder & trainer progression).
+  work & training economy; admin console for master data; PVP ladder &
+  trainer progression); next up is Phase 7 (acquisition & itemization).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -88,17 +88,26 @@ per roadmap phase, don't big-bang rename.)
 │   ├── me.js               # GET  -> trainer for the session; settles finished jobs first
 │   ├── classes.js          # GET  /api/classes  -> class metadata
 │   ├── activities.js       # GET farm state | POST {monsterId, jobId} start a job
-│   ├── match.js            # POST -> open a match: server picks/freezes enemy + seed
+│   ├── match.js            # POST {mode?} -> open a match: free (default) or pvp
 │   ├── battle.js           # POST {matchId, playerOrder} -> resolve once, persist
+│   ├── progression.js      # GET/POST -> expertise + trainer-skill picture; POST picks expertise
+│   ├── trainer-skills.js   # POST {slot, skillId} -> learn/clear a trainer-skill slot
+│   ├── formation.js        # GET/POST -> the trainer's saved defense formation
+│   ├── ladder.js           # GET -> season + top ranks + this trainer's rank
 │   └── admin/              # admin-only master-data CRUD (is_admin re-checked per call)
 │       ├── master.js       # GET everything: 4 master tables + engine enum registries
 │       └── {classes,skills,species,jobs}.js  # POST upsert | DELETE (guarded)
 ├── server/                 # server-only logic (imported by api/, never by src/)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg), shared by services
-│   ├── repos/              # SQL: trainers, species, monsters, matches, activities, admin
-│   └── services/           # matches.js (applyOrder gate), activities.js (lazy settle),
-│                           # admin.js (gate + CRUD) + adminValidate.js (pure grammar)
+│   ├── repos/              # SQL: trainers, species, monsters, matches, activities, admin,
+│   │                       # progression (expertises/trainer_skill_defs/trainer_skills),
+│   │                       # pvp (formations, seasons, rank_entries, matchmaking)
+│   └── services/           # matches.js (applyOrder gate + PVP Elo on resolve),
+│                           # activities.js (lazy settle), admin.js (gate + CRUD) +
+│                           # adminValidate.js (pure grammar), progression.js (expertise/
+│                           # learn-slot use-cases), pvp.js (defense formation, lazy season
+│                           # rollover, matchmaking)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
@@ -107,20 +116,23 @@ per roadmap phase, don't big-bang rename.)
 │   ├── engine/
 │   │   ├── resolve.js      # engine v2: readiness loop + turn pipeline; source of truth
 │   │   └── rng.js          # seeded PRNG (mulberry32); ALL outcome randomness
-│   └── rules/              # balance data: formulas, elements, targeting, statuses
+│   └── rules/              # balance data: formulas, elements, targeting, statuses,
+│                           # progression (expertise unlock exp, learn-slot validation),
+│                           # pvp (Elo delta, season-end reward tiers)
 ├── tests/                  # node --test; fixtures.mjs + golden/ (regen.mjs)
 ├── public/sprites/         # uNN.png sheets + TEMPLATE.md (art spec)
 └── src/
     ├── main.js             # ENTRY: imports CSS, inits modules, wires buttons
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm | admin
-    ├── data/               # seed content: classes, sprites, units, skills, jobs
+    ├── data/               # seed content: classes, sprites, units, skills, jobs, expertises
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js, admin.js
     ├── core/
     │   ├── units.js        # makeUnit(), cloneRoster()
     │   ├── state.js        # shared state + initContent()/resetState()
     │   └── battle.js       # client REPLAYER: requestBattle() + animate events
-    ├── ui/                 # board, sprite, dragdrop, log, chroma, auth, farm, admin
+    ├── ui/                 # board, sprite, dragdrop, log, chroma, auth, farm, admin,
+    │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise + skills)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -181,6 +193,27 @@ instance rows reference the master row. CAVEAT: `npm run db:seed` upserts
 from `src/data/*.js` and overwrites admin edits to rows with the same ids —
 once you edit live, the DB is the source of truth for those rows.
 
+PVP (Phase 6): `expertises` + `trainer_skill_defs` (master, seeded from
+`src/data/expertises.js`) → `trainer_skills` (instance; 2 fixed learn slots,
+switching expertise wipes both atomically). A trainer saves a 3-monster
+`formations`/`formation_slots` row (`purpose='defense'`) as the team PVP
+attackers fight while they're offline. `POST /api/match {mode:"pvp"}`
+matches the attacker's own available roster against another trainer's
+complete defense formation drawn from a small pool ordered by rating
+proximity (`listPvpCandidates`); both sides' derived-stat lanes AND
+trainer-skill snapshots freeze into the `matches` row (`kind='pvp'`,
+`defender_id`, `attacker_trainer`/`defender_trainer`) exactly like free
+matches freeze the enemy team. `resolveBattle`'s 4th arg feeds those frozen
+skills into the engine's `battle_start`/`after_ally_turns` triggers (`tskill`
+events). Elo (`shared/rules/pvp.js`, K=32) is applied to both sides' ratings
+exactly once, only after the resolve claim is won, so a replay can't
+double-apply it. Seasons roll over lazily (`ensureSeason`, same
+read-then-claim shape as `settleActivities`) on every PVP read/write —
+closing an expired season pays out gold by rank tier and opens the next one.
+The Arena panel (`src/ui/pvp.js`) is the ladder + defense editor; the
+Trainer panel (`src/ui/trainer.js`) is expertise + skill-slot picking —
+both pure display over their `/api/*` reads.
+
 ## 4. Recipes for TODAY's code
 
 - **Add a species / skill / class / job (live):** admin console (⚙ button)
@@ -229,12 +262,16 @@ once you edit live, the DB is the source of truth for those rows.
 
 ## 6. Known gaps (today)
 
-- Teams fixed at 3; no DEF/mitigation stat; trainer skills don't join the
-  battle yet (Phase 6); runes/equipment don't exist yet (Phase 7).
-- Battle wins still award nothing (gold/exp come from work jobs only);
-  monsters have no level/exp of their own — training raises attributes
-  directly. Gold has nothing to buy yet (marketplace/summons are Phase 7).
-- Opponents are random species teams, not other trainers' formations
-  (PVP defense formations are Phase 6). No sound.
+- Teams fixed at 3; no DEF/mitigation stat; runes/equipment don't exist yet
+  (Phase 7). Trainer skills DO join battle now (Phase 6, `battle_start`/
+  `after_ally_turns` triggers).
+- Battle wins still award nothing directly (gold/exp come from work jobs
+  only; PVP moves rating only, no gold/exp) — season-end payouts are the one
+  exception, and those are lazy/passive, not per-battle. Monsters have no
+  level/exp of their own — training raises attributes directly. Gold has
+  nothing to buy yet (marketplace/summons are Phase 7).
+- Opponents in a `mode:"pvp"` match ARE real trainers' saved defense
+  formations now (matched by rating proximity); free matches (default mode)
+  are still random species teams. No sound.
 - Migration runner splits statements on `;` after stripping full-line
   comments — don't put semicolons inside inline `--` comments in migrations.

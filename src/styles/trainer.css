@@ -1,0 +1,52 @@
+/* Trainer panel (src/ui/trainer.js) — expertise + trainer-skill slots. Same
+   chrome family as the farm/admin/arena panels. */
+
+.trainer-panel{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.trainer-panel h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+}
+
+.tr-msgs{padding:0 14px}
+.tr-msgs p{margin:9px 0 0;font-size:13px;color:var(--hp-good)}
+.tr-msgs p.err{color:var(--hp-low)}
+
+.tr-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:14px}
+
+.tr-exp{margin:0;font-size:13px;color:var(--muted)}
+.tr-exp b{font-size:16px;color:var(--text)}
+.tr-note{margin:0;font-size:12.5px;color:var(--muted)}
+
+.tr-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.tr-card{
+  background:var(--bg-2);border:1px solid var(--line);border-radius:11px;padding:12px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.tr-card.active{border-color:var(--a-deep);background:var(--a-soft)}
+.tr-card h4{margin:0;font-size:14px}
+.tr-card ul{margin:0;padding-left:18px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.tr-card-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tr-warn{margin:0;font-size:12px;color:var(--hp-low)}
+
+.tr-badge{
+  font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:3px 9px;
+}
+
+.tr-slots{display:flex;flex-direction:column;gap:10px}
+.tr-slot{
+  display:flex;flex-direction:column;gap:6px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:10px 12px;
+}
+.tr-slot-label{font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted)}
+.tr-slot select{
+  background:var(--panel-2);color:var(--text);border:1px solid var(--line-strong);
+  border-radius:9px;padding:8px 10px;font-size:12.5px;font-family:inherit;
+}
+.tr-slot-summary{margin:0;font-size:12px;color:var(--muted)}
+
+button.btn.tr-small{padding:7px 14px;font-size:12px}

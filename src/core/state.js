@@ -17,6 +17,8 @@ export const state = {
   phase: "setup",
   /** show full battle cutscenes vs. quick card-only damage */
   cinematic: true,
+  /** the PVP opponent {name, rating} for the match just opened, or null for free play */
+  opponent: null,
 };
 
 // The current match's lane definitions (server snapshots, already idx-tagged).
@@ -31,10 +33,12 @@ export async function initContent() {
 /**
  * Open a fresh match session for the logged-in trainer: your monsters vs a
  * new server-picked opponent. Replaces the previous match entirely.
+ * @param {string} [mode] "pvp" for a ladder match; omit for free play.
  */
-export async function newMatch() {
-  const match = await createMatch();
+export async function newMatch(mode) {
+  const match = await createMatch(mode);
   state.matchId = match.matchId;
+  state.opponent = match.opponent ?? null;
   defs = { you: match.you, enemy: match.enemy };
   resetState();
 }

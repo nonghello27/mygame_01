@@ -11,13 +11,18 @@
 import { randomUUID } from "node:crypto";
 import { resolveBattle } from "../../shared/engine/resolve.js";
 import { deriveStats } from "../../shared/rules/formulas.js";
+import { eloDelta } from "../../shared/rules/pvp.js";
 import { httpError } from "../http.js";
 import { listSpecies, listStarterSpecies } from "../repos/species.js";
 import { listMonstersByTrainer, grantStarters } from "../repos/monsters.js";
 import { insertMatch, getMatch, claimResolve } from "../repos/matches.js";
+import { ensureSeason } from "./pvp.js";
+import { ensureRankEntry, applyRatingResult } from "../repos/pvp.js";
 import { settleActivities } from "./activities.js";
 
-const TEAM_SIZE = 3;
+// Exported: server/services/pvp.js reuses this exact team size for PVP
+// attacker-side selection (same rule as free play).
+export const TEAM_SIZE = 3;
 
 /** @returns {Promise<{matchId:string, you:object[], enemy:object[]}>} */
 export async function createMatch(sql, trainerId) {
@@ -71,12 +76,50 @@ export async function resolveMatch(sql, trainerId, matchId, playerOrder) {
   const rosterB = match.defenderSnapshot; // lane order fixed at creation, by the server
 
   // Snapshots + stored seed in, deterministic event log out: this exact
-  // battle can be re-derived from the match row forever.
-  const result = resolveBattle(rosterA, rosterB, match.seed);
+  // battle can be re-derived from the match row forever. A free match has no
+  // trainer skills frozen in (both null) — resolveBattle treats that exactly
+  // like {} (Step 2 guarantee), so free-match behavior is unchanged.
+  const result = resolveBattle(rosterA, rosterB, match.seed, {
+    a: { skills: match.attackerTrainer ?? [] },
+    b: { skills: match.defenderTrainer ?? [] },
+  });
+
+  // PVP rating: computed BEFORE the claim (so both attackerTrainer/defenderId
+  // are still the frozen snapshot values) and attached into the persisted
+  // result for an auditable record, but only APPLIED to rank_entries after
+  // we've actually won the resolve claim — a lost claim (409, someone else
+  // resolved first) must not double-apply a rating change.
+  let pvpApply = null;
+  if (match.kind === "pvp") {
+    const season = await ensureSeason(sql);
+    const [attackerEntry, defenderEntry] = await Promise.all([
+      ensureRankEntry(sql, season.id, match.attackerId),
+      ensureRankEntry(sql, season.id, match.defenderId),
+    ]);
+    const outcome = result.draw ? "draw" : result.youWin ? "win" : "loss";
+    const scoreA = result.draw ? 0.5 : result.youWin ? 1 : 0;
+    const deltaA = eloDelta(attackerEntry.rating, defenderEntry.rating, scoreA);
+    const deltaB = eloDelta(defenderEntry.rating, attackerEntry.rating, 1 - scoreA);
+    result.pvp = { yourDelta: deltaA, theirDelta: deltaB, yourRating: attackerEntry.rating + deltaA };
+    pvpApply = { seasonId: season.id, deltaA, deltaB, outcome };
+  }
 
   if (!(await claimResolve(sql, match.id, result))) {
     throw httpError(409, "match already resolved — start a new one");
   }
+
+  // NOTE: a crash between claimResolve succeeding and this applying would
+  // leave the rating update unapplied even though the result (with its
+  // intended pvp.{yourDelta,theirDelta}) is already persisted — accepted for
+  // now; the persisted result JSONB keeps the intended deltas auditable so a
+  // reconciliation pass could replay them later if this ever matters.
+  if (pvpApply) {
+    await applyRatingResult(
+      sql, pvpApply.seasonId, match.attackerId, match.defenderId,
+      pvpApply.deltaA, pvpApply.deltaB, pvpApply.outcome
+    );
+  }
+
   return result;
 }
 
@@ -108,7 +151,9 @@ export function applyOrder(roster, order) {
  * at match creation. Derivation happens exactly once, here — the engine and
  * the client both consume these numbers as-is (single source of truth).
  */
-const toLane = (m, i) => ({
+// Exported: server/services/pvp.js reuses this for a defense formation's
+// lanes rather than duplicating the derivation.
+export const toLane = (m, i) => ({
   idx: i,
   // owned monsters have numeric ids; species-built (wild) lanes have none
   monsterId: typeof m.id === "number" ? m.id : null,

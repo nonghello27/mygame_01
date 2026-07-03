@@ -43,6 +43,7 @@ export async function runBattle({ setStatus, showWinner }) {
   for (const ev of result.events) {
     if (ev.t === "turn") await replayTurn(ev, setStatus);
     else if (ev.t === "skill") replaySkill(ev);
+    else if (ev.t === "tskill") replayTrainerSkill(ev);
     else if (ev.t === "strike") await replayStrike(ev);
     else if (ev.t === "miss") await replayMiss(ev);
     else if (ev.t === "dot") await replayDot(ev);
@@ -66,6 +67,12 @@ export async function runBattle({ setStatus, showWinner }) {
       true
     );
   }
+  // Ranked matches carry a rating delta the server already applied — display
+  // only, no math beyond formatting the sign.
+  if (result.pvp) {
+    const d = result.pvp.yourDelta;
+    log(`Rating: ${d >= 0 ? "+" : ""}${d} → ${result.pvp.yourRating}`, true);
+  }
 }
 
 /** Find the live client-side unit a server event refers to (by side + lane idx). */
@@ -84,6 +91,12 @@ async function replayTurn(ev, setStatus) {
 function replaySkill(ev) {
   const u = unitByRef(ev);
   if (u) log(`${nameSpan(u, ev.side)} uses <b>${ev.name}</b>!`, true);
+}
+
+/** A trainer skill fires (battle_start or after_ally_turns) — announce it;
+ * the heal/status/buff events that follow already animate themselves. */
+function replayTrainerSkill(ev) {
+  log(`Trainer skill: <b>${ev.name}</b>!`, true);
 }
 
 async function replayMiss(ev) {

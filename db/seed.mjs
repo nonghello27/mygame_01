@@ -18,6 +18,7 @@ import { ROSTER_A, ROSTER_B } from "../src/data/units.js";
 import { SKILLS } from "../src/data/skills.js";
 import { CLASS_META } from "../src/data/classes.js";
 import { JOBS } from "../src/data/jobs.js";
+import { EXPERTISES } from "../src/data/expertises.js";
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is not set. Put it in .env (see .env.example).");
@@ -99,13 +100,35 @@ async function main() {
     );
   }
 
+  // 6. Expertises + trainer skills (upsert so balance edits land on re-run).
+  for (const ex of EXPERTISES) {
+    await pool.query(
+      `INSERT INTO expertises (id, name)
+       VALUES ($1, $2)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+      [ex.id, ex.name]
+    );
+    for (const ts of ex.skills) {
+      await pool.query(
+        `INSERT INTO trainer_skill_defs (id, expertise_id, name, data)
+         VALUES ($1, $2, $3, $4::jsonb)
+         ON CONFLICT (id) DO UPDATE SET
+           expertise_id = EXCLUDED.expertise_id, name = EXCLUDED.name, data = EXCLUDED.data`,
+        [ts.id, ex.id, ts.name, JSON.stringify(ts.data)]
+      );
+    }
+  }
+
   const c = await pool.query(`SELECT count(*)::int AS count FROM classes`);
   const sp = await pool.query(`SELECT count(*)::int AS count FROM monster_species`);
   const sk = await pool.query(`SELECT count(*)::int AS count FROM skills`);
   const jb = await pool.query(`SELECT count(*)::int AS count FROM job_defs`);
+  const ex = await pool.query(`SELECT count(*)::int AS count FROM expertises`);
+  const ts = await pool.query(`SELECT count(*)::int AS count FROM trainer_skill_defs`);
   console.log(
     `Seed complete: ${c.rows[0].count} classes, ${sp.rows[0].count} species, ` +
-    `${sk.rows[0].count} skills, ${jb.rows[0].count} jobs.`
+    `${sk.rows[0].count} skills, ${jb.rows[0].count} jobs, ` +
+    `${ex.rows[0].count} expertises, ${ts.rows[0].count} trainer skills.`
   );
 }
 

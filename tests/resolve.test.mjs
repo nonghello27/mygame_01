@@ -13,9 +13,9 @@ import { BATTLES } from "./fixtures.mjs";
 const golden = (name) =>
   JSON.parse(readFileSync(new URL(`./golden/${name}.json`, import.meta.url), "utf8"));
 
-for (const [name, { seed, rosterA, rosterB }] of Object.entries(BATTLES)) {
+for (const [name, { seed, rosterA, rosterB, trainers }] of Object.entries(BATTLES)) {
   test(`${name} (seed ${seed}) reproduces its golden log exactly`, () => {
-    assert.deepEqual(resolveBattle(rosterA, rosterB, seed), golden(name));
+    assert.deepEqual(resolveBattle(rosterA, rosterB, seed, trainers), golden(name));
   });
 }
 

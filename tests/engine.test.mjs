@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolveBattle } from "../shared/engine/resolve.js";
-import { lane, skill } from "./fixtures.mjs";
+import { lane, skill, trainerSkill } from "./fixtures.mjs";
 
 const turnsOf = (events, side) => events.filter((e) => e.t === "turn" && e.side === side);
 
@@ -85,6 +85,97 @@ test("element advantage shows up in the damage and the event tag", () => {
   const first = events.find((e) => e.t === "strike" && e.att.side === "a");
   assert.equal(first.dmg, 125);
   assert.equal(first.eff, "strong");
+});
+
+// --- trainer skills (Phase 6 step 2) -------------------------------------------
+
+test("no trainers passed produces a log with zero tskill events", () => {
+  const { events } = resolveBattle(
+    [lane(0, { atkMin: 20, atkMax: 20, spd: 12 })],
+    [lane(0, { maxHp: 999, atkMin: 5, atkMax: 5, spd: 8 })],
+    17
+  );
+  assert.equal(events.filter((e) => e.t === "tskill").length, 0);
+});
+
+test("battle_start trainer skill buffs atk before the first strike lands", () => {
+  const mkA = () => [lane(0, { atkMin: 20, atkMax: 20, maxHp: 999, spd: 20 })];
+  const mkB = () => [lane(0, { maxHp: 999, atkMin: 1, atkMax: 1, spd: 1 })];
+  const base = resolveBattle(mkA(), mkB(), 5);
+  const buffed = resolveBattle(mkA(), mkB(), 5, { a: { skills: [trainerSkill("ts_war_might", 1)] } });
+
+  assert.ok(
+    buffed.events.some((e) => e.t === "tskill" && e.side === "a" && e.skill === "ts_war_might"),
+    "tskill event must announce the skill"
+  );
+  const baseStrike = base.events.find((e) => e.t === "strike" && e.att.side === "a");
+  const buffedStrike = buffed.events.find((e) => e.t === "strike" && e.att.side === "a");
+  assert.ok(buffedStrike.dmg > baseStrike.dmg, "atk buff must raise the first strike's damage");
+});
+
+/**
+ * Replay the event log and assert the after_ally_turns invariant for one
+ * side: a `tskill` only appears once every currently-alive unit of that side
+ * has had a `turn` event since the trigger's previous firing (or battle
+ * start). Returns how many times it fired.
+ */
+function assertAfterAllyTurnsCycles(events, side) {
+  const alive = new Set();
+  const acted = new Set();
+  let firings = 0;
+  for (const e of events) {
+    if (e.t === "turn" && e.side === side) alive.add(e.idx), acted.add(e.idx);
+    else if (e.t === "fall" && e.side === side) alive.delete(e.idx);
+    else if (e.t === "tskill" && e.side === side) {
+      firings++;
+      assert.ok(alive.size > 0, "must not fire with no living allies");
+      for (const idx of alive) {
+        assert.ok(acted.has(idx), `unit ${idx} had not acted since the trigger last fired`);
+      }
+      acted.clear();
+    }
+  }
+  return firings;
+}
+
+test("after_ally_turns fires once per full cycle of living allies, surviving a mid-battle death", () => {
+  const rosterA = [
+    lane(0, { name: "Fast", spd: 25, maxHp: 40, atkMin: 1, atkMax: 1 }), // dies mid-battle
+    lane(1, { name: "Mid", spd: 15, maxHp: 500, atkMin: 1, atkMax: 1 }),
+    lane(2, { name: "Slow", spd: 10, maxHp: 500, atkMin: 1, atkMax: 1 }),
+  ];
+  const rosterB = [lane(0, { spd: 5, maxHp: 999, atkMin: 50, atkMax: 50 })];
+  const trainers = { a: { skills: [trainerSkill("ts_war_rally", 1)] } };
+
+  const { events } = resolveBattle(rosterA, rosterB, 9, trainers);
+
+  // B's basic attack (50) one-shots the front-liner's 40 hp — a death mid-cycle.
+  assert.ok(events.some((e) => e.t === "fall" && e.side === "a" && e.idx === 0), "the fast unit must die");
+
+  const firings = assertAfterAllyTurnsCycles(events, "a");
+  assert.ok(firings >= 2, "cycle should fire more than once across the battle");
+
+  // Firings after the death must not require the dead unit to have acted.
+  const fallIdx = events.findIndex((e) => e.t === "fall" && e.side === "a" && e.idx === 0);
+  const firingsAfterDeath = events
+    .slice(fallIdx)
+    .filter((e) => e.t === "tskill" && e.side === "a").length;
+  assert.ok(firingsAfterDeath >= 1, "the cycle must keep firing with only the 2 remaining allies");
+});
+
+test("after_ally_turns heal scales with skill level (perLevel)", () => {
+  const mkA = () => [lane(0, { maxHp: 300, atkMin: 5, atkMax: 5, spd: 15 })];
+  const mkB = () => [lane(0, { maxHp: 999, atkMin: 40, atkMax: 40, spd: 20 })];
+  const run = (level) =>
+    resolveBattle(mkA(), mkB(), 33, { a: { skills: [trainerSkill("ts_war_rally", level)] } });
+
+  const lvl1 = run(1);
+  const lvl3 = run(3);
+  const heal1 = lvl1.events.find((e) => e.t === "heal" && e.side === "a");
+  const heal3 = lvl3.events.find((e) => e.t === "heal" && e.side === "a");
+  assert.ok(heal1 && heal3, "both runs must produce a heal event");
+  assert.ok(heal1.amount > 0, "the unit must have taken damage before healing");
+  assert.ok(heal3.amount > heal1.amount, "level 3 must heal for more than level 1");
 });
 
 test("same seed = identical log; different seed diverges", () => {

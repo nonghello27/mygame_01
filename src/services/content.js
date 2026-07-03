@@ -39,10 +39,13 @@ export async function loadSprites() {
  * Open a match session. The server assembles YOUR team from your owned
  * monsters (granting starters on the very first call) and picks + freezes the
  * enemy team and lane order. Requires login.
- * @returns {Promise<{matchId:string, you:object[], enemy:object[]}>}
+ * @param {string} [mode] "pvp" opens a ladder match against another
+ *   trainer's saved defense formation; omit (or anything else) for today's
+ *   free match against a random species team — existing callers unchanged.
+ * @returns {Promise<{matchId:string, you:object[], enemy:object[], opponent?:{name:string,rating:number}}>}
  */
-export async function createMatch() {
-  return postJson("/api/match", {});
+export async function createMatch(mode) {
+  return postJson("/api/match", mode ? { mode } : {});
 }
 
 /**
@@ -73,4 +76,44 @@ export async function startJob(monsterId, jobId) {
  */
 export async function requestBattle(matchId, playerOrder) {
   return postJson("/api/battle", { matchId, playerOrder });
+}
+
+/**
+ * Trainer progression: expertises, trainer skill defs, and this trainer's
+ * own expertise/exp/learned skills — everything the Trainer panel needs.
+ * @returns {Promise<{expertises:object[], skillDefs:object[], skills:object[], expertise:string|null, exp:number, unlockExp:number}>}
+ */
+export async function fetchProgression() {
+  return getJson("/api/progression");
+}
+
+/** Pick (or switch) expertise. Switching wipes both learned skill slots. */
+export async function chooseExpertise(expertiseId) {
+  return postJson("/api/progression", { expertiseId });
+}
+
+/** Learn a trainer skill into a slot, or clear it (skillId: null). */
+export async function learnTrainerSkill(slot, skillId) {
+  return postJson("/api/trainer-skills", { slot, skillId });
+}
+
+/**
+ * The trainer's saved PVP defense formation, or null if none is saved yet.
+ * @returns {Promise<{formationId:number, name:string, slots:object[]}|null>}
+ */
+export async function fetchDefense() {
+  return getJson("/api/formation");
+}
+
+/** Save (upsert) the defense formation as exactly 3 owned monster ids, front-first. */
+export async function saveDefense(monsterIds) {
+  return postJson("/api/formation", { monsterIds });
+}
+
+/**
+ * The PVP ladder: current season, top 20, and this trainer's own standing.
+ * @returns {Promise<{season:object, top:object[], me:object}>}
+ */
+export async function fetchLadder() {
+  return getJson("/api/ladder");
 }

@@ -2,7 +2,10 @@
 // that belong to the SPECIES (element, attack kind/style, targeting, art) are
 // joined in; attributes and skills are the instance's own (they grow).
 
-function shape(r) {
+// Exported so other repos that join monsters+species (e.g. server/repos/pvp.js
+// building a defense formation's battle lanes) shape rows identically instead
+// of duplicating the mapping.
+export function shapeMonster(r) {
   return {
     id: Number(r.id),
     speciesId: r.species_id,
@@ -21,6 +24,7 @@ function shape(r) {
     skills: r.skills,
   };
 }
+const shape = shapeMonster;
 
 export async function listMonstersByTrainer(sql, trainerId) {
   const rows = await sql`

@@ -33,17 +33,24 @@ import { STATUSES, statMod, hasFlag } from "../rules/statuses.js";
  * @param {object[]} laneA player team, lane 0 = front
  * @param {object[]} laneB enemy team, lane 0 = front
  * @param {number} seed   the match's stored RNG seed
+ * @param {{a?: {skills: object[]}, b?: {skills: object[]}}} trainers  each
+ *   side's chosen trainer skills (GAME_DESIGN §7.1; src/data/expertises.js
+ *   documents the effect grammar). Absent/empty ⇒ identical to no trainers.
  * @returns {{youWin:boolean, draw:boolean, survivor:{side:string,idx:number}|null, events:object[]}}
  */
-export function resolveBattle(laneA, laneB, seed = 1) {
+export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   const rng = makeRng(seed);
   const events = [];
   const A = laneA.map((d) => liveUnit(d, "a"));
   const B = laneB.map((d) => liveUnit(d, "b"));
   const all = [...A, ...B];
 
-  // battle_start passives fire in a frozen, deterministic order:
-  // player lanes front-to-back, then enemy lanes.
+  // battle_start order (GAME_DESIGN §7.1): trainer skills fire first — side a
+  // in skill-array order, then side b — THEN unit passives, in the existing
+  // frozen order (player lanes front-to-back, then enemy lanes).
+  fireTrainerEffects("a", "battle_start", trainers, A, events, rng);
+  fireTrainerEffects("b", "battle_start", trainers, B, events, rng);
+
   for (const u of all) {
     for (const sk of u.skills) {
       for (const fx of sk.data.passive ?? []) {
@@ -53,6 +60,10 @@ export function resolveBattle(laneA, laneB, seed = 1) {
       }
     }
   }
+
+  // after_ally_turns bookkeeping: per side, the set of currently-acted unit
+  // idxs since that side's trigger last fired (or battle start).
+  const actedSets = { a: new Set(), b: new Set() };
 
   let turns = 0;
   while (aliveCount(A) && aliveCount(B) && turns < TURN_CAP) {
@@ -68,7 +79,9 @@ export function resolveBattle(laneA, laneB, seed = 1) {
     for (const unit of ready) {
       if (!unit.alive || !aliveCount(A) || !aliveCount(B)) break;
       unit.gauge -= GAUGE_THRESHOLD;
-      takeTurn(unit, unit.side === "a" ? A : B, unit.side === "a" ? B : A, events, rng);
+      const own = unit.side === "a" ? A : B;
+      takeTurn(unit, own, unit.side === "a" ? B : A, events, rng);
+      markAllyTurn(unit, own, actedSets, trainers, events, rng);
       turns++;
       if (turns >= TURN_CAP) break;
     }
@@ -174,8 +187,56 @@ function strike(att, def, skill, events, rng, aliveEnemies) {
   for (const fx of skill.data.onHit ?? []) applyEffect(att, def, fx, skill, events, rng);
 }
 
+/**
+ * Trainer skills (GAME_DESIGN §7.1): up to 2 chosen skills per side, effects
+ * expressed with the SAME closed op set as monster skills (src/data/
+ * expertises.js documents the grammar). Targets always pool over the
+ * caster's own side — the engine never lets a trainer skill reach across.
+ */
+function fireTrainerEffects(side, trigger, trainers, ownArray, events, rng) {
+  const skills = trainers?.[side]?.skills ?? [];
+  if (skills.length === 0) return;
+  const pool = ownArray.filter((u) => u.alive);
+  // The trainer is not a unit; -1 keeps the {side,idx} event shape intact —
+  // the replayer ignores refs it doesn't recognize as a live card.
+  const source = { side, idx: -1 };
+  for (const sk of skills) {
+    const fxs = (sk.data?.effects ?? []).filter((fx) => fx.when === trigger);
+    if (fxs.length === 0) continue;
+    events.push({ t: "tskill", side, skill: sk.id, name: sk.name });
+    for (const fx of fxs) applyEffect(source, source, fx, sk, events, rng, pool);
+  }
+}
+
+/**
+ * after_ally_turns bookkeeping: mark this unit as having acted this cycle;
+ * once every CURRENTLY-alive unit on its side has acted since the last
+ * firing, fire that side's after_ally_turns trainer effects and start a new
+ * cycle. A unit that dies before its turn simply drops out of "currently
+ * alive" and stops being required — it can't deadlock the cycle.
+ */
+function markAllyTurn(unit, own, actedSets, trainers, events, rng) {
+  const set = actedSets[unit.side];
+  set.add(unit.idx);
+  const aliveOwn = own.filter((u) => u.alive);
+  if (aliveOwn.length > 0 && aliveOwn.every((u) => set.has(u.idx))) {
+    fireTrainerEffects(unit.side, "after_ally_turns", trainers, own, events, rng);
+    set.clear();
+  }
+}
+
+/** fx.pct/fx.flat scaled by level, without mutating the source data row. */
+function scaledFx(fx, skill) {
+  if (!fx.perLevel) return fx;
+  const bonus = fx.perLevel * ((skill.level ?? 1) - 1);
+  return fx.flat !== undefined
+    ? { ...fx, flat: fx.flat + bonus }
+    : { ...fx, pct: (fx.pct ?? 0) + bonus };
+}
+
 /** Apply one data-driven effect (the closed op set). */
 function applyEffect(source, fallbackTarget, fx, skill, events, rng, pool = []) {
+  fx = scaledFx(fx, skill);
   const targets = fx.target
     ? selectTargets(fx.target.rule ?? "front", pool, rng, fx.target.count ?? 1)
     : [fallbackTarget];

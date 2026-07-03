@@ -1,0 +1,75 @@
+/* Arena panel (src/ui/pvp.js) — ladder + defense editor. Same chrome family
+   as the farm/admin panels: header, tab strip, msgs, body. */
+
+.pvp{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.pvp h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+}
+
+.pvp-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line)}
+.pvp-tab{
+  background:var(--bg-2);color:var(--muted);border:1px solid var(--line);
+  border-radius:9px;padding:7px 13px;font-size:12.5px;cursor:pointer;
+}
+.pvp-tab.active{color:var(--text);border-color:var(--line-strong);background:var(--panel-2)}
+
+.pvp-msgs{padding:0 14px}
+.pvp-msgs p{margin:9px 0 0;font-size:13px;color:var(--hp-good)}
+.pvp-msgs p.err{color:var(--hp-low)}
+
+.pvp-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:12px}
+.pvp-hint{margin:0;font-size:12.5px;color:var(--muted)}
+.pvp-subhead{
+  margin:4px 0 -2px;font-family:Rajdhani,sans-serif;font-weight:600;
+  letter-spacing:0.1em;text-transform:uppercase;font-size:11.5px;color:var(--muted);
+}
+.pvp-season{margin:0;font-size:13px;color:var(--muted)}
+
+/* ladder */
+.pvp-me{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:11px;padding:10px 12px;
+}
+.pvp-me b{font-size:15px;color:var(--text)}
+.pvp-me span{font-size:12.5px;color:var(--muted)}
+
+button.btn.pvp-ranked-btn{align-self:flex-start}
+
+.pvp-table{display:flex;flex-direction:column;gap:4px}
+.pvp-row{
+  display:grid;grid-template-columns:36px 1fr 80px 90px;gap:8px;align-items:center;
+  padding:7px 10px;border-radius:9px;font-size:12.5px;
+}
+.pvp-row.pvp-head{color:var(--muted);font-size:11px;letter-spacing:0.06em;text-transform:uppercase}
+.pvp-row.me{background:var(--a-soft);border:1px solid var(--a-deep)}
+
+/* defense */
+.pvp-current{display:flex;gap:10px;flex-wrap:wrap}
+.pvp-chip{
+  display:flex;align-items:center;gap:6px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:9px;padding:6px 10px;font-size:12.5px;
+}
+
+.pvp-mon-list{display:flex;flex-direction:column;gap:8px}
+.pvp-mon{
+  display:flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:9px 12px;cursor:pointer;
+}
+.pvp-mon:hover{border-color:var(--line-strong)}
+.pvp-mon.picked{border-color:var(--a-deep);background:var(--a-soft)}
+.pvp-mon.busy{opacity:0.75}
+.pvp-mon-emoji{font-size:22px}
+.pvp-mon-name{font-size:13px;font-weight:600;flex:1}
+.pvp-mon-busy-tag{font-size:11px;color:var(--clash)}
+.pvp-pick-badge{
+  display:flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:var(--a-deep);color:#06150f;font-weight:700;font-size:12px;flex:none;
+}
+
+.pvp-toolbar{display:flex;gap:8px}
+button.btn.pvp-small{padding:8px 16px;font-size:12.5px}

@@ -9,15 +9,19 @@ import "./styles/cutscene.css";
 import "./styles/auth.css";
 import "./styles/farm.css";
 import "./styles/admin.css";
+import "./styles/pvp.css";
+import "./styles/trainer.css";
 
 import { state, resetState, initContent, newMatch } from "./core/state.js";
 import { runBattle } from "./core/battle.js";
 import { initBoard, renderBoard } from "./ui/board.js";
-import { initLog, clearLog } from "./ui/log.js";
+import { initLog, clearLog, log } from "./ui/log.js";
 import { initCutscene } from "./cutscene/cutscene.js";
 import { initAuth } from "./ui/auth.js";
 import { initFarm } from "./ui/farm.js";
 import { initAdmin } from "./ui/admin.js";
+import { initPvp } from "./ui/pvp.js";
+import { initTrainer } from "./ui/trainer.js";
 
 const startBtn = document.getElementById("startBtn");
 const resetBtn = document.getElementById("resetBtn");
@@ -62,12 +66,27 @@ function onNewOpponent() {
   return backToSetup(openMatch);
 }
 
-async function backToSetup(loader) {
+/**
+ * Open a PVP ladder match and return to the setup board — the exact same
+ * plumbing as "New Opponent", just with mode:"pvp". Passed into the Arena
+ * panel (ui/pvp.js) so its "Ranked Battle" button never has to fork a second
+ * battle flow; on failure (e.g. no opponents yet) the error propagates so
+ * the panel can show the server's message instead of the status line eating it.
+ */
+async function startRankedBattle() {
+  await backToSetup(() => openMatch("pvp"), { rethrow: true });
+  if (state.opponent) {
+    log(`⚔ Ranked battle: vs ${state.opponent.name} (rating ${state.opponent.rating}).`, true);
+  }
+}
+
+async function backToSetup(loader, { rethrow = false } = {}) {
   if (state.phase === "battle") return;
   shuffleBtn.disabled = true;
   try {
     await loader();
-  } catch {
+  } catch (e) {
+    if (rethrow) throw e;
     return; // status line already explains; keep current board
   } finally {
     shuffleBtn.disabled = false;
@@ -83,9 +102,9 @@ async function backToSetup(loader) {
 }
 
 /** Open a new match, surfacing server errors on the status line. */
-async function openMatch() {
+async function openMatch(mode) {
   try {
-    await newMatch();
+    await newMatch(mode);
   } catch (e) {
     setStatus(`Could not start a match: ${e.message}`);
     throw e;
@@ -103,6 +122,8 @@ initLog();
 initCutscene();
 initFarm();
 initAdmin();
+initPvp(startRankedBattle);
+initTrainer();
 // The landing/login screen owns the start: once the session is confirmed it
 // calls startSession(), which loads content and opens the first match.
 initAuth(startSession);

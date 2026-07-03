@@ -114,7 +114,7 @@ monsters (                   -- INSTANCE: owned, mutable
   busy_kind TEXT             -- 'work' | 'training' | 'adventure' | NULL
 )
 
--- skills (same shape for trainer skills with their own pair of tables) -------
+-- skills (trainer skills are the SAME shape, their own master+instance pair) -
 skills (                     -- MASTER, shared across species
   id TEXT PRIMARY KEY, name TEXT,
   slot TEXT,                 -- 'passive' | 'normal' | 'ultimate'
@@ -137,18 +137,47 @@ trainer_equipment(id, trainer_id, def_id, enhance_level, equipped_slot NULL)
 monster_equipment(id, trainer_id, def_id, enhance_level, monster_id NULL)
 item_defs(id, kind, …) / items(id, trainer_id, def_id, qty)
 
--- formations & matches --------------------------------------------------------
-formations(id, trainer_id, purpose 'attack'|'defense'|'gvg', name)
+-- trainer progression (Phase 6, real: 007_pvp.sql) ----------------------------
+expertises(id, name)                    -- MASTER: the 3 trainer archetypes
+trainer_skill_defs(                     -- MASTER: 2 learnable skills per expertise
+  id TEXT PRIMARY KEY, expertise_id TEXT REFERENCES expertises(id), name TEXT,
+  data JSONB NOT NULL                   -- { effects:[...] }, same grammar as skills.effects
+)
+trainer_skills (                        -- INSTANCE: the trainer's 2 fixed learn slots
+  trainer_id BIGINT REFERENCES trainers(id),
+  slot SMALLINT CHECK (slot IN (0, 1)),
+  skill_id TEXT REFERENCES trainer_skill_defs(id),
+  level INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (trainer_id, slot)
+)
+
+-- formations & matches (Phase 6 real; kind/defender_id/*_trainer added by
+-- 007_pvp.sql on top of the matches shape createMatch already used) ----------
+formations(id, trainer_id, purpose 'attack'|'defense'|'gvg' DEFAULT 'defense', name,
+           UNIQUE(trainer_id, purpose))    -- one formation per trainer per purpose today
 formation_slots(formation_id, position INT, monster_id, UNIQUE(formation_id, position))
 matches (                    -- the anti-cheat session (CLAUDE.md §roadmap, now real)
   id UUID PRIMARY KEY,
-  kind TEXT,                 -- 'free' | 'pvp' | 'tournament' | 'gvg'
-  attacker_id BIGINT, defender_id BIGINT NULL,
-  defender_snapshot JSONB NOT NULL,  -- frozen enemy team: server-picked, tamper-proof
+  kind TEXT NOT NULL DEFAULT 'free', -- 'free' | 'pvp' (tournament/gvg are later phases)
+  attacker_id BIGINT, defender_id BIGINT NULL,   -- defender_id set only for kind='pvp'
+  attacker_snapshot JSONB NOT NULL, defender_snapshot JSONB NOT NULL,  -- frozen lanes
+  attacker_trainer JSONB, defender_trainer JSONB, -- frozen trainer-skill loadouts (pvp)
   seed BIGINT NOT NULL,              -- RNG seed; makes the result auditable
   status TEXT NOT NULL DEFAULT 'open',  -- open → resolved (reject replays)
-  result JSONB, events JSONB,        -- persisted on resolve
+  result JSONB, events JSONB,        -- persisted on resolve; pvp result carries
+                                      -- result.pvp = {yourDelta, theirDelta, yourRating}
   created_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ
+)
+
+-- the ladder (Phase 6 real) ----------------------------------------------------
+seasons(id, starts_at, ends_at, status 'active'|'closed' DEFAULT 'active')
+  -- a partial unique index enforces at most one 'active' season at a time
+rank_entries (
+  season_id BIGINT REFERENCES seasons(id), trainer_id BIGINT REFERENCES trainers(id),
+  rating INT NOT NULL DEFAULT 1000, wins INT, losses INT, draws INT,
+  reward JSONB,               -- season-end gold payout, stamped once (idempotent)
+  updated_at TIMESTAMPTZ,
+  PRIMARY KEY (season_id, trainer_id)
 )
 
 -- activities (work / training / adventure steps) ------------------------------
@@ -157,8 +186,8 @@ job_defs(id, kind 'work'|'training', name, duration_s INT, rewards JSONB, unlock
 activities(id, trainer_id, monster_id, job_id, started_at, ends_at,
            resolved BOOL DEFAULT false, outcome JSONB)
 
--- later phases: marketplace_listings, guilds, guild_members, seasons,
--- rank_entries, quests, quest_submissions, messages — same patterns.
+-- later phases: marketplace_listings, guilds, guild_members, quests,
+-- quest_submissions, messages, tournament/gvg match kinds — same patterns.
 ```
 
 Migration discipline: schema lives in `db/migrations/NNN_*.sql`, applied in
@@ -201,13 +230,23 @@ resolveBattle(battleState, seed) → { winner, events[], finalState }
     passive: [{ when: "battle_start", op: "perm_stat", stat, pct?|flat? }] }
   ```
 
-  More triggers (`on_being_hit`, `after_ally_turns`, conditions) join this
-  grammar as later phases need them — as new keys, not engine branches.
+  More triggers (`on_being_hit`, conditions) join this grammar as later
+  phases need them — as new keys, not engine branches.
 
   The engine implements the **closed set** of `trigger`s, `target` selectors,
   and `op`s in `shared/rules/`; content JSONB composes them. A genuinely new
   mechanic = one new op/trigger in the registry + content rows — never a
   special case for one skill.
+
+  **Trainer skills** (Phase 6, GAME_DESIGN §7.1) reuse this exact grammar
+  from a second source: `resolveBattle(laneA, laneB, seed, trainers)` takes a
+  4th arg, `{a:{skills}, b:{skills}}` — each side's up-to-2 learned trainer
+  skills, frozen into the match row the same way lanes are. Two triggers fire
+  them: `battle_start` (before unit passives) and `after_ally_turns` (once
+  every currently-alive unit on that side has taken a turn since it last
+  fired). Targets always pool over the caster's own side. Each firing emits a
+  `tskill` event before its effects, so the replayer can announce it exactly
+  like a unit's `skill` event.
 - **Statuses** (stun/freeze/burn/poison/curse…) are just persistent effects
   with a duration, ticked in `turn_start`/checked at the pipeline's control
   and hit steps.
@@ -263,16 +302,33 @@ server secrets are `SESSION_SECRET` and `DATABASE_URL`.
 ```
 POST /api/auth/login          idtoken → session cookie (creates trainer)
 GET  /api/me                  trainer profile + resolves any finished timers
+                              + trainerSkills (the 2 learned trainer-skill slots)
 GET  /api/monsters            owned monsters
-POST /api/formation           save formation (choices only: positions + monster ids)
-POST /api/match               create match session (server picks defender + seed)
-POST /api/battle              { matchId, playerOrder } → persisted result + events
+POST /api/match               { mode? } → create match session ('free', default:
+                              server picks a random defender + seed | 'pvp':
+                              matched against another trainer's defense formation)
+POST /api/battle              { matchId, playerOrder } → persisted result + events;
+                              a pvp match's result also carries
+                              pvp: { yourDelta, theirDelta, yourRating }
 GET  /api/activities          the farm: jobs + monsters + running assignments
                               (settles finished ones first — lazy time)
 POST /api/activities          start work/training { monsterId, jobId }
 POST /api/adventure/*         session create / step
 GET  /api/market  POST /api/market/*    listings / buy / sell
 (existing: GET /api/rosters, /api/classes — become monster/species reads)
+
+# PVP ladder & trainer progression (Phase 6)
+GET  /api/progression         expertises + trainer_skill_defs + this trainer's
+                              expertise/exp/learned skills, in one call
+POST /api/progression         { expertiseId } → pick/switch expertise (switching
+                              wipes both learned skill slots)
+POST /api/trainer-skills      { slot, skillId } → learn a trainer skill into a
+                              learn slot, or clear it (skillId: null)
+GET  /api/formation           the trainer's saved defense formation, or null
+POST /api/formation           { monsterIds } → save (upsert) the defense
+                              formation as exactly 3 owned monster ids
+GET  /api/ladder              { season, top, me } → lazily rolls the season
+                              (close+payout / open) before reading it
 
 # admin console (Phase 5) — every call re-checks trainers.is_admin (403)
 GET    /api/admin/master      all 4 master tables + engine enum registries

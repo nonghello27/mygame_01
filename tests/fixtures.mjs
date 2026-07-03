@@ -5,6 +5,7 @@
 // behavior tests stay deterministic regardless of seed.
 
 import { SKILLS } from "../src/data/skills.js";
+import { EXPERTISES } from "../src/data/expertises.js";
 
 /** Build a snapshot lane with sane deterministic defaults. */
 export function lane(idx, over = {}) {
@@ -37,6 +38,14 @@ export function skill(id, level = 1) {
   return { id: s.id, name: s.name, slot: s.slot, cooldown: s.cooldown, level, data: s.data };
 }
 
+/** Look up a trainer skill by id and attach a level (shape resolveBattle's
+ * `trainers` param expects — see src/data/expertises.js). */
+export function trainerSkill(id, level = 1) {
+  const s = EXPERTISES.flatMap((ex) => ex.skills).find((x) => x.id === id);
+  if (!s) throw new Error(`fixture references unknown trainer skill ${id}`);
+  return { id: s.id, name: s.name, level, data: s.data };
+}
+
 // Golden battles: full-fat teams exercising elements, range targeting,
 // skills, statuses, crit/evade variance — everything the seed controls.
 export const BATTLES = {
@@ -66,5 +75,24 @@ export const BATTLES = {
     seed: 7,
     rosterA: [lane(0, { atkMin: 30, atkMax: 30, spd: 12 }), lane(1, { maxHp: 80, atkMin: 20, atkMax: 20, spd: 8 })],
     rosterB: [lane(0, { maxHp: 120, atkMin: 25, atkMax: 25, spd: 10 }), lane(1, { atkMin: 15, atkMax: 15, spd: 14 })],
+  },
+  "battle-trainers": {
+    // exercises trainer skills (Phase 6 step 2): a battle_start perm_stat
+    // (level > 1, so perLevel scaling is live), an after_ally_turns heal
+    // targeting lowest_hp_pct, and a single-skill loadout on the other side.
+    seed: 21,
+    rosterA: [
+      lane(0, { name: "Adan", maxHp: 150, atkMin: 20, atkMax: 20, spd: 14 }),
+      lane(1, { name: "Bex", maxHp: 90, atkMin: 15, atkMax: 15, spd: 11 }),
+      lane(2, { name: "Coro", maxHp: 110, atkMin: 18, atkMax: 18, spd: 9 }),
+    ],
+    rosterB: [
+      lane(0, { name: "Drask", maxHp: 200, atkMin: 22, atkMax: 22, spd: 10 }),
+      lane(1, { name: "Elm", maxHp: 130, atkMin: 17, atkMax: 17, spd: 13 }),
+    ],
+    trainers: {
+      a: { skills: [trainerSkill("ts_war_might", 3), trainerSkill("ts_war_rally", 2)] },
+      b: { skills: [trainerSkill("ts_wiz_haste", 1)] },
+    },
   },
 };

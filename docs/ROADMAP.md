@@ -159,15 +159,68 @@ and in Vercel env vars; log in with that account once so the flag is granted.
 a new species created entirely in the UI (class, skills, sprite) appears in
 the next match; deleting an in-use skill is refused with a clear message.
 
-## Phase 6 — PVP ladder & trainer progression
+## Phase 6 — PVP ladder & trainer progression ✅ CODE COMPLETE (2026-07-03)
 
-- Defense formations; matchmaking by rank bracket against **stored** defense
-  teams (async — defender offline); rating points; `seasons` +
-  `rank_entries` with lazy season rollover and rewards.
-- Trainer expertise + trainer skills (2 slots), feeding the engine's
-  `battle_start`/`after_ally_turns` triggers — the engine already supports
-  them; this phase is tables + UI + validation (switching expertise wipes
-  learned skills).
+- ✅ `007_pvp.sql` + `008_pvp_guards.sql`: master tables `expertises` +
+  `trainer_skill_defs` (seeded from `src/data/expertises.js`); instance table
+  `trainer_skills` (2 fixed learn slots); `formations` + `formation_slots`
+  (one `purpose='defense'` formation per trainer, 3 slots); `seasons` +
+  `rank_entries` (rating/wins/losses/draws/reward, ranked by
+  `rank_entries_season_rating_idx`); `matches` grows `kind`
+  (`'free'|'pvp'`), `defender_id`, and `attacker_trainer`/`defender_trainer`
+  (frozen trainer-skill snapshots); a partial unique index enforces at most
+  one `status='active'` season at the DB layer.
+- ✅ Engine triggers implemented for real (`shared/engine/resolve.js`):
+  `resolveBattle` takes a 4th `trainers` arg (`{a:{skills},b:{skills}}`),
+  fires `battle_start` before unit passives and `after_ally_turns` once every
+  currently-alive unit on a side has acted since it last fired, both through
+  the same closed op set (`perm_stat`/`heal`/`apply_status`) monster skills
+  use — a `tskill` event marks each firing for the replayer. A free match
+  passes empty trainer skills, so behavior there is unchanged (golden logs
+  intact).
+- ✅ Progression (`server/services/progression.js` + `server/repos/
+  progression.js`, `GET/POST /api/progression`, `POST /api/trainer-skills`):
+  pick an expertise at `EXPERTISE_UNLOCK_EXP` (10) trainer exp
+  (`shared/rules/progression.js`); learn/clear either of 2 skill slots,
+  re-validated server-side against fresh DB state every call
+  (`validateLearnChoice`). Switching to a *different* expertise wipes both
+  learned slots in the same atomic statement (`setExpertise`'s
+  update+conditional-delete CTE) — the client (`src/ui/trainer.js`) makes the
+  player confirm that cost with an inline two-step click.
+- ✅ Defense formations (`server/services/pvp.js` `saveDefense`/`getDefense`,
+  `GET/POST /api/formation`): exactly 3 owned, distinct monster ids in lane
+  order; busy monsters are allowed (defense is passive, never blocks work).
+- ✅ Lazy season rollover (`ensureSeason`, same read-then-claim shape as
+  `settleActivities`): no active season → insert one (008's unique index
+  makes a lost insert race a clean re-read); active but past `ends_at` →
+  claim-guarded close (`claimSeasonClose`) pays out
+  (`payoutSeason`'s gold tiers mirror `shared/rules/pvp.js
+  seasonRewardGold`, idempotent via `reward IS NULL`) and opens the next
+  season, in a bounded retry loop. Runs at the top of every PVP read/write —
+  `GET /api/ladder`, match creation, defense saves.
+- ✅ Matchmaking (`createPvpMatch`): attacker's own available roster (same
+  selection as free play) vs. a defender drawn from a small pool of other
+  trainers with a *complete* defense formation, ordered by rating proximity
+  to the attacker (`listPvpCandidates`); both sides' derived-stat lanes AND
+  trainer-skill snapshots are frozen into the match row exactly like free
+  matches freeze enemy lanes — tamper-proof and replayable.
+- ✅ Elo applied once at resolve (`server/services/matches.js
+  resolveMatch`): for `kind='pvp'` matches, `eloDelta` (`shared/rules/
+  pvp.js`, K=32) computes both sides' deltas from each side's *current*
+  rank-entry rating, attaches `{yourDelta, theirDelta, yourRating}` onto the
+  persisted result as `pvp`, and — only after `claimResolve` wins the
+  once-only claim, so a losing/replayed resolve can't double-apply — writes
+  rating + win/loss/draw counters for both trainers atomically in one
+  statement (`applyRatingResult`).
+- ✅ Arena panel (`src/ui/pvp.js`, ladder + defense-formation editor) and
+  Trainer panel (`src/ui/trainer.js`, expertise + skill slots) — pure
+  presentation over `/api/ladder`, `/api/formation`, `/api/progression`,
+  `/api/trainer-skills`; "Ranked Battle" opens a `mode:"pvp"` match through
+  the same setup-board/`Start Battle` flow "New Opponent" already uses.
+
+**Remaining (operator step):** verify the phase's "Done when" with two real
+accounts in a browser — pick expertises, learn skills, save defense
+formations, attack each other, and watch the ladder move.
 
 **Done when:** two real accounts can attack each other's defense teams and
 climb a visible ladder.
