@@ -117,3 +117,13 @@ export async function saveDefense(monsterIds) {
 export async function fetchLadder() {
   return getJson("/api/battle/ladder");
 }
+
+/**
+ * The trainer's inventory (Phase 7.1): item stacks, owned equipment
+ * (bag + equipped), and owned runes. Pure read — acquisition happens
+ * through the admin console's grant control until Phase 7.4.
+ * @returns {Promise<{items:object[], equipment:{trainer:object[], monster:object[]}, runes:object[]}>}
+ */
+export async function fetchInventory() {
+  return getJson("/api/trainer/inventory");
+}

@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   validateClass, validateSkill, validateSpecies, validateJob, enums,
+  validateItem, validateEquipment, validateRune,
 } from "../server/services/adminValidate.js";
 import { SKILLS } from "../src/data/skills.js";
 import { JOBS } from "../src/data/jobs.js";
@@ -114,4 +115,135 @@ test("enums expose exactly what the dropdowns need", () => {
   const e = enums();
   assert.deepEqual(e.loadoutSlotTypes, ["passive", "passive", "normal", "ultimate"]);
   assert.ok(e.elements.includes("fire") && e.targeting.includes("front") && e.statuses.includes("burn"));
+  assert.deepEqual(e.itemKinds, ["material", "consumable"]);
+  assert.deepEqual(e.equipDomains, ["trainer", "monster"]);
+  assert.deepEqual(e.equipSlots.monster, ["weapon", "armor", "accessory"]);
+  assert.deepEqual(e.equipSlots.trainer, ["head", "body", "charm"]);
+});
+
+// --- items / equipment / runes (Phase 7.1) --------------------------------------
+
+test("validateItem accepts a happy-path row and rejects bad shapes", () => {
+  const ok = validateItem({ id: "it_potion_small", kind: "consumable", name: "Small Potion" });
+  assert.equal(ok.id, "it_potion_small");
+  assert.equal(ok.description, null, "description defaults to null");
+  assert.equal(
+    validateItem({ id: "it_x", kind: "material", name: "X", description: "  a thing  " }).description,
+    "a thing"
+  );
+
+  rejects(() => validateItem({ id: "itbad", kind: "material", name: "X" }), "id must be it_*");
+  rejects(() => validateItem({ id: "it_x", kind: "consumables", name: "X" }), "unknown kind");
+  rejects(() => validateItem({ id: "it_x", kind: "material", name: "" }), "name required");
+  rejects(() => validateItem({ id: "it_x", kind: "material", name: "X", description: "y".repeat(201) }),
+    "description too long");
+});
+
+test("validateEquipment enforces domain/slot pairing, effects grammar, enhance bounds", () => {
+  const ok = validateEquipment({
+    id: "eq_iron_sword", domain: "monster", slot: "weapon", name: "Iron Sword",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 10, perLevel: 2 }],
+    enhance: { maxLevel: 5, goldPerLevel: 50 },
+  });
+  assert.equal(ok.id, "eq_iron_sword");
+  assert.equal(ok.effects[0].perLevel, 2, "equipment effects allow perLevel");
+
+  const noEnhance = validateEquipment({
+    id: "eq_charm", domain: "trainer", slot: "charm", name: "Charm",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "crit", flat: 5 }],
+  });
+  assert.equal(noEnhance.enhance, null, "enhance defaults to null when omitted");
+
+  rejects(() => validateEquipment({
+    id: "badid", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+  }), "id must be eq_*");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "planet", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+  }), "unknown domain");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "trainer", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+  }), "slot not valid for domain");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X", effects: [],
+  }), "effects must be non-empty");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1, perLevel: 101 }],
+  }), "perLevel out of range");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 0, goldPerLevel: 50 },
+  }), "enhance.maxLevel too low");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 21, goldPerLevel: 50 },
+  }), "enhance.maxLevel too high");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 5, goldPerLevel: 0 },
+  }), "enhance.goldPerLevel too low");
+});
+
+test("validateRune enforces the effects grammar (with perLevel) and charge/gold bounds", () => {
+  const ok = validateRune({
+    id: "rn_swift", name: "Swift Rune",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 3, perLevel: 1 }],
+    maxCharges: 5, repairGold: 30,
+  });
+  assert.equal(ok.id, "rn_swift");
+  assert.equal(ok.effects[0].perLevel, 1);
+
+  rejects(() => validateRune({
+    id: "rnbad", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 1 }],
+    maxCharges: 5, repairGold: 0,
+  }), "id must be rn_*");
+  rejects(() => validateRune({
+    id: "rn_x", name: "X", effects: [], maxCharges: 5, repairGold: 0,
+  }), "effects must be non-empty");
+  rejects(() => validateRune({
+    id: "rn_x", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 1 }],
+    maxCharges: 0, repairGold: 0,
+  }), "maxCharges must be positive");
+  rejects(() => validateRune({
+    id: "rn_x", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 1 }],
+    maxCharges: 101, repairGold: 0,
+  }), "maxCharges too high");
+  rejects(() => validateRune({
+    id: "rn_x", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 1 }],
+    maxCharges: 5, repairGold: -1,
+  }), "repairGold must be >= 0");
+});
+
+test("species accepts optional runeSlots (default 1, bounded 0-5)", () => {
+  const context = {
+    classNames: ["Knight"],
+    skillsById: new Map(SKILLS.map((k) => [k.id, k])),
+  };
+  const base = {
+    id: "sp_test2", name: "Test2", cls: "Knight", emoji: "🧪", sprite: null, starter: false,
+    element: "fire", attackKind: "melee", attackStyle: "phys", targeting: "front",
+    base: { hp: 100, atk: 20, spd: 6 }, attrs: { str: 1, agi: 1, vit: 1, int: 1, dex: 1 },
+    skills: ["sk_tough", null, "sk_power_strike", "sk_inferno"],
+  };
+  assert.equal(validateSpecies(base, context).runeSlots, 1, "default is 1 when omitted");
+  assert.equal(validateSpecies({ ...base, runeSlots: 3 }, context).runeSlots, 3);
+  rejects(() => validateSpecies({ ...base, runeSlots: -1 }, context), "runeSlots below 0");
+  rejects(() => validateSpecies({ ...base, runeSlots: 6 }, context), "runeSlots above 5");
+});
+
+test("skill passives still reject perLevel (grammar unchanged from before 7.1)", () => {
+  rejects(() => validateSkill({
+    id: "sk_x", name: "X", slot: "passive", cooldown: 0,
+    data: { passive: [{ when: "battle_start", op: "perm_stat", stat: "atk", flat: 5, perLevel: 2 }] },
+  }), "skills don't get perLevel on passives");
 });

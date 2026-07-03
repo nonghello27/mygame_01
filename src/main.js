@@ -11,6 +11,7 @@ import "./styles/farm.css";
 import "./styles/admin.css";
 import "./styles/pvp.css";
 import "./styles/trainer.css";
+import "./styles/inventory.css";
 
 import { state, resetState, initContent, newMatch } from "./core/state.js";
 import { runBattle } from "./core/battle.js";
@@ -22,6 +23,7 @@ import { initFarm } from "./ui/farm.js";
 import { initAdmin } from "./ui/admin.js";
 import { initPvp } from "./ui/pvp.js";
 import { initTrainer } from "./ui/trainer.js";
+import { initInventory } from "./ui/inventory.js";
 
 const startBtn = document.getElementById("startBtn");
 const resetBtn = document.getElementById("resetBtn");
@@ -124,6 +126,7 @@ initFarm();
 initAdmin();
 initPvp(startRankedBattle);
 initTrainer();
+initInventory();
 // The landing/login screen owns the start: once the session is confirmed it
 // calls startSession(), which loads content and opens the first match.
 initAuth(startSession);

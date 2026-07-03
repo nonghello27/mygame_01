@@ -1,0 +1,43 @@
+/* Inventory panel (src/ui/inventory.js) — items/equipment/runes read. Same
+   chrome family as the farm/admin/arena panels: header, tab strip, msgs, body. */
+
+.inv{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.inv h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+}
+
+.inv-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line)}
+.inv-tab{
+  background:var(--bg-2);color:var(--muted);border:1px solid var(--line);
+  border-radius:9px;padding:7px 13px;font-size:12.5px;cursor:pointer;
+}
+.inv-tab.active{color:var(--text);border-color:var(--line-strong);background:var(--panel-2)}
+
+.inv-msgs{padding:0 14px}
+.inv-msgs p{margin:9px 0 0;font-size:13px;color:var(--hp-good)}
+.inv-msgs p.err{color:var(--hp-low)}
+
+.inv-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.inv-hint{margin:0;font-size:12.5px;color:var(--muted)}
+
+.inv-row{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  flex-wrap:wrap;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:10px 12px;
+}
+.inv-id{display:flex;align-items:center;gap:10px;min-width:220px}
+.inv-id b{font-size:14px}
+.inv-id small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.inv-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+.inv-badge{
+  font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:3px 9px;
+}
+.inv-qty,.inv-charges{font-family:Rajdhani,sans-serif;font-weight:700;font-size:13.5px;color:var(--text)}
+.inv-loc{font-size:12px;color:var(--muted)}

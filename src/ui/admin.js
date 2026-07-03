@@ -12,6 +12,8 @@
 import {
   loadMaster, saveClass, deleteClass, saveSkill, deleteSkill,
   saveSpecies, deleteSpecies, saveJob, deleteJob,
+  saveItem, deleteItem, saveEquipment, deleteEquipment, saveRune, deleteRune,
+  grant,
 } from "../services/admin.js";
 import { SPRITES } from "../data/sprites.js";
 import { chromaKeyed } from "./chroma.js";
@@ -21,6 +23,9 @@ const TABS = [
   ["skills", "✨ Skills"],
   ["classes", "🎭 Classes"],
   ["jobs", "🧰 Jobs"],
+  ["items", "🎒 Items"],
+  ["equipment", "⚔ Equipment"],
+  ["runes", "🔮 Runes"],
   ["sprites", "🖼 Sprites"],
 ];
 
@@ -191,7 +196,10 @@ function renderTabs() {
 function renderBody() {
   els.body.innerHTML = "";
   if (!data) return;
-  ({ species: speciesTab, skills: skillsTab, classes: classesTab, jobs: jobsTab, sprites: spritesTab })[tab]();
+  ({
+    species: speciesTab, skills: skillsTab, classes: classesTab, jobs: jobsTab,
+    items: itemsTab, equipment: equipmentTab, runes: runesTab, sprites: spritesTab,
+  })[tab]();
 }
 
 function toolbar(newLabel, makeBlank) {
@@ -212,7 +220,7 @@ function speciesTab() {
     starter: false, element: "neutral", attackKind: "melee", attackStyle: "phys",
     targeting: "front", base: { hp: 100, atk: 20, spd: 6 },
     attrs: { str: 5, agi: 5, vit: 5, int: 5, dex: 5 }, skills: [null, null, null, null],
-    monsterCount: 0, isNew: true,
+    runeSlots: 1, monsterCount: 0, isNew: true,
   })));
 
   for (const s of data.species) {
@@ -222,7 +230,7 @@ function speciesTab() {
     const txt = el("span");
     txt.append(el("b", null, s.name), el("small", null,
       `${s.id} · ${s.cls} · ${s.element} · ${s.attackKind}/${s.attackStyle} · ` +
-      `HP ${s.base.hp} ATK ${s.base.atk} SPD ${s.base.spd}`));
+      `HP ${s.base.hp} ATK ${s.base.atk} SPD ${s.base.spd} · rune slots ${s.runeSlots ?? 1}`));
     id.append(txt);
 
     const side = el("div", "adm-actions");
@@ -258,6 +266,7 @@ function speciesForm(s) {
     atk: numInput(s.base.atk, 1, 999),
     spd: numInput(s.base.spd, 1, 99),
     attrs: Object.fromEntries(E.attrs.map((a) => [a, numInput(s.attrs[a], 0, 99)])),
+    runeSlots: numInput(s.runeSlots ?? 1, 0, 5),
     skills: E.loadoutSlotTypes.map((want, slot) => selectInput(
       [["", "— empty —"], ...data.skills.filter((k) => k.slot === want).map((k) => [k.id, `${k.name} (${k.id})`])],
       s.skills[slot] ?? "",
@@ -288,6 +297,7 @@ function speciesForm(s) {
     field("Attack style", f.attackStyle), field("Targeting", f.targeting),
     field("Base HP", f.hp), field("Base ATK", f.atk), field("Base SPD", f.spd),
     ...E.attrs.map((a) => field(ATTR_LABEL[a] ?? a, f.attrs[a])),
+    field("Rune slots", f.runeSlots),
     ...f.skills.map((sel, slot) => field(`Skill slot ${slot} (${E.loadoutSlotTypes[slot]})`, sel)),
   );
 
@@ -304,6 +314,7 @@ function speciesForm(s) {
     targeting: f.targeting.value,
     base: { hp: +f.hp.value, atk: +f.atk.value, spd: +f.spd.value },
     attrs: Object.fromEntries(E.attrs.map((a) => [a, +f.attrs[a].value])),
+    runeSlots: +f.runeSlots.value,
     skills: f.skills.map((sel) => sel.value || null),
   }), "Species saved"));
   els.body.appendChild(form);
@@ -512,6 +523,261 @@ function jobForm(j) {
         ? { gold: +f.gold.value, trainerExp: +f.trainerExp.value }
         : { attr: f.attr.value, gain: +f.gain.value },
     }), "Job saved"));
+  els.body.appendChild(form);
+}
+
+// ---------- items / equipment / runes (Phase 7.1) -------------------------------
+
+const EFFECTS_HINT =
+  'effects [{when:"battle_start", op:"perm_stat", stat, pct?|flat?, perLevel?}] — ' +
+  "same grammar as a skill passive, but perLevel is allowed here.";
+
+/** Run a grant against the calling admin's own account, then reload the
+ *  master list (so ownedCount badges reflect it) and confirm. */
+async function grantRow(kind, defId, label, qty) {
+  els.msgs.innerHTML = "";
+  try {
+    await grant(qty === undefined ? { kind, defId } : { kind, defId, qty });
+    await refresh();
+    pushMsg(`Granted "${label}" to your own account.`);
+  } catch (e) {
+    pushMsg(e.message, true);
+  }
+}
+
+/** The little "Grant to me" control shown on each def row. Items carry a qty
+ *  input (default 1); equipment/runes grant one instance per click. */
+function grantControl(kind, defId, label, withQty) {
+  const wrap = el("span", "adm-grant");
+  let qtyInput = null;
+  if (withQty) {
+    qtyInput = numInput(1, 1, 1000);
+    qtyInput.className = "adm-grant-qty";
+    wrap.appendChild(qtyInput);
+  }
+  wrap.appendChild(button("Grant to me", "btn ghost adm-small", () =>
+    grantRow(kind, defId, label, withQty ? +qtyInput.value : undefined)));
+  return wrap;
+}
+
+function itemsTab() {
+  if (editing) return itemForm(editing);
+  els.body.appendChild(toolbar("＋ New item", () => ({
+    id: "", kind: data.enums.itemKinds[0] ?? "material", name: "", description: "",
+    ownedCount: 0, isNew: true,
+  })));
+
+  for (const it of data.itemDefs) {
+    const row = el("div", "adm-row");
+    const id = el("div", "adm-id");
+    const txt = el("span");
+    txt.append(el("b", null, it.name), el("small", null, `${it.id} · ${it.description || "—"}`));
+    id.append(txt);
+    const side = el("div", "adm-actions");
+    side.append(badge(it.kind));
+    if (it.ownedCount > 0) side.append(badge(`${it.ownedCount} owned`));
+    side.append(
+      grantControl("item", it.id, it.name, true),
+      button("Edit", "btn ghost adm-small", () => { editing = structuredClone(it); renderBody(); }),
+      button("Delete", "btn ghost adm-small adm-danger", () => confirmDelete(
+        `Delete item "${it.name}" (${it.id})?`, () => deleteItem(it.id), "Item deleted")),
+    );
+    row.append(id, side);
+    els.body.appendChild(row);
+  }
+}
+
+function itemForm(it) {
+  const form = el("div", "adm-form");
+  form.appendChild(el("h4", null, it.isNew ? "New item" : `Edit item — ${it.name}`));
+
+  const f = {
+    id: textInput(it.id, "it_my_item"),
+    kind: selectInput(data.enums.itemKinds, it.kind),
+    name: textInput(it.name),
+    description: textInput(it.description ?? "", "optional"),
+  };
+  f.id.disabled = !it.isNew;
+
+  const grid = el("div", "adm-grid");
+  grid.append(field("Id (permanent)", f.id), field("Kind", f.kind),
+    field("Name", f.name), field("Description", f.description));
+
+  form.append(grid, formButtons(() => saveItem({
+    id: f.id.value.trim(), kind: f.kind.value,
+    name: f.name.value.trim(), description: f.description.value.trim() || null,
+  }), "Item saved"));
+  els.body.appendChild(form);
+}
+
+function equipmentTab() {
+  if (editing) return equipmentForm(editing);
+  els.body.appendChild(toolbar("＋ New equipment", () => {
+    const domain = data.enums.equipDomains[0] ?? "monster";
+    return {
+      id: "", domain, slot: data.enums.equipSlots[domain]?.[0] ?? "",
+      name: "", description: "",
+      effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 10, perLevel: 2 }],
+      enhance: { maxLevel: 5, goldPerLevel: 50 },
+      trainerOwned: 0, monsterOwned: 0, isNew: true,
+    };
+  }));
+
+  for (const eq of data.equipmentDefs) {
+    const row = el("div", "adm-row");
+    const id = el("div", "adm-id");
+    const txt = el("span");
+    txt.append(el("b", null, eq.name), el("small", null, `${eq.id} · ${eq.description || "—"}`));
+    id.append(txt);
+    const side = el("div", "adm-actions");
+    side.append(badge(`${eq.domain} · ${eq.slot}`));
+    if (eq.enhance) side.append(badge(`up to +${eq.enhance.maxLevel}`));
+    if (eq.trainerOwned > 0) side.append(badge(`${eq.trainerOwned} trainer-owned`));
+    if (eq.monsterOwned > 0) side.append(badge(`${eq.monsterOwned} monster-owned`));
+    side.append(
+      grantControl("equipment", eq.id, eq.name, false),
+      button("Edit", "btn ghost adm-small", () => { editing = structuredClone(eq); renderBody(); }),
+      button("Delete", "btn ghost adm-small adm-danger", () => confirmDelete(
+        `Delete equipment "${eq.name}" (${eq.id})?`, () => deleteEquipment(eq.id), "Equipment deleted")),
+    );
+    row.append(id, side);
+    els.body.appendChild(row);
+  }
+}
+
+function equipmentForm(eq) {
+  const E = data.enums;
+  const form = el("div", "adm-form");
+  form.appendChild(el("h4", null, eq.isNew ? "New equipment" : `Edit equipment — ${eq.name}`));
+
+  const f = {
+    id: textInput(eq.id, "eq_my_gear"),
+    domain: selectInput(E.equipDomains, eq.domain),
+    slot: selectInput(E.equipSlots[eq.domain] ?? [], eq.slot),
+    name: textInput(eq.name),
+    description: textInput(eq.description ?? "", "optional"),
+    effects: el("textarea"),
+    enhanced: el("input"),
+    maxLevel: numInput(eq.enhance?.maxLevel ?? 5, 1, 20),
+    goldPerLevel: numInput(eq.enhance?.goldPerLevel ?? 50, 1, 1_000_000),
+  };
+  f.id.disabled = !eq.isNew;
+  f.effects.rows = 6;
+  f.effects.spellcheck = false;
+  f.effects.value = JSON.stringify(eq.effects, null, 2);
+  f.enhanced.type = "checkbox";
+  f.enhanced.checked = !!eq.enhance;
+
+  // Slot options depend on the chosen domain — repaint when it changes.
+  f.domain.addEventListener("change", () => {
+    const opts = E.equipSlots[f.domain.value] ?? [];
+    const fresh = selectInput(opts, opts[0]);
+    f.slot.replaceWith(fresh);
+    f.slot = fresh;
+  });
+
+  const grid = el("div", "adm-grid");
+  grid.append(field("Id (permanent)", f.id), field("Domain", f.domain), field("Slot", f.slot),
+    field("Name", f.name), field("Description", f.description));
+
+  const effectsField = field("Effects (JSON)", f.effects);
+  effectsField.classList.add("adm-wide");
+
+  const enhanceGrid = el("div", "adm-grid");
+  const paintEnhance = () => {
+    enhanceGrid.innerHTML = "";
+    if (f.enhanced.checked) enhanceGrid.append(field("Max level", f.maxLevel), field("Gold per level", f.goldPerLevel));
+  };
+  f.enhanced.addEventListener("change", paintEnhance);
+  paintEnhance();
+
+  form.append(grid, effectsField, el("p", "adm-hint", EFFECTS_HINT),
+    field("Enhanceable", f.enhanced), enhanceGrid,
+    formButtons(() => {
+      let effects;
+      try {
+        effects = JSON.parse(f.effects.value);
+      } catch {
+        throw new Error("Effects is not valid JSON — fix the syntax and save again");
+      }
+      return saveEquipment({
+        id: f.id.value.trim(), domain: f.domain.value, slot: f.slot.value,
+        name: f.name.value.trim(), description: f.description.value.trim() || null,
+        effects,
+        enhance: f.enhanced.checked
+          ? { maxLevel: +f.maxLevel.value, goldPerLevel: +f.goldPerLevel.value }
+          : null,
+      });
+    }, "Equipment saved"));
+  els.body.appendChild(form);
+}
+
+function runesTab() {
+  if (editing) return runeForm(editing);
+  els.body.appendChild(toolbar("＋ New rune", () => ({
+    id: "", name: "", description: "",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 2, perLevel: 1 }],
+    maxCharges: 5, repairGold: 30, ownedCount: 0, isNew: true,
+  })));
+
+  for (const rn of data.runeDefs) {
+    const row = el("div", "adm-row");
+    const id = el("div", "adm-id");
+    const txt = el("span");
+    txt.append(el("b", null, rn.name), el("small", null, `${rn.id} · ${rn.description || "—"}`));
+    id.append(txt);
+    const side = el("div", "adm-actions");
+    side.append(badge(`${rn.maxCharges} charges`), badge(`repair ${rn.repairGold} 🪙`));
+    if (rn.ownedCount > 0) side.append(badge(`${rn.ownedCount} owned`));
+    side.append(
+      grantControl("rune", rn.id, rn.name, false),
+      button("Edit", "btn ghost adm-small", () => { editing = structuredClone(rn); renderBody(); }),
+      button("Delete", "btn ghost adm-small adm-danger", () => confirmDelete(
+        `Delete rune "${rn.name}" (${rn.id})?`, () => deleteRune(rn.id), "Rune deleted")),
+    );
+    row.append(id, side);
+    els.body.appendChild(row);
+  }
+}
+
+function runeForm(rn) {
+  const form = el("div", "adm-form");
+  form.appendChild(el("h4", null, rn.isNew ? "New rune" : `Edit rune — ${rn.name}`));
+
+  const f = {
+    id: textInput(rn.id, "rn_my_rune"),
+    name: textInput(rn.name),
+    description: textInput(rn.description ?? "", "optional"),
+    effects: el("textarea"),
+    maxCharges: numInput(rn.maxCharges, 1, 100),
+    repairGold: numInput(rn.repairGold, 0, 1_000_000),
+  };
+  f.id.disabled = !rn.isNew;
+  f.effects.rows = 6;
+  f.effects.spellcheck = false;
+  f.effects.value = JSON.stringify(rn.effects, null, 2);
+
+  const grid = el("div", "adm-grid");
+  grid.append(field("Id (permanent)", f.id), field("Name", f.name), field("Description", f.description),
+    field("Max charges", f.maxCharges), field("Repair gold", f.repairGold));
+
+  const effectsField = field("Effects (JSON)", f.effects);
+  effectsField.classList.add("adm-wide");
+
+  form.append(grid, effectsField, el("p", "adm-hint", EFFECTS_HINT),
+    formButtons(() => {
+      let effects;
+      try {
+        effects = JSON.parse(f.effects.value);
+      } catch {
+        throw new Error("Effects is not valid JSON — fix the syntax and save again");
+      }
+      return saveRune({
+        id: f.id.value.trim(), name: f.name.value.trim(),
+        description: f.description.value.trim() || null,
+        effects, maxCharges: +f.maxCharges.value, repairGold: +f.repairGold.value,
+      });
+    }, "Rune saved"));
   els.body.appendChild(form);
 }
 

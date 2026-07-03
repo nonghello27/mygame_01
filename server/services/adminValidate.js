@@ -22,6 +22,13 @@ export const TARGET_RULES = Object.keys(TARGETING);
 export const STATUS_IDS = Object.keys(STATUSES);
 // Loadout contract from 004_engine_v2.sql: slots 0–1 passive, 2 normal, 3 ultimate.
 export const LOADOUT_SLOT_TYPES = ["passive", "passive", "normal", "ultimate"];
+// Phase 7.1 — item/equipment/rune master-data enums (009_items.sql).
+export const ITEM_KINDS = ["material", "consumable"];
+export const EQUIP_DOMAINS = ["trainer", "monster"];
+export const EQUIP_SLOTS = {
+  monster: ["weapon", "armor", "accessory"],
+  trainer: ["head", "body", "charm"],
+};
 
 /** Everything the admin UI needs to render its dropdowns. */
 export function enums() {
@@ -36,6 +43,9 @@ export function enums() {
     attrs: ATTRS,
     permStats: PERM_STATS,
     loadoutSlotTypes: LOADOUT_SLOT_TYPES,
+    itemKinds: ITEM_KINDS,
+    equipDomains: EQUIP_DOMAINS,
+    equipSlots: EQUIP_SLOTS,
   };
 }
 
@@ -150,22 +160,40 @@ export function validateSkillData(data) {
     });
   }
 
-  if (data.passive !== undefined) {
-    if (!Array.isArray(data.passive) || data.passive.length === 0) throw bad("data.passive must be a non-empty array");
-    out.passive = data.passive.map((fx, i) => {
-      const label = `data.passive[${i}]`;
-      if (fx?.when !== "battle_start") throw bad(`${label}.when must be "battle_start"`);
-      if (fx?.op !== "perm_stat") throw bad(`${label}.op must be "perm_stat"`);
-      const o = { when: "battle_start", op: "perm_stat", stat: oneOf(fx.stat, PERM_STATS, `${label}.stat`) };
-      if (fx.pct === undefined && fx.flat === undefined) throw bad(`${label} needs pct or flat`);
-      if (fx.pct !== undefined) o.pct = int(fx.pct, `${label}.pct`, { min: -100, max: 100 });
-      if (fx.flat !== undefined) o.flat = int(fx.flat, `${label}.flat`, { min: -1000, max: 1000 });
-      return o;
-    });
-  }
+  // Skills never get perLevel on their passives — only equipment/runes do
+  // (see validateBattleStartEffects below); this keeps skill grammar exactly
+  // as it was before 7.1.
+  if (data.passive !== undefined) out.passive = validateBattleStartEffects(data.passive, "data.passive", false);
 
   if (Object.keys(out).length === 0) throw bad("skill data must define power, support, or passive");
   return out;
+}
+
+/**
+ * Shared grammar for a battle_start/perm_stat effects list — used by skill
+ * passives, equipment effects, and rune effects alike (all interpreted by
+ * the SAME engine op, shared/engine/resolve.js applyEffect()). Skills keep
+ * their historical shape (no perLevel); equipment/runes may add perLevel so
+ * 7.2's enhancement system has something to scale — pass allowPerLevel=true
+ * for those callers.
+ * @returns {object[]}
+ */
+export function validateBattleStartEffects(list, label, allowPerLevel = true) {
+  if (!Array.isArray(list) || list.length === 0) throw bad(`${label} must be a non-empty array`);
+  return list.map((fx, i) => {
+    const l = `${label}[${i}]`;
+    if (fx?.when !== "battle_start") throw bad(`${l}.when must be "battle_start"`);
+    if (fx?.op !== "perm_stat") throw bad(`${l}.op must be "perm_stat"`);
+    const o = { when: "battle_start", op: "perm_stat", stat: oneOf(fx.stat, PERM_STATS, `${l}.stat`) };
+    if (fx.pct === undefined && fx.flat === undefined) throw bad(`${l} needs pct or flat`);
+    if (fx.pct !== undefined) o.pct = int(fx.pct, `${l}.pct`, { min: -100, max: 100 });
+    if (fx.flat !== undefined) o.flat = int(fx.flat, `${l}.flat`, { min: -1000, max: 1000 });
+    if (fx.perLevel !== undefined) {
+      if (!allowPerLevel) throw bad(`${l}.perLevel is not allowed here`);
+      o.perLevel = int(fx.perLevel, `${l}.perLevel`, { min: 0, max: 100 });
+    }
+    return o;
+  });
 }
 
 /** @returns {{id:string, name:string, slot:string, cooldown:number, data:object}} */
@@ -212,6 +240,7 @@ export function validateSpecies(input, { classNames, skillsById }) {
     attrs: Object.fromEntries(
       ATTRS.map((a) => [a, int(input.attrs?.[a], `attr ${a.toUpperCase()}`, { min: 0, max: 99 })])
     ),
+    runeSlots: int(input.runeSlots ?? 1, "rune slots", { min: 0, max: 5 }),
     skills: [],
   };
 
@@ -257,4 +286,63 @@ export function validateJob(input) {
     };
   }
   return job;
+}
+
+// --- items / equipment / runes (Phase 7.1) --------------------------------------
+
+/** Optional free-text description: trimmed, max length, null when absent. */
+function optStr(v, label, { max = 200 } = {}) {
+  if (v === undefined || v === null || v === "") return null;
+  return str(v, label, { max });
+}
+
+/** @returns {{id:string, kind:string, name:string, description:(string|null)}} */
+export function validateItem(input) {
+  return {
+    id: str(input.id, "item id", { pattern: /^it_[a-z0-9_]+$/ }),
+    kind: oneOf(input.kind, ITEM_KINDS, "kind"),
+    name: str(input.name, "item name"),
+    description: optStr(input.description, "description"),
+  };
+}
+
+/**
+ * @returns {{id:string, domain:string, slot:string, name:string,
+ *   description:(string|null), effects:object[], enhance:(object|null)}}
+ */
+export function validateEquipment(input) {
+  const domain = oneOf(input.domain, EQUIP_DOMAINS, "domain");
+  const slot = oneOf(input.slot, EQUIP_SLOTS[domain], "slot");
+  const eq = {
+    id: str(input.id, "equipment id", { pattern: /^eq_[a-z0-9_]+$/ }),
+    domain,
+    slot,
+    name: str(input.name, "equipment name"),
+    description: optStr(input.description, "description"),
+    effects: validateBattleStartEffects(input.effects, "effects", true),
+    enhance: null,
+  };
+  if (input.enhance !== undefined && input.enhance !== null) {
+    onlyKeys(input.enhance, ["maxLevel", "goldPerLevel"], "enhance");
+    eq.enhance = {
+      maxLevel: int(input.enhance.maxLevel, "enhance.maxLevel", { min: 1, max: 20 }),
+      goldPerLevel: int(input.enhance.goldPerLevel, "enhance.goldPerLevel", { min: 1, max: 1_000_000 }),
+    };
+  }
+  return eq;
+}
+
+/**
+ * @returns {{id:string, name:string, description:(string|null), effects:object[],
+ *   maxCharges:number, repairGold:number}}
+ */
+export function validateRune(input) {
+  return {
+    id: str(input.id, "rune id", { pattern: /^rn_[a-z0-9_]+$/ }),
+    name: str(input.name, "rune name"),
+    description: optStr(input.description, "description"),
+    effects: validateBattleStartEffects(input.effects, "effects", true),
+    maxCharges: int(input.maxCharges, "max charges", { min: 1, max: 100 }),
+    repairGold: int(input.repairGold, "repair gold", { min: 0, max: 1_000_000 }),
+  };
 }

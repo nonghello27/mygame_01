@@ -12,4 +12,8 @@ export const route = createRouter({
   "/api/admin/skills": { POST: admin.skills, DELETE: admin.skills },
   "/api/admin/species": { POST: admin.species, DELETE: admin.species },
   "/api/admin/jobs": { POST: admin.jobs, DELETE: admin.jobs },
+  "/api/admin/items": { POST: admin.items, DELETE: admin.items },
+  "/api/admin/equipment": { POST: admin.equipment, DELETE: admin.equipment },
+  "/api/admin/runes": { POST: admin.runes, DELETE: admin.runes },
+  "/api/admin/grant": { POST: admin.grant },
 });

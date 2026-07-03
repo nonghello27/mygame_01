@@ -12,10 +12,15 @@ import {
   listSkillsAdmin, upsertSkill, skillUsage, deleteSkill,
   listSpeciesAdmin, upsertSpecies, speciesUsage, deleteSpecies,
   listJobsAdmin, upsertJob, jobUsage, deleteJob,
+  listItemsAdmin, upsertItem, itemUsage, deleteItem,
+  listEquipmentAdmin, upsertEquipment, equipmentUsage, deleteEquipment,
+  listRunesAdmin, upsertRune, runeUsage, deleteRune,
 } from "../repos/admin.js";
 import {
   enums, validateClass, validateSkill, validateSpecies, validateJob,
+  validateItem, validateEquipment, validateRune,
 } from "./adminValidate.js";
+import { grant as grantInventory } from "./inventory.js";
 
 /** Is this email on the ADMIN_EMAILS allowlist? (Promotion happens at login.) */
 export function isAdminEmail(email) {
@@ -36,13 +41,14 @@ export async function requireAdmin(sql, trainerId) {
   return trainer;
 }
 
-/** Everything the console renders, in one read: all four master tables
+/** Everything the console renders, in one read: all master tables
  *  (with usage counts) + the enum registries the dropdowns are built from. */
 export async function masterState(sql) {
-  const [classes, skills, species, jobs] = await Promise.all([
+  const [classes, skills, species, jobs, itemDefs, equipmentDefs, runeDefs] = await Promise.all([
     listClassesAdmin(sql), listSkillsAdmin(sql), listSpeciesAdmin(sql), listJobsAdmin(sql),
+    listItemsAdmin(sql), listEquipmentAdmin(sql), listRunesAdmin(sql),
   ]);
-  return { classes, skills, species, jobs, enums: enums() };
+  return { classes, skills, species, jobs, itemDefs, equipmentDefs, runeDefs, enums: enums() };
 }
 
 // --- writes: validate → persist. Handlers respond with a fresh masterState. ---
@@ -105,4 +111,59 @@ export async function removeJob(sql, id) {
     throw httpError(409, `cannot delete "${id}": ${used.activities} activities reference it`);
   }
   await deleteJob(sql, id);
+}
+
+// --- items / equipment / runes (Phase 7.1) --------------------------------------
+
+export async function saveItem(sql, input) {
+  await upsertItem(sql, validateItem(input));
+}
+
+export async function removeItem(sql, id) {
+  if (typeof id !== "string" || !id) throw httpError(400, "id is required");
+  const used = await itemUsage(sql, id);
+  if (used.owned > 0) throw httpError(409, `cannot delete "${id}": ${used.owned} trainers own it`);
+  await deleteItem(sql, id);
+}
+
+export async function saveEquipment(sql, input) {
+  await upsertEquipment(sql, validateEquipment(input));
+}
+
+export async function removeEquipment(sql, id) {
+  if (typeof id !== "string" || !id) throw httpError(400, "id is required");
+  const used = await equipmentUsage(sql, id);
+  if (used.trainer > 0 || used.monster > 0) {
+    throw httpError(409,
+      `cannot delete "${id}": owned by ${used.trainer} trainers and ${used.monster} monsters`);
+  }
+  await deleteEquipment(sql, id);
+}
+
+export async function saveRune(sql, input) {
+  await upsertRune(sql, validateRune(input));
+}
+
+export async function removeRune(sql, id) {
+  if (typeof id !== "string" || !id) throw httpError(400, "id is required");
+  const used = await runeUsage(sql, id);
+  if (used.owned > 0) throw httpError(409, `cannot delete "${id}": ${used.owned} trainers own it`);
+  await deleteRune(sql, id);
+}
+
+/**
+ * The ONLY acquisition source until 7.4 (marketplace/summons): an admin
+ * grants an item/equipment piece/rune to a trainer (defaulting to
+ * themselves). Kept here (not in inventory.js) because the admin-only gate
+ * and the 404-on-unknown-trainer check belong with the other admin routes;
+ * the actual grant logic (kind/defId/qty validation, unknown-def 404) lives
+ * in services/inventory.js so it's reusable by future non-admin flows.
+ */
+export async function grantToTrainer(sql, adminId, { trainerId, kind, defId, qty }) {
+  const id = trainerId === undefined || trainerId === null ? adminId : Number(trainerId);
+  if (!Number.isInteger(id) || id <= 0) throw httpError(400, "trainerId must be a trainer's id");
+  const trainer = await getTrainerById(sql, id);
+  if (!trainer) throw httpError(404, "unknown trainer");
+  await grantInventory(sql, id, { kind, defId, qty });
+  return trainer;
 }

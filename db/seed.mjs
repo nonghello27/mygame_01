@@ -19,6 +19,9 @@ import { SKILLS } from "../src/data/skills.js";
 import { CLASS_META } from "../src/data/classes.js";
 import { JOBS } from "../src/data/jobs.js";
 import { EXPERTISES } from "../src/data/expertises.js";
+import { ITEMS } from "../src/data/items.js";
+import { EQUIPMENT } from "../src/data/equipment.js";
+import { RUNES } from "../src/data/runes.js";
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is not set. Put it in .env (see .env.example).");
@@ -64,8 +67,8 @@ async function main() {
     await pool.query(
       `INSERT INTO monster_species
          (id, name, cls, emoji, hp, atk, spd, sprite, starter,
-          element, attack_kind, attack_style, targeting, str, agi, vit, intl, dex)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          element, attack_kind, attack_style, targeting, str, agi, vit, intl, dex, rune_slots)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name, cls = EXCLUDED.cls, emoji = EXCLUDED.emoji,
          hp = EXCLUDED.hp, atk = EXCLUDED.atk, spd = EXCLUDED.spd,
@@ -73,10 +76,10 @@ async function main() {
          element = EXCLUDED.element, attack_kind = EXCLUDED.attack_kind,
          attack_style = EXCLUDED.attack_style, targeting = EXCLUDED.targeting,
          str = EXCLUDED.str, agi = EXCLUDED.agi, vit = EXCLUDED.vit,
-         intl = EXCLUDED.intl, dex = EXCLUDED.dex`,
+         intl = EXCLUDED.intl, dex = EXCLUDED.dex, rune_slots = EXCLUDED.rune_slots`,
       [s.id, s.name, s.cls, s.emoji, s.hp, s.atk, s.spd, s.sprite ?? null, s.starter,
        s.element, s.attackKind, s.attackStyle, s.targeting,
-       s.attrs.str, s.attrs.agi, s.attrs.vit, s.attrs.int, s.attrs.dex]
+       s.attrs.str, s.attrs.agi, s.attrs.vit, s.attrs.int, s.attrs.dex, s.runeSlots ?? 1]
     );
     await pool.query(`DELETE FROM species_skills WHERE species_id = $1`, [s.id]);
     for (let slot = 0; slot < s.skills.length; slot++) {
@@ -119,16 +122,52 @@ async function main() {
     }
   }
 
+  // 7. Items, equipment, runes (master data; upsert so balance edits land).
+  for (const it of ITEMS) {
+    await pool.query(
+      `INSERT INTO item_defs (id, kind, name, description)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET
+         kind = EXCLUDED.kind, name = EXCLUDED.name, description = EXCLUDED.description`,
+      [it.id, it.kind, it.name, it.description ?? null]
+    );
+  }
+  for (const eq of EQUIPMENT) {
+    await pool.query(
+      `INSERT INTO equipment_defs (id, domain, slot, name, description, effects, enhance)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+       ON CONFLICT (id) DO UPDATE SET
+         domain = EXCLUDED.domain, slot = EXCLUDED.slot, name = EXCLUDED.name,
+         description = EXCLUDED.description, effects = EXCLUDED.effects, enhance = EXCLUDED.enhance`,
+      [eq.id, eq.domain, eq.slot, eq.name, eq.description ?? null,
+       JSON.stringify(eq.effects), eq.enhance ? JSON.stringify(eq.enhance) : null]
+    );
+  }
+  for (const rn of RUNES) {
+    await pool.query(
+      `INSERT INTO rune_defs (id, name, description, effects, max_charges, repair_gold)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name, description = EXCLUDED.description, effects = EXCLUDED.effects,
+         max_charges = EXCLUDED.max_charges, repair_gold = EXCLUDED.repair_gold`,
+      [rn.id, rn.name, rn.description ?? null, JSON.stringify(rn.effects), rn.maxCharges, rn.repairGold]
+    );
+  }
+
   const c = await pool.query(`SELECT count(*)::int AS count FROM classes`);
   const sp = await pool.query(`SELECT count(*)::int AS count FROM monster_species`);
   const sk = await pool.query(`SELECT count(*)::int AS count FROM skills`);
   const jb = await pool.query(`SELECT count(*)::int AS count FROM job_defs`);
   const ex = await pool.query(`SELECT count(*)::int AS count FROM expertises`);
   const ts = await pool.query(`SELECT count(*)::int AS count FROM trainer_skill_defs`);
+  const it = await pool.query(`SELECT count(*)::int AS count FROM item_defs`);
+  const eq = await pool.query(`SELECT count(*)::int AS count FROM equipment_defs`);
+  const rn = await pool.query(`SELECT count(*)::int AS count FROM rune_defs`);
   console.log(
     `Seed complete: ${c.rows[0].count} classes, ${sp.rows[0].count} species, ` +
     `${sk.rows[0].count} skills, ${jb.rows[0].count} jobs, ` +
-    `${ex.rows[0].count} expertises, ${ts.rows[0].count} trainer skills.`
+    `${ex.rows[0].count} expertises, ${ts.rows[0].count} trainer skills, ` +
+    `${it.rows[0].count} items, ${eq.rows[0].count} equipment, ${rn.rows[0].count} runes.`
   );
 }
 

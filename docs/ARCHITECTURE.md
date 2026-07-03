@@ -147,13 +147,25 @@ monster_skills (
   PRIMARY KEY (monster_id, slot)
 )
 
--- runes / equipment / items: same master+instance pattern --------------------
-rune_defs(id, name, effects JSONB, max_charges INT, …)
-runes(id, trainer_id, def_id, level, charges_left, monster_id NULL, broken BOOL)
-equipment_defs(id, domain 'trainer'|'monster', slot, effects JSONB, …)
-trainer_equipment(id, trainer_id, def_id, enhance_level, equipped_slot NULL)
-monster_equipment(id, trainer_id, def_id, enhance_level, monster_id NULL)
-item_defs(id, kind, …) / items(id, trainer_id, def_id, qty)
+-- items / equipment / runes (Phase 7.1, real: 009_items.sql) -----------------
+-- effects JSONB below: same battle_start/perm_stat grammar as skill passives,
+-- plus an optional perLevel (skills don't get one) for 7.2's enhancement math
+item_defs(id TEXT PK, kind 'material'|'consumable', name, description)
+items(id, trainer_id, def_id, qty INT DEFAULT 0, UNIQUE(trainer_id, def_id))
+equipment_defs(id TEXT PK, domain 'trainer'|'monster', slot TEXT,
+  name, description, effects JSONB, enhance JSONB)  -- enhance: {maxLevel,
+                                                     -- goldPerLevel} or NULL
+trainer_equipment(id, trainer_id, def_id, enhance_level DEFAULT 0,
+                   equipped_slot NULL)   -- NULL = in the bag
+monster_equipment(id, trainer_id, def_id, enhance_level DEFAULT 0,
+                   monster_id NULL)      -- NULL = in the bag
+rune_defs(id TEXT PK, name, description, effects JSONB,
+          max_charges INT, repair_gold INT DEFAULT 0)
+runes(id, trainer_id, def_id, level DEFAULT 1, charges_left INT,
+      broken BOOL DEFAULT false, monster_id NULL)   -- NULL = in the bag
+-- monster_species.rune_slots (added by 009_items.sql, DEFAULT 1) — read by 7.3
+-- nothing above feeds a battle snapshot yet (7.2/7.3 wire that in); the only
+-- acquisition source until 7.4 is the admin-gated POST /api/admin/grant
 
 -- trainer progression (Phase 6, real: 007_pvp.sql) ----------------------------
 expertises(id, name)                    -- MASTER: the 3 trainer archetypes
@@ -345,6 +357,11 @@ POST /api/trainer/progression { expertiseId } → pick/switch expertise (switchi
                               wipes both learned skill slots)
 POST /api/trainer/skills      { slot, skillId } → learn a trainer skill into a
                               learn slot, or clear it (skillId: null)
+GET  /api/trainer/inventory   items + equipment (bag + equipped) + runes, one
+                              call (Phase 7.1; ROADMAP drafted /api/inventory,
+                              but a new top-level domain would cost another
+                              serverless function — grouped here instead, same
+                              reasoning as the /api/me → /api/trainer/me rename)
 
 # battle domain — api/battle/[...route].js
 POST /api/battle/match        { mode? } → create match session ('free', default:
@@ -366,9 +383,18 @@ POST /api/activities          start work/training { monsterId, jobId }
 
 # admin domain — api/admin/[...route].js
 # every call re-checks trainers.is_admin (403)
-GET    /api/admin/master      all 4 master tables + engine enum registries
-POST   /api/admin/{classes,skills,species,jobs}   validated upsert
-DELETE /api/admin/{classes,skills,species,jobs}   guarded delete (409 in use)
+GET    /api/admin/master      all 7 master tables (classes, skills, species,
+                              jobs, item_defs, equipment_defs, rune_defs) +
+                              engine enum registries (now incl. item kinds,
+                              equipment domains/slots)
+POST   /api/admin/{classes,skills,species,jobs,items,equipment,runes}
+                              validated upsert
+DELETE /api/admin/{classes,skills,species,jobs,items,equipment,runes}
+                              guarded delete (409 in use)
+POST   /api/admin/grant       { trainerId?, kind, defId, qty? } → grant an
+                              item/equipment/rune to a trainer (defaults to
+                              the caller); the only acquisition source until
+                              Phase 7.4 (marketplace/summons) — admin-only
 
 # not yet built (future domains, still under the 12-function cap)
 POST /api/adventure/*         session create / step

@@ -14,7 +14,8 @@ async function request(path, method, body) {
   return data;
 }
 
-/** @typedef {{classes:object[], skills:object[], species:object[], jobs:object[], enums:object}} MasterState */
+/** @typedef {{classes:object[], skills:object[], species:object[], jobs:object[],
+ *   itemDefs:object[], equipmentDefs:object[], runeDefs:object[], enums:object}} MasterState */
 
 /** @returns {Promise<MasterState>} everything the console renders, in one read. */
 export const loadMaster = () => request("/api/admin/master", "GET");
@@ -30,3 +31,21 @@ export const deleteSpecies = (id) => request("/api/admin/species", "DELETE", { i
 
 export const saveJob = (row) => request("/api/admin/jobs", "POST", row);
 export const deleteJob = (id) => request("/api/admin/jobs", "DELETE", { id });
+
+export const saveItem = (row) => request("/api/admin/items", "POST", row);
+export const deleteItem = (id) => request("/api/admin/items", "DELETE", { id });
+
+export const saveEquipment = (row) => request("/api/admin/equipment", "POST", row);
+export const deleteEquipment = (id) => request("/api/admin/equipment", "DELETE", { id });
+
+export const saveRune = (row) => request("/api/admin/runes", "POST", row);
+export const deleteRune = (id) => request("/api/admin/runes", "DELETE", { id });
+
+/**
+ * Grant an item/equipment piece/rune to a trainer (defaults to the calling
+ * admin server-side when trainerId is omitted) — the only acquisition
+ * source until Phase 7.4 (marketplace/summons).
+ * @param {{trainerId?:number, kind:'item'|'equipment'|'rune', defId:string, qty?:number}} body
+ * @returns {Promise<{trainer:object, inventory:object}>}
+ */
+export const grant = (body) => request("/api/admin/grant", "POST", body);

@@ -3,11 +3,13 @@
 // the mutation, respond with a FRESH masterState so the console just
 // re-renders what the server now holds.
 //
-// GET /api/admin/master -> { classes, skills, species, jobs, enums }
-//   The admin console's single read: all four master tables with usage
+// GET /api/admin/master -> { classes, skills, species, jobs, itemDefs,
+//                             equipmentDefs, runeDefs, enums }
+//   The admin console's single read: every master table with usage
 //   counts, plus the enum registries (elements, targeting rules, statuses,
-//   slot types) straight from shared/rules — the UI builds its dropdowns
-//   from these, so the form options can never drift from what the engine
+//   slot types, item kinds, equipment domains/slots) straight from
+//   shared/rules and adminValidate.js — the UI builds its dropdowns from
+//   these, so the form options can never drift from what the engine
 //   interprets. Admin only.
 //
 // POST   /api/admin/classes { cls, attackName, fx }  -> upsert a class
@@ -27,7 +29,26 @@
 //        (work: rewards {gold, trainerExp} | training: rewards {attr, gain})
 // DELETE /api/admin/jobs { id }  -> delete (409 while activities reference it)
 //
-// Every mutation responds with a fresh masterState. Admin only.
+// POST   /api/admin/items { id, kind, name, description }  -> upsert an item
+// DELETE /api/admin/items { id }  -> delete (409 while any trainer owns it)
+//
+// POST   /api/admin/equipment { id, domain, slot, name, description,
+//                                effects, enhance }  -> upsert equipment
+//        (domain 'monster': slot weapon|armor|accessory; domain 'trainer':
+//        slot head|body|charm; effects: battle_start/perm_stat list, may
+//        carry perLevel; enhance: {maxLevel, goldPerLevel} or null)
+// DELETE /api/admin/equipment { id }  -> delete (409 while owned)
+//
+// POST   /api/admin/runes { id, name, description, effects, maxCharges,
+//                            repairGold }  -> upsert a rune
+// DELETE /api/admin/runes { id }  -> delete (409 while any trainer owns it)
+//
+// Every mutation above responds with a fresh masterState. Admin only.
+//
+// POST /api/admin/grant { trainerId?, kind, defId, qty? }
+//   The only acquisition source until Phase 7.4 (marketplace/summons):
+//   grants an item/equipment/rune to a trainer (defaults to the calling
+//   admin). Responds with the inventory the grant landed in. Admin only.
 
 import { db } from "../db.js";
 import { sendJson, readJson } from "../http.js";
@@ -43,7 +64,15 @@ import {
   removeSpecies,
   saveJob,
   removeJob,
+  saveItem,
+  removeItem,
+  saveEquipment,
+  removeEquipment,
+  saveRune,
+  removeRune,
+  grantToTrainer,
 } from "../services/admin.js";
+import { getInventory } from "../services/inventory.js";
 
 export async function master(req, res) {
   const sql = db();
@@ -75,3 +104,16 @@ export const classes = crudHandler(saveClass, removeClass, "cls");
 export const skills = crudHandler(saveSkill, removeSkill);
 export const species = crudHandler(saveSpecies, removeSpecies);
 export const jobs = crudHandler(saveJob, removeJob);
+export const items = crudHandler(saveItem, removeItem);
+export const equipment = crudHandler(saveEquipment, removeEquipment);
+export const runes = crudHandler(saveRune, removeRune);
+
+export async function grant(req, res) {
+  const sql = db();
+  const admin = await requireAdmin(sql, trainerIdFromRequest(req));
+
+  const body = await readJson(req);
+  const trainer = await grantToTrainer(sql, admin.id, body);
+
+  sendJson(res, 200, { trainer, inventory: await getInventory(sql, trainer.id) });
+}

@@ -26,8 +26,9 @@ The vision and plans live in `docs/` — treat them as part of this file:
   "what next?", answer from here.** Current position: Phases 0–6 complete
   (Firebase auth; owned monsters; tamper-proof matches; battle engine v2;
   work & training economy; admin console for master data; PVP ladder &
-  trainer progression); next up is Phase 7 (acquisition & itemization),
-  staged as sub-phases 7.1–7.5 in the roadmap.
+  trainer progression); Phase 7 (acquisition & itemization) is staged as
+  sub-phases 7.1–7.5 in the roadmap — 7.1 (item schema & inventory) is code
+  complete; next up is 7.2 (equipment: equip, enhance, engine integration).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -101,20 +102,24 @@ per roadmap phase, don't big-bang rename.)
 │   ├── routes/             # one handler per endpoint (happy path + httpError throws):
 │   │                       # auth.js (login/logout), me, classes, activities, match,
 │   │                       # battle, progression, trainerSkills, formation, ladder,
-│   │                       # admin.js (master + classes/skills/species/jobs CRUD)
+│   │                       # inventory, admin.js (master + classes/skills/species/jobs/
+│   │                       # items/equipment/runes CRUD + grant)
 │   ├── db.js               # Neon connection (lazy, from DATABASE_URL)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg) + sendJson()/readJson() + createRouter()
 │   ├── repos/              # SQL: trainers, species, monsters, matches, activities, admin,
 │   │                       # progression (expertises/trainer_skill_defs/trainer_skills),
-│   │                       # pvp (formations, seasons, rank_entries, matchmaking)
+│   │                       # pvp (formations, seasons, rank_entries, matchmaking),
+│   │                       # inventory (items/equipment/runes: grant + atomic consume)
 │   └── services/           # matches.js (applyOrder gate + PVP Elo on resolve),
-│                           # activities.js (lazy settle), admin.js (gate + CRUD) +
+│                           # activities.js (lazy settle), admin.js (gate + CRUD + grant) +
 │                           # adminValidate.js (pure grammar), progression.js (expertise/
 │                           # learn-slot use-cases), pvp.js (defense formation, lazy season
-│                           # rollover, matchmaking)
+│                           # rollover, matchmaking), inventory.js (grant/consume as atomic
+│                           # claim-style statements for items/equipment/runes)
 ├── db/
-│   ├── migrations/         # NNN_name.sql, applied in order (append-only once live)
+│   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
+│   │                       # up to 009_items.sql as of Phase 7.1)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
@@ -130,14 +135,17 @@ per roadmap phase, don't big-bang rename.)
     ├── main.js             # ENTRY: imports CSS, inits modules, wires buttons
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm | admin
-    ├── data/               # seed content: classes, sprites, units, skills, jobs, expertises
+    │                       # | pvp | trainer | inventory
+    ├── data/               # seed content: classes, sprites, units, skills, jobs, expertises,
+    │                       # items, equipment, runes
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js, admin.js
     ├── core/
     │   ├── units.js        # makeUnit(), cloneRoster()
     │   ├── state.js        # shared state + initContent()/resetState()
     │   └── battle.js       # client REPLAYER: requestBattle() + animate events
     ├── ui/                 # board, sprite, dragdrop, log, chroma, auth, farm, admin,
-    │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise + skills)
+    │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
+    │                       # skills), inventory (🎒 panel: Items | Equipment | Runes)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -220,6 +228,21 @@ The Arena panel (`src/ui/pvp.js`) is the ladder + defense editor; the
 Trainer panel (`src/ui/trainer.js`) is expertise + skill-slot picking —
 both pure display over their `/api/*` reads.
 
+Itemization (Phase 7.1): `item_defs`/`equipment_defs`/`rune_defs` (master,
+seeded from `src/data/items.js`/`equipment.js`/`runes.js`) → `items` (qty
+stacks, `UNIQUE(trainer_id, def_id)`), `trainer_equipment`/`monster_equipment`,
+`runes` (instance rows; a NULL `equipped_slot`/`monster_id` means "in the
+bag"). Effects reuse the exact skill-passive `battle_start`/`perm_stat`
+grammar (`validateBattleStartEffects` in `server/services/adminValidate.js`
+is shared with skill passives, with an optional `perLevel` skills don't get —
+7.2's enhancement system will scale off it).
+`monster_species.rune_slots` is added here for 7.3 to consume later. Nothing
+here feeds a battle snapshot yet. The ONLY acquisition source until 7.4 is
+the admin-gated `POST /api/admin/grant`; `GET /api/trainer/inventory` is the
+one read (items + equipment + runes in one call). The 🎒 Inventory panel
+(`src/ui/inventory.js`) is pure display over that read, with tabs Items |
+Equipment | Runes.
+
 ## 4. Recipes for TODAY's code
 
 - **Add a species / skill / class / job (live):** admin console (⚙ button)
@@ -241,6 +264,12 @@ both pure display over their `/api/*` reads.
 - **Add a job:** row in `src/data/jobs.js` (work: `{gold, trainerExp}` |
   training: `{attr, gain}`) → `npm run db:seed`. No code change — settlement
   interprets rewards by kind; `tests/jobs.test.mjs` guards the grammar.
+- **Add an item / equipment piece / rune (live):** admin console (🎒/⚔/🔮
+  tabs) — validated writes straight to the master tables, no redeploy. Or a
+  row in `src/data/items.js` / `equipment.js` / `runes.js` + `npm run
+  db:seed` for content meant to ship with the repo. Equipment/rune `effects`
+  must stay within the `battle_start`/`perm_stat` grammar (`perLevel`
+  allowed) until a later phase widens the op set.
 - **Add a stat:** attrs live in `monster_species`/`monsters` (new migration);
   derived stats in `shared/rules/formulas.js` `deriveStats()`; consumed via
   `toLane()` in `server/services/matches.js` → card markup in `ui/board.js`.
@@ -276,14 +305,17 @@ both pure display over their `/api/*` reads.
 
 ## 6. Known gaps (today)
 
-- Teams fixed at 3; no DEF/mitigation stat; runes/equipment don't exist yet
-  (Phase 7). Trainer skills DO join battle now (Phase 6, `battle_start`/
-  `after_ally_turns` triggers).
+- Teams fixed at 3; no DEF/mitigation stat. Items/equipment/runes exist as
+  inventory rows now (Phase 7.1), but nothing equips, sockets, enhances, or
+  feeds a battle snapshot yet — that's 7.2 (equipment) and 7.3 (runes).
+  `monster_species.rune_slots` is stored but unread until 7.3. Trainer skills
+  DO join battle (Phase 6, `battle_start`/`after_ally_turns` triggers).
 - Battle wins still award nothing directly (gold/exp come from work jobs
   only; PVP moves rating only, no gold/exp) — season-end payouts are the one
   exception, and those are lazy/passive, not per-battle. Monsters have no
-  level/exp of their own — training raises attributes directly. Gold has
-  nothing to buy yet (marketplace/summons are Phase 7).
+  level/exp of their own — training raises attributes directly. Gold still
+  has nothing to buy — the admin-gated `POST /api/admin/grant` is the only
+  acquisition source until Phase 7.4 ships Summon/Adventure (marketplace is 7.5).
 - Opponents in a `mode:"pvp"` match ARE real trainers' saved defense
   formations now (matched by rating proximity); free matches (default mode)
   are still random species teams. No sound.

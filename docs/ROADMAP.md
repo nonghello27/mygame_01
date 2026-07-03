@@ -245,25 +245,55 @@ Cross-cutting rules for all five sub-phases:
   op set in `shared/rules/`. A genuinely new mechanic = one new op/trigger in
   the registry — never an engine branch for one item.
 
-### Phase 7.1 — Item schema & inventory
+### Phase 7.1 — Item schema & inventory ✅ CODE COMPLETE (2026-07-03)
 
-- `009_items.sql`: master `item_defs`, `equipment_defs` (domain
+- ✅ `009_items.sql`: master `item_defs`, `equipment_defs` (domain
   `'trainer'|'monster'`, slot, effects JSONB, enhance cost curve),
-  `rune_defs` (effects JSONB, max_charges); instance `items` (qty stacks),
-  `trainer_equipment` / `monster_equipment` (enhance_level, equipped
-  slot / monster_id nullable), `runes` (charges_left, broken, monster_id
-  nullable) — per ARCHITECTURE §4. **Also adds `monster_species.rune_slots`**:
-  it's in ARCHITECTURE's draft but was never migrated, 7.3 depends on it, and
-  the admin species editor must expose it.
-- Seed files `src/data/items.js` / `equipment.js` / `runes.js`; admin tabs +
-  validation (`adminValidate.js` grammar for effects JSONB) + guarded deletes.
-- `server/services/inventory.js`: grant/consume as atomic claim-style
-  statements (the `settleActivities` pattern); admin-only grant endpoint for
-  testing until 7.4 provides real sources.
-- `GET /api/inventory` — items + equipment + runes in one call.
-- UI: inventory panel with tabs Items | Equipment | Runes.
+  `rune_defs` (effects JSONB, max_charges); instance `items` (qty stacks,
+  `UNIQUE(trainer_id, def_id)`), `trainer_equipment` / `monster_equipment`
+  (enhance_level, equipped slot / monster_id nullable), `runes`
+  (charges_left, broken, monster_id nullable) — per ARCHITECTURE §4. Also
+  adds `monster_species.rune_slots` (DEFAULT 1): it's in ARCHITECTURE's draft
+  but was never migrated, 7.3 depends on it, and the admin species editor
+  now exposes it.
+- ✅ Seed files `src/data/items.js` / `equipment.js` / `runes.js` (3 items,
+  6 equipment rows across both domains/slots, 3 runes); `db/seed.mjs` upserts
+  all three plus `monster_species.rune_slots`.
+- ✅ `adminValidate.js` grammar: `validateItem`/`validateEquipment`/
+  `validateRune`, and a shared `validateBattleStartEffects()` extracted from
+  the skill-passive check — skills keep their exact pre-7.1 grammar (no
+  `perLevel`), equipment/runes get `perLevel` for 7.2's enhancement math.
+  `validateSpecies` gained `runeSlots` (0–5, default 1).
+- ✅ Admin CRUD (`server/repos|services|routes/admin.js`): upsert + guarded
+  409 deletes for all three tables; `masterState()`/`GET /api/admin/master`
+  now returns `itemDefs`/`equipmentDefs`/`runeDefs` + the new enums
+  (`itemKinds`, `equipDomains`, `equipSlots`).
+- ✅ `server/services/inventory.js` + `server/repos/inventory.js`: grant/consume
+  as atomic claim-style statements (the `settleActivities` pattern) —
+  `consumeItem` is ready for 7.2 to call.
+- ✅ `GET /api/trainer/inventory` — items + equipment (bag + equipped) + runes
+  in one call. (ROADMAP originally drafted `/api/inventory`; grouped under
+  the trainer domain instead, same reasoning as the `/api/me` →
+  `/api/trainer/me` rename — a new top-level `api/` file costs a serverless
+  function.)
+- ✅ `POST /api/admin/grant` — the only acquisition source until 7.4; grants
+  to the calling admin (or a named trainer) and re-checks `is_admin`.
+- ✅ UI: 🎒 Inventory panel (`src/ui/inventory.js`) — tabs Items | Equipment |
+  Runes, pure display over the one read; admin console gained matching
+  Items | Equipment | Runes tabs (JSON-textarea effects editor, mirroring
+  the Skills tab) plus a per-def "Grant to me" control, and the Species
+  editor gained a Rune slots field.
+- ✅ Tests: `adminValidate` cases for all three validators + the
+  perLevel-stays-skill-only regression + species `runeSlots` bounds;
+  `tests/items.test.mjs` guards the three seed files' grammar/uniqueness the
+  way `tests/jobs.test.mjs` guards jobs. Golden logs untouched (no engine
+  code changed).
 
-**Start here:** the migration + seed files.
+**Remaining (operator step):** verify the phase's "Done when" in a browser
+with an admin account — grant one of each kind (item/equipment/rune), confirm
+all three appear correctly in the 🎒 Inventory panel's three tabs, and
+exercise a guarded delete (edit a def an owned row references, confirm 409).
+
 **Done when:** goods granted via the admin endpoint appear in all three tabs;
 admin CRUD works on the three new master tables; deleting a def referenced by
 an instance row answers 409.
