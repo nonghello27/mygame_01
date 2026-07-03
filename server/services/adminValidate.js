@@ -323,11 +323,25 @@ export function validateEquipment(input) {
     enhance: null,
   };
   if (input.enhance !== undefined && input.enhance !== null) {
-    onlyKeys(input.enhance, ["maxLevel", "goldPerLevel"], "enhance");
+    onlyKeys(input.enhance, ["maxLevel", "goldPerLevel", "material"], "enhance");
     eq.enhance = {
       maxLevel: int(input.enhance.maxLevel, "enhance.maxLevel", { min: 1, max: 20 }),
       goldPerLevel: int(input.enhance.goldPerLevel, "enhance.goldPerLevel", { min: 1, max: 1_000_000 }),
     };
+    // Optional material cost (Phase 7.2, step B): a flat qty of one item_defs
+    // stack spent per enhance step, alongside gold. This validator is pure
+    // (no DB) and so does NOT check that itemId actually exists in
+    // item_defs — there's no context to check it against. A nonexistent
+    // itemId isn't a security hole: at enhance time the guarded claim query
+    // just never finds a matching stack, so it 409s exactly like "not enough
+    // material" would. A bad admin-entered id is a content bug, not a break.
+    if (input.enhance.material !== undefined && input.enhance.material !== null) {
+      onlyKeys(input.enhance.material, ["itemId", "qtyPerLevel"], "enhance.material");
+      eq.enhance.material = {
+        itemId: str(input.enhance.material.itemId, "enhance.material.itemId", { pattern: /^it_[a-z0-9_]+$/ }),
+        qtyPerLevel: int(input.enhance.material.qtyPerLevel, "enhance.material.qtyPerLevel", { min: 1, max: 100 }),
+      };
+    }
   }
   return eq;
 }

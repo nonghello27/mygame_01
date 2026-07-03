@@ -14,8 +14,9 @@ import {
   getTrainerSkillsSnapshot, getActiveSeason, insertSeason, claimSeasonClose,
   ensureRankEntry, topEntries, rankOf, payoutSeason,
 } from "../repos/pvp.js";
+import { listEquippedMonsterEquipment, getTrainerEquipmentSnapshot } from "../repos/equipment.js";
 import { settleActivities } from "./activities.js";
-import { TEAM_SIZE, toLane } from "./matches.js";
+import { TEAM_SIZE, toLane, groupEquipmentByMonster } from "./matches.js";
 
 /**
  * Lazy season rollover — the same pattern as settleActivities: no cron, this
@@ -144,8 +145,16 @@ export async function createPvpMatch(sql, trainerId) {
   if (available.length < TEAM_SIZE) {
     throw httpError(409, "not enough available monsters — some are still working or training");
   }
-  const attacker = available.slice(0, TEAM_SIZE).map(toLane);
-  const attackerTrainer = await getTrainerSkillsSnapshot(sql, trainerId);
+  // Equipped monster-domain gear, grouped per monster (Phase 7.2 step C) —
+  // same helper createMatch uses, so both routes group identically.
+  const byMonster = groupEquipmentByMonster(await listEquippedMonsterEquipment(sql, trainerId));
+  const attacker = available.slice(0, TEAM_SIZE).map((m, i) => toLane(m, i, byMonster.get(m.id) ?? []));
+  // Trainer-domain skills AND equipment both freeze into the match row here —
+  // PVP-only auras, same reasoning as trainer skills since Phase 6.
+  const attackerTrainer = {
+    skills: await getTrainerSkillsSnapshot(sql, trainerId),
+    equipment: await getTrainerEquipmentSnapshot(sql, trainerId),
+  };
 
   // Composition randomness (which opponent, out of the nearby-rating pool) —
   // not battle randomness. Same reasoning as shuffle() in createMatch: it
@@ -163,8 +172,12 @@ export async function createPvpMatch(sql, trainerId) {
     // as "no opponent available" rather than freezing a partial team.
     throw httpError(409, "opponent's defense formation is incomplete — try again");
   }
-  const defender = defenderRoster.map(toLane);
-  const defenderTrainer = await getTrainerSkillsSnapshot(sql, opponent.trainerId);
+  const defByMonster = groupEquipmentByMonster(await listEquippedMonsterEquipment(sql, opponent.trainerId));
+  const defender = defenderRoster.map((m, i) => toLane(m, i, defByMonster.get(m.id) ?? []));
+  const defenderTrainer = {
+    skills: await getTrainerSkillsSnapshot(sql, opponent.trainerId),
+    equipment: await getTrainerEquipmentSnapshot(sql, opponent.trainerId),
+  };
   await ensureRankEntry(sql, season.id, opponent.trainerId);
 
   const match = {

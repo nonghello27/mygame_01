@@ -154,7 +154,10 @@ item_defs(id TEXT PK, kind 'material'|'consumable', name, description)
 items(id, trainer_id, def_id, qty INT DEFAULT 0, UNIQUE(trainer_id, def_id))
 equipment_defs(id TEXT PK, domain 'trainer'|'monster', slot TEXT,
   name, description, effects JSONB, enhance JSONB)  -- enhance: {maxLevel,
-                                                     -- goldPerLevel} or NULL
+                                                     -- goldPerLevel,
+                                                     -- material?:{itemId,
+                                                     -- qtyPerLevel}} or NULL
+                                                     -- (material added 7.2)
 trainer_equipment(id, trainer_id, def_id, enhance_level DEFAULT 0,
                    equipped_slot NULL)   -- NULL = in the bag
 monster_equipment(id, trainer_id, def_id, enhance_level DEFAULT 0,
@@ -164,8 +167,9 @@ rune_defs(id TEXT PK, name, description, effects JSONB,
 runes(id, trainer_id, def_id, level DEFAULT 1, charges_left INT,
       broken BOOL DEFAULT false, monster_id NULL)   -- NULL = in the bag
 -- monster_species.rune_slots (added by 009_items.sql, DEFAULT 1) — read by 7.3
--- nothing above feeds a battle snapshot yet (7.2/7.3 wire that in); the only
--- acquisition source until 7.4 is the admin-gated POST /api/admin/grant
+-- equipment feeds a battle snapshot as of Phase 7.2 (see §5's toLane()/
+-- resolveBattle() notes below); runes still don't (7.3 wires them in). The
+-- only acquisition source until 7.4 is the admin-gated POST /api/admin/grant
 
 -- trainer progression (Phase 6, real: 007_pvp.sql) ----------------------------
 expertises(id, name)                    -- MASTER: the 3 trainer archetypes
@@ -191,7 +195,12 @@ matches (                    -- the anti-cheat session (CLAUDE.md §roadmap, now
   kind TEXT NOT NULL DEFAULT 'free', -- 'free' | 'pvp' (tournament/gvg are later phases)
   attacker_id BIGINT, defender_id BIGINT NULL,   -- defender_id set only for kind='pvp'
   attacker_snapshot JSONB NOT NULL, defender_snapshot JSONB NOT NULL,  -- frozen lanes
-  attacker_trainer JSONB, defender_trainer JSONB, -- frozen trainer-skill loadouts (pvp)
+                                      -- (lanes may carry an `equipment` array
+                                      -- of the monster's equipped gear, 7.2)
+  attacker_trainer JSONB, defender_trainer JSONB, -- frozen trainer-side loadout,
+                                      -- pvp only: {skills, equipment} (7.2 widened
+                                      -- this from a bare skills array; pre-7.2
+                                      -- rows are read as {skills: [...], equipment: []})
   seed BIGINT NOT NULL,              -- RNG seed; makes the result auditable
   status TEXT NOT NULL DEFAULT 'open',  -- open → resolved (reject replays)
   result JSONB, events JSONB,        -- persisted on resolve; pvp result carries
@@ -270,13 +279,25 @@ resolveBattle(battleState, seed) → { winner, events[], finalState }
 
   **Trainer skills** (Phase 6, GAME_DESIGN §7.1) reuse this exact grammar
   from a second source: `resolveBattle(laneA, laneB, seed, trainers)` takes a
-  4th arg, `{a:{skills}, b:{skills}}` — each side's up-to-2 learned trainer
-  skills, frozen into the match row the same way lanes are. Two triggers fire
-  them: `battle_start` (before unit passives) and `after_ally_turns` (once
+  4th arg, `{a:{skills, equipment}, b:{skills, equipment}}` — each side's
+  up-to-2 learned trainer skills (`equipment` is the trainer-domain gear
+  added by Phase 7.2, same `battle_start` grammar, PVP-only side-wide aura,
+  no target rule), frozen into the match row the same way lanes are. Two
+  triggers fire trainer skills: `battle_start` (before unit passives) and
+  `after_ally_turns` (once
   every currently-alive unit on that side has taken a turn since it last
   fired). Targets always pool over the caster's own side. Each firing emits a
   `tskill` event before its effects, so the replayer can announce it exactly
   like a unit's `skill` event.
+
+  **Equipment** (Phase 7.2) rides the same `battle_start` op set from a
+  third source: a lane may carry an `equipment` array (the monster's
+  equipped monster-domain gear, gathered by `toLane()` from
+  `server/services/matches.js`), and `trainers.{a,b}.equipment` above is the
+  trainer-domain side. Full firing order at `battle_start`: trainer skills →
+  unit passives → monster-domain equipment (per-unit) → trainer-domain
+  equipment (side-wide aura). Enhancement scales an effect's `flat`/`pct` via
+  `perLevel * (enhanceLevel)`, the same per-level math skills don't get.
 - **Statuses** (stun/freeze/burn/poison/curse…) are just persistent effects
   with a duration, ticked in `turn_start`/checked at the pipeline's control
   and hit steps.
@@ -362,6 +383,16 @@ GET  /api/trainer/inventory   items + equipment (bag + equipped) + runes, one
                               but a new top-level domain would cost another
                               serverless function — grouped here instead, same
                               reasoning as the /api/me → /api/trainer/me rename)
+POST /api/trainer/equipment/equip    { domain:'trainer'|'monster', equipmentId,
+                              monsterId?:number|null, equip?:boolean } → equip/
+                              unequip one owned piece (monster domain: monsterId,
+                              null unequips; trainer domain: equip boolean);
+                              returns the refreshed inventory (Phase 7.2; same
+                              grouping reasoning as /api/trainer/inventory)
+POST /api/trainer/equipment/enhance  { domain, equipmentId } → raise one owned
+                              piece's enhance level by 1, paying its gold (+
+                              optional material) cost exactly once; returns
+                              { gold, inventory }
 
 # battle domain — api/battle/[...route].js
 POST /api/battle/match        { mode? } → create match session ('free', default:

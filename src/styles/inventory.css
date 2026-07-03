@@ -41,3 +41,11 @@
 }
 .inv-qty,.inv-charges{font-family:Rajdhani,sans-serif;font-weight:700;font-size:13.5px;color:var(--text)}
 .inv-loc{font-size:12px;color:var(--muted)}
+
+/* Phase 7.2: equip/enhance controls on an equipment row. */
+.inv-select{
+  background:var(--bg-2);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:6px 8px;font-size:12.5px;max-width:150px;
+}
+.inv-small{padding:6px 11px;font-size:12px;border-radius:8px}
+.inv-small:disabled{opacity:0.5;cursor:default}

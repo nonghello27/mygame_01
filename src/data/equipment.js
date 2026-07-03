@@ -8,15 +8,18 @@
 // but unlike a skill passive, an effect here may carry `perLevel` so 7.2's
 // enhancement system (enhance.maxLevel steps, enhance.goldPerLevel cost per
 // step) has something to scale. `enhance: null` means the piece can't be
-// enhanced at all. Nothing here is wired into a battle snapshot yet — that
-// lands when 7.2/7.3 actually consume equipped rows.
+// enhanced at all. A piece's `enhance` may also carry an optional `material:
+// { itemId, qtyPerLevel }` (Phase 7.2, step B) — a flat qty of that item_defs
+// stack spent per step, alongside gold; omitted means gold-only. Nothing
+// here is wired into a battle snapshot yet — that lands when 7.2/7.3
+// actually consume equipped rows.
 // Ids are stable strings — never renumber.
 
 export const EQUIPMENT = [
   { id: "eq_iron_sword", domain: "monster", slot: "weapon", name: "Iron Sword",
     description: "A sturdy blade. Raises ATK.",
     effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 10, perLevel: 2 }],
-    enhance: { maxLevel: 5, goldPerLevel: 50 } },
+    enhance: { maxLevel: 5, goldPerLevel: 50, material: { itemId: "it_enhance_stone", qtyPerLevel: 1 } } },
 
   { id: "eq_leather_mail", domain: "monster", slot: "armor", name: "Leather Mail",
     description: "Light armor. Raises max HP.",

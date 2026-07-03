@@ -298,21 +298,73 @@ exercise a guarded delete (edit a def an owned row references, confirm 409).
 admin CRUD works on the three new master tables; deleting a def referenced by
 an instance row answers 409.
 
-### Phase 7.2 — Equipment: equip, enhance, engine integration
+### Phase 7.2 — Equipment: equip, enhance, engine integration ✅ CODE COMPLETE (2026-07-03)
 
-- `POST /api/equipment/equip` `{ equipmentId, monsterId | trainerSlot | null }`
-  — ownership + domain/slot validated against DB state; `null` unequips; an
-  item is equipped in at most one place (enforced by the update's guard).
-- `POST /api/equipment/enhance` — gold and/or material cost read from master
-  data; one atomic debit+upgrade statement, exactly once.
-- Engine integration: **`deriveStats()` stays pure** — `toLane()` in
-  `server/services/matches.js` gathers the monster's equipped items and folds
-  their effects into the frozen snapshot as effect sources, so matches stay
-  tamper-proof/replayable and existing golden logs don't move (fixtures carry
-  no equipment).
-- `battle_start` firing order per GAME_DESIGN §7: trainer skills → unit
-  passives → **equipment** → runes; equipment effects go through the
-  existing op set.
+- ✅ `server/repos/equipment.js` + `server/services/equipment.js`: equip/
+  unequip for both domains (clear-then-seat in one statement — a monster/
+  trainer holds at most one piece per def slot, so equipping into an
+  occupied slot auto-returns the previous piece to the bag rather than
+  requiring a pre-unequip), and enhance as a claim-first-then-pay sequence
+  (the atomic `enhance_level` UPDATE's WHERE clause is the whole gate —
+  right instance/owner/level/cap — then gold debit, then optional material
+  spend; a losing leg after a won claim triggers a compensating
+  revert/refund rather than leaving a free upgrade in place, same shape as
+  `settleActivities`'s claim pattern).
+- ✅ `POST /api/trainer/equipment/equip` `{ domain:'trainer'|'monster',
+  equipmentId, monsterId?, equip? }` and `POST /api/trainer/equipment/enhance`
+  `{ domain, equipmentId }` — both return the refreshed inventory read (enhance
+  also returns `gold`). **Deviation from this section's original draft:**
+  grouped under the `trainer` domain (`/api/trainer/equipment/equip|enhance`)
+  rather than a new top-level `/api/equipment/*` domain — same
+  serverless-function-count reasoning as `/api/trainer/inventory` (Phase 7.1)
+  and the `/api/me` → `/api/trainer/me` rename.
+- ✅ Enhance grammar gained an optional `material: { itemId, qtyPerLevel }`
+  cost on top of `goldPerLevel` (drafted in 7.1's schema note, wired here);
+  `consumeItem` from 7.1 is the material spend.
+- ✅ Engine integration: `deriveStats()` stays pure — `toLane()` in
+  `server/services/matches.js` now takes a 3rd `equipment` argument and
+  gathers each monster's *equipped* monster-domain gear
+  (`listEquippedMonsterEquipment`) into the frozen lane snapshot; free
+  matches don't carry trainer-domain gear (parity with trainer skills —
+  those are PVP-only auras), so existing golden logs are untouched (no
+  fixture carries equipment).
+- ✅ `resolveBattle`'s trainer arg widened from a bare skills array to
+  `{skills, equipment}` (trainer-domain gear, PVP-only, frozen into
+  `attacker_trainer`/`defender_trainer` the same way trainer skills are);
+  `normalizeTrainer()` reads pre-deploy matches' old bare-array shape as
+  `{skills: [...], equipment: []}` so an in-flight match across the deploy
+  boundary resolves exactly as it would have before.
+- ✅ `battle_start` firing order implemented per GAME_DESIGN §7: trainer
+  skills → unit passives → **monster-domain equipment** (per-unit, same
+  op set as passives) → **trainer-domain equipment** (side-wide aura, no
+  target grammar) → runes join this order in 7.3.
+- ✅ UI: the 🎒 Inventory panel's Equipment tab (`src/ui/inventory.js`) gained
+  equip/unequip controls (a monster picker for monster-domain gear, a plain
+  toggle for trainer-domain gear — equipping shows the previous slot
+  occupant returning to the bag on the next refresh) and an enhance button
+  labeled with its gold (+ material, when the curve declares one) cost, or
+  "MAX" at the curve's cap; `src/services/content.js` gained
+  `equipMonsterEquipment`/`equipTrainerEquipment`/`enhanceEquipment` as the
+  I/O boundary (ui/ never calls fetch directly). Errors surface at the panel
+  level, same pattern as the Arena panel's defense-save button; enhance also
+  refreshes the header's gold chip via `fetchMe()`/`showProfile()`.
+- ✅ Tests: `tests/equipment-engine.test.mjs` — the `battle_start` firing
+  order (trainer skills → passives → monster equipment → trainer equipment,
+  asserted via event order), `perLevel`/enhance-level scaling observed
+  through HP values, trainer-domain equipment as a side-wide aura (every
+  unit on the owning side, none on the other), the old bare-array
+  `trainers` arg still working (back-compat), and absent-vs-empty
+  `equipment` fields producing an identical event log (determinism).
+  `adminValidate` gained cases for the `enhance.material` grammar (optional,
+  round-trips, rejects bad shapes); `items.test.mjs` gained a referential
+  guard that every seed piece's `enhance.material.itemId` names a real
+  `item_defs` row. Golden logs unchanged (no fixture carries equipment).
+
+**Remaining (operator step):** verify in a browser with an admin-granted
+piece — equip a monster-domain item, start a free match, and see the buff
+reflected in that match's derived stats; unequip and confirm the next match
+reverts it; enhance a piece and confirm gold (and material, if any) debits
+exactly once per click, and the button shows "MAX" at the level cap.
 
 **Done when:** equipping visibly changes the next match's derived stats and
 unequipping reverts them; enhance pays exactly once; golden logs unchanged.

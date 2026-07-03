@@ -190,6 +190,53 @@ test("validateEquipment enforces domain/slot pairing, effects grammar, enhance b
   }), "enhance.goldPerLevel too low");
 });
 
+test("validateEquipment's enhance.material is optional and round-trips (Phase 7.2 step B)", () => {
+  const withMaterial = validateEquipment({
+    id: "eq_iron_sword", domain: "monster", slot: "weapon", name: "Iron Sword",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 10, perLevel: 2 }],
+    enhance: { maxLevel: 5, goldPerLevel: 50, material: { itemId: "it_enhance_stone", qtyPerLevel: 1 } },
+  });
+  assert.deepEqual(withMaterial.enhance.material, { itemId: "it_enhance_stone", qtyPerLevel: 1 });
+
+  const goldOnly = validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 5, goldPerLevel: 50 },
+  });
+  assert.equal(goldOnly.enhance.material, undefined, "material stays absent when not given");
+
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 5, goldPerLevel: 50, material: { itemId: "it_enhance_stone", qtyPerLevel: 1, foo: 1 } },
+  }), "unknown key in material");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 5, goldPerLevel: 50, material: { itemId: "enhance_stone", qtyPerLevel: 1 } },
+  }), "material.itemId must match it_*");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 5, goldPerLevel: 50, material: { itemId: "it_enhance_stone", qtyPerLevel: 0 } },
+  }), "material.qtyPerLevel too low");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 5, goldPerLevel: 50, material: { itemId: "it_enhance_stone", qtyPerLevel: 101 } },
+  }), "material.qtyPerLevel too high");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 5, goldPerLevel: 50, material: { itemId: "it_enhance_stone" } },
+  }), "material missing qtyPerLevel");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    enhance: { maxLevel: 5, goldPerLevel: 50, material: { qtyPerLevel: 1 } },
+  }), "material missing itemId");
+});
+
 test("validateRune enforces the effects grammar (with perLevel) and charge/gold bounds", () => {
   const ok = validateRune({
     id: "rn_swift", name: "Swift Rune",

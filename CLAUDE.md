@@ -27,8 +27,9 @@ The vision and plans live in `docs/` — treat them as part of this file:
   (Firebase auth; owned monsters; tamper-proof matches; battle engine v2;
   work & training economy; admin console for master data; PVP ladder &
   trainer progression); Phase 7 (acquisition & itemization) is staged as
-  sub-phases 7.1–7.5 in the roadmap — 7.1 (item schema & inventory) is code
-  complete; next up is 7.2 (equipment: equip, enhance, engine integration).
+  sub-phases 7.1–7.5 in the roadmap — 7.1 (item schema & inventory) and 7.2
+  (equipment: equip, enhance, engine integration) are code complete; next up
+  is 7.3 (runes: socket, consume, break, repair).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -102,21 +103,25 @@ per roadmap phase, don't big-bang rename.)
 │   ├── routes/             # one handler per endpoint (happy path + httpError throws):
 │   │                       # auth.js (login/logout), me, classes, activities, match,
 │   │                       # battle, progression, trainerSkills, formation, ladder,
-│   │                       # inventory, admin.js (master + classes/skills/species/jobs/
-│   │                       # items/equipment/runes CRUD + grant)
+│   │                       # inventory, equipment.js (equip, enhance), admin.js (master +
+│   │                       # classes/skills/species/jobs/items/equipment/runes CRUD + grant)
 │   ├── db.js               # Neon connection (lazy, from DATABASE_URL)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg) + sendJson()/readJson() + createRouter()
 │   ├── repos/              # SQL: trainers, species, monsters, matches, activities, admin,
 │   │                       # progression (expertises/trainer_skill_defs/trainer_skills),
 │   │                       # pvp (formations, seasons, rank_entries, matchmaking),
-│   │                       # inventory (items/equipment/runes: grant + atomic consume)
-│   └── services/           # matches.js (applyOrder gate + PVP Elo on resolve),
-│                           # activities.js (lazy settle), admin.js (gate + CRUD + grant) +
+│   │                       # inventory (items/equipment/runes: grant + atomic consume),
+│   │                       # equipment (equip/unequip both domains, claim-first-then-pay
+│   │                       # enhance + compensating revert/refund, equipped-gear reads)
+│   └── services/           # matches.js (applyOrder gate + PVP Elo on resolve, gathers
+│                           # equipped monster gear into toLane()'s snapshot), activities.js
+│                           # (lazy settle), admin.js (gate + CRUD + grant) +
 │                           # adminValidate.js (pure grammar), progression.js (expertise/
 │                           # learn-slot use-cases), pvp.js (defense formation, lazy season
 │                           # rollover, matchmaking), inventory.js (grant/consume as atomic
-│                           # claim-style statements for items/equipment/runes)
+│                           # claim-style statements for items/equipment/runes), equipment.js
+│                           # (equip/unequip use-cases + enhance's claim-first-then-pay flow)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
 │   │                       # up to 009_items.sql as of Phase 7.1)
@@ -235,13 +240,34 @@ stacks, `UNIQUE(trainer_id, def_id)`), `trainer_equipment`/`monster_equipment`,
 bag"). Effects reuse the exact skill-passive `battle_start`/`perm_stat`
 grammar (`validateBattleStartEffects` in `server/services/adminValidate.js`
 is shared with skill passives, with an optional `perLevel` skills don't get —
-7.2's enhancement system will scale off it).
-`monster_species.rune_slots` is added here for 7.3 to consume later. Nothing
-here feeds a battle snapshot yet. The ONLY acquisition source until 7.4 is
-the admin-gated `POST /api/admin/grant`; `GET /api/trainer/inventory` is the
-one read (items + equipment + runes in one call). The 🎒 Inventory panel
-(`src/ui/inventory.js`) is pure display over that read, with tabs Items |
-Equipment | Runes.
+7.2's enhancement system scales off it).
+`monster_species.rune_slots` is added here for 7.3 to consume later. The ONLY
+acquisition source until 7.4 is the admin-gated `POST /api/admin/grant`;
+`GET /api/trainer/inventory` is the one read (items + equipment + runes in
+one call).
+
+Equipment (Phase 7.2): `POST /api/trainer/equipment/equip {domain:'trainer'|
+'monster', equipmentId, monsterId?, equip?}` equips/unequips one owned piece
+— monster domain by `monsterId` (`null` unequips), trainer domain by an
+`equip` boolean; equipping into an occupied slot auto-returns the previous
+occupant to the bag in the same statement (`server/repos/equipment.js`).
+`POST /api/trainer/equipment/enhance {domain, equipmentId}` raises
+`enhance_level` by 1 via claim-first-then-pay (the enhance-level UPDATE's
+WHERE is the whole gate; gold debit and an optional `material:{itemId,
+qtyPerLevel}` spend follow, with a compensating revert/refund if either leg
+loses to a race) — both endpoints return the refreshed inventory (enhance
+also returns `gold`). Engine wiring: `toLane()` (`server/services/matches.js`)
+folds a monster's *equipped* monster-domain gear into its frozen lane
+snapshot as a battle_start effect source (free and PVP matches alike;
+trainer-domain gear is PVP-only, same parity as trainer skills);
+`resolveBattle`'s trainer arg widened from a bare skills array to
+`{skills, equipment}`.
+Firing order at `battle_start`: trainer skills → unit passives → monster
+equipment → trainer equipment (runes join in 7.3). The 🎒 Inventory panel
+(`src/ui/inventory.js`) is tabs Items | Equipment | Runes; the Equipment tab
+now carries equip/unequip controls (a monster picker for monster-domain
+pieces) and a cost-labeled Enhance button ("MAX" at the curve's cap),
+re-rendering from whatever the acted-on endpoint hands back.
 
 ## 4. Recipes for TODAY's code
 
@@ -305,11 +331,13 @@ Equipment | Runes.
 
 ## 6. Known gaps (today)
 
-- Teams fixed at 3; no DEF/mitigation stat. Items/equipment/runes exist as
-  inventory rows now (Phase 7.1), but nothing equips, sockets, enhances, or
-  feeds a battle snapshot yet — that's 7.2 (equipment) and 7.3 (runes).
-  `monster_species.rune_slots` is stored but unread until 7.3. Trainer skills
-  DO join battle (Phase 6, `battle_start`/`after_ally_turns` triggers).
+- Teams fixed at 3; no DEF/mitigation stat. Equipment now equips, enhances,
+  and feeds battle snapshots (Phase 7.2); runes still exist only as
+  inventory rows — nothing sockets, consumes charges, or feeds a battle yet,
+  that's 7.3. `monster_species.rune_slots` is stored but unread until 7.3.
+  Trainer skills DO join battle (Phase 6, `battle_start`/`after_ally_turns`
+  triggers), and now so does trainer-domain equipment (PVP-only, same
+  parity as trainer skills).
 - Battle wins still award nothing directly (gold/exp come from work jobs
   only; PVP moves rating only, no gold/exp) — season-end payouts are the one
   exception, and those are lazy/passive, not per-battle. Monsters have no

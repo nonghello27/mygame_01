@@ -1,11 +1,18 @@
-// Inventory panel (Phase 7.1 client half): a read-only look at everything a
-// trainer owns — item stacks, equipment (bag + equipped), and runes. Pure
-// presentation over GET /api/trainer/inventory, re-fetched every time the
-// panel opens (no local mutation — nothing here writes yet; acquisition is
-// the admin console's Grant control until Phase 7.4, equip/enhance UX is
-// 7.2+). Same tab-panel shell as the Arena panel (ui/pvp.js).
+// Inventory panel (Phase 7.1 read + Phase 7.2 equip/enhance): everything a
+// trainer owns — item stacks, equipment (bag + equipped), and runes — plus
+// the controls to equip/unequip and enhance gear. Pure presentation + action
+// layer: all state (including gold and enhance cost curves) comes from the
+// server; every action re-fetches the whole inventory from the response the
+// server hands back, same round-trip precedent as the Arena panel's
+// saveDefense(). Acquisition is still the admin console's Grant control
+// until Phase 7.4. Same tab-panel shell as the Arena panel (ui/pvp.js).
 
-import { fetchInventory } from "../services/content.js";
+import {
+  fetchInventory, loadFarm,
+  equipMonsterEquipment, equipTrainerEquipment, enhanceEquipment,
+} from "../services/content.js";
+import { fetchMe } from "../services/auth.js";
+import { showProfile } from "./auth.js";
 
 const TABS = [
   ["items", "🧰 Items"],
@@ -18,6 +25,7 @@ const KIND_LABEL = { material: "Material", consumable: "Consumable" };
 let els = null;
 let tab = "items";
 let data = null; // last fetchInventory() result
+let monsters = []; // this trainer's roster (id/name/emoji), for the monster picker + labels
 
 export function initInventory() {
   els = {
@@ -37,17 +45,37 @@ async function toggle() {
   if (opening) await refresh();
 }
 
-/** Re-read the whole inventory (cheap, one endpoint) and re-render. */
+/** Re-read the whole inventory (cheap, one endpoint) + this trainer's
+ *  roster (for the monster picker), and re-render. */
 async function refresh() {
   els.msgs.innerHTML = "";
   renderTabs();
   try {
-    data = await fetchInventory();
+    const [inv, farm] = await Promise.all([
+      fetchInventory(),
+      loadFarm().catch(() => null), // roster is a label/picker nicety — degrade to ids if it fails
+    ]);
+    data = inv;
+    monsters = farm?.monsters ?? [];
   } catch (e) {
     data = null;
     pushMsg(`Could not load the inventory: ${e.message}`, true);
   }
   renderBody();
+}
+
+/** Apply a fresh inventory payload (from an equip/enhance response) without
+ *  a second round trip, and re-render the current tab in place. */
+function applyInventory(inventory) {
+  data = inventory;
+  renderBody();
+}
+
+/** After a gold-spending action (enhance), refresh the header's gold chip
+ *  the same way farm.js does after settlement — best-effort, never blocks. */
+async function refreshProfile() {
+  const trainer = await fetchMe();
+  if (trainer) showProfile(trainer);
 }
 
 function pushMsg(text, isError = false) {
@@ -127,26 +155,120 @@ function itemsTab() {
 function equipmentTab() {
   const rows = [...data.equipment.trainer, ...data.equipment.monster];
   if (rows.length === 0) {
-    return emptyState("No equipment yet — equip/enhance arrives in Phase 7.2.");
+    return emptyState("No equipment yet — grant one via the admin console, then equip/enhance it here.");
   }
   for (const e of rows) {
-    const row = el("div", "inv-row");
-    const id = el("div", "inv-id");
-    const txt = el("span");
-    txt.append(el("b", null, e.name), el("small", null, e.description || "—"));
-    id.append(txt);
-    const side = el("div", "inv-actions");
-    side.append(badge(`${e.domain} · ${e.slot}`));
-    if (e.enhance) side.append(badge(`+${e.enhanceLevel}`));
-    side.append(el("span", "inv-loc", equipmentLocation(e)));
-    row.append(id, side);
-    els.body.appendChild(row);
+    els.body.appendChild(equipmentRow(e));
   }
+}
+
+function monsterName(id) {
+  const m = monsters.find((mm) => mm.id === id);
+  return m ? m.name : `#${id}`;
 }
 
 function equipmentLocation(e) {
   if (e.domain === "trainer") return e.equippedSlot ? `Equipped: ${e.equippedSlot}` : "In bag";
-  return e.monsterId != null ? `Monster #${e.monsterId}` : "In bag";
+  return e.monsterId != null ? `Equipped: ${monsterName(e.monsterId)}` : "In bag";
+}
+
+function equipmentRow(e) {
+  const row = el("div", "inv-row");
+  const id = el("div", "inv-id");
+  const txt = el("span");
+  txt.append(el("b", null, e.name), el("small", null, e.description || "—"));
+  id.append(txt);
+
+  const side = el("div", "inv-actions");
+  side.append(badge(`${e.domain} · ${e.slot}`));
+  if (e.enhance) side.append(badge(`+${e.enhanceLevel}`));
+  side.append(el("span", "inv-loc", equipmentLocation(e)));
+  side.append(...equipControls(e));
+  const enhanceCtl = enhanceControl(e);
+  if (enhanceCtl) side.append(enhanceCtl);
+
+  row.append(id, side);
+  return row;
+}
+
+/** Equip/unequip controls: a monster picker + Equip/Unequip for monster-domain
+ *  gear, a plain Equip/Unequip toggle for trainer-domain gear. */
+function equipControls(e) {
+  if (e.domain === "monster") {
+    if (monsters.length === 0) return [];
+    const select = el("select", "inv-select");
+    for (const m of monsters) {
+      const opt = el("option", null, m.name);
+      opt.value = String(m.id);
+      if (m.id === e.monsterId) opt.selected = true;
+      select.appendChild(opt);
+    }
+    const equipBtn = button("Equip", "btn ghost inv-small", async () => {
+      await runAction(equipBtn, () => equipMonsterEquipment(e.id, Number(select.value)));
+    });
+    const controls = [select, equipBtn];
+    if (e.monsterId != null) {
+      const unequipBtn = button("Unequip", "btn ghost inv-small", async () => {
+        await runAction(unequipBtn, () => equipMonsterEquipment(e.id, null));
+      });
+      controls.push(unequipBtn);
+    }
+    return controls;
+  }
+
+  // domain === "trainer"
+  const equipped = e.equippedSlot != null;
+  const btn = button(equipped ? "Unequip" : "Equip", "btn ghost inv-small", async () => {
+    await runAction(btn, () => equipTrainerEquipment(e.id, !equipped));
+  });
+  return [btn];
+}
+
+/** Enhance control: cost-labeled button, "MAX" once the curve tops out, or
+ *  nothing for pieces the def marks unenhanceable (`enhance: null`). */
+function enhanceControl(e) {
+  if (!e.enhance) return null;
+  if (e.enhanceLevel >= e.enhance.maxLevel) {
+    const maxed = button("MAX", "btn ghost inv-small", () => {});
+    maxed.disabled = true;
+    return maxed;
+  }
+  const btn = button(`Enhance +1 — ${enhanceCostText(e.enhance)}`, "btn primary inv-small", async () => {
+    await runAction(btn, async () => {
+      const { gold, inventory } = await enhanceEquipment(e.domain, e.id);
+      applyInventory(inventory);
+      refreshProfile(); // fire-and-forget, mirrors gold shown by farm.js's showProfile()
+      return gold;
+    }, true /* already applied inside */);
+  });
+  return btn;
+}
+
+function enhanceCostText(curve) {
+  let text = `${curve.goldPerLevel}🪙`;
+  if (curve.material) {
+    const itemName = data.items.find((it) => it.defId === curve.material.itemId)?.name ?? curve.material.itemId;
+    text += ` + ${curve.material.qtyPerLevel}× ${itemName}`;
+  }
+  return text;
+}
+
+/**
+ * Run an equip/enhance action: disable the button, apply the result (unless
+ * the action already applied it itself, e.g. enhance also refreshes gold),
+ * and surface server errors at the panel level (same pattern as pvp.js's
+ * defense-save button).
+ */
+async function runAction(btn, action, appliedInside = false) {
+  btn.disabled = true;
+  els.msgs.innerHTML = "";
+  try {
+    const result = await action();
+    if (!appliedInside) applyInventory(result);
+  } catch (e) {
+    pushMsg(e.message, true);
+    btn.disabled = false;
+  }
 }
 
 // ---------- runes tab ----------

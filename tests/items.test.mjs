@@ -42,6 +42,18 @@ test("equipment covers both domains and more than one slot", () => {
   assert.ok(slots.size > 1, "more than one slot represented");
 });
 
+test("equipment enhance.material (Phase 7.2 step B), when present, names a real item_defs row", () => {
+  const itemIds = new Set(ITEMS.map((i) => i.id));
+  const withMaterial = EQUIPMENT.filter((e) => e.enhance?.material);
+  assert.ok(withMaterial.length > 0, "at least one seed piece exercises the material cost");
+  for (const eq of withMaterial) {
+    assert.ok(
+      itemIds.has(eq.enhance.material.itemId),
+      `${eq.id}: enhance.material.itemId "${eq.enhance.material.itemId}" is not a known item id`
+    );
+  }
+});
+
 test("rune ids are unique and every row validates unchanged", () => {
   const ids = RUNES.map((r) => r.id);
   assert.equal(new Set(ids).size, ids.length, "duplicate rune id");

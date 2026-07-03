@@ -33,9 +33,13 @@ import { STATUSES, statMod, hasFlag } from "../rules/statuses.js";
  * @param {object[]} laneA player team, lane 0 = front
  * @param {object[]} laneB enemy team, lane 0 = front
  * @param {number} seed   the match's stored RNG seed
- * @param {{a?: {skills: object[]}, b?: {skills: object[]}}} trainers  each
- *   side's chosen trainer skills (GAME_DESIGN §7.1; src/data/expertises.js
- *   documents the effect grammar). Absent/empty ⇒ identical to no trainers.
+ * @param {{a?: {skills?: object[], equipment?: object[]}, b?: {skills?: object[], equipment?: object[]}}} trainers
+ *   each side's chosen trainer skills (GAME_DESIGN §7.1; src/data/
+ *   expertises.js documents the effect grammar) AND equipped trainer-domain
+ *   equipment (Phase 7.2 step C; same grammar, no per-target rule — a
+ *   side-wide aura). Absent/empty ⇒ identical to no trainers/no equipment.
+ *   Lanes (laneA/laneB) may also carry an `equipment` array — a monster's
+ *   own equipped monster-domain gear, same grammar again.
  * @returns {{youWin:boolean, draw:boolean, survivor:{side:string,idx:number}|null, events:object[]}}
  */
 export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
@@ -45,9 +49,11 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   const B = laneB.map((d) => liveUnit(d, "b"));
   const all = [...A, ...B];
 
-  // battle_start order (GAME_DESIGN §7.1): trainer skills fire first — side a
+  // battle_start order (GAME_DESIGN §7.1, §7's firing order — trainer skills
+  // → passives → equipment → runes[7.3]): trainer skills fire first — side a
   // in skill-array order, then side b — THEN unit passives, in the existing
-  // frozen order (player lanes front-to-back, then enemy lanes).
+  // frozen order (player lanes front-to-back, then enemy lanes) — THEN
+  // equipment (monster-domain, then trainer-domain; Phase 7.2 step C).
   fireTrainerEffects("a", "battle_start", trainers, A, events, rng);
   fireTrainerEffects("b", "battle_start", trainers, B, events, rng);
 
@@ -56,6 +62,37 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
       for (const fx of sk.data.passive ?? []) {
         if (fx.when === "battle_start") {
           applyEffect(u, u, fx, sk, events, rng, u.side === "a" ? A : B);
+        }
+      }
+    }
+  }
+
+  // Equipment (Phase 7.2 step C): the SAME closed op set as skill passives —
+  // a piece of gear is just another pseudo-skill source ({id, name, level}),
+  // so scaledFx's existing perLevel scaling (bonus = perLevel * (level - 1))
+  // scales a piece's effect by its enhance level for free.
+  //
+  // 1. Monster-domain equipment: worn by a specific unit, targets only that
+  //    unit, same iteration order as the passives loop above.
+  for (const u of all) {
+    for (const piece of u.equipment) {
+      for (const fx of piece.effects ?? []) {
+        if (fx.when === "battle_start") {
+          applyEffect(u, u, fx, piece, events, rng, u.side === "a" ? A : B);
+        }
+      }
+    }
+  }
+  // 2. Trainer-domain equipment: worn by the trainer, not a unit — a
+  //    side-wide aura (equipment has no target grammar, unlike trainer
+  //    skills which can target a subset of the side). Side a then side b.
+  for (const side of ["a", "b"]) {
+    const own = side === "a" ? A : B;
+    for (const piece of trainers?.[side]?.equipment ?? []) {
+      for (const fx of piece.effects ?? []) {
+        if (fx.when !== "battle_start") continue;
+        for (const u of own) {
+          if (u.alive) applyEffect(u, u, fx, piece, events, rng, own);
         }
       }
     }
@@ -297,6 +334,9 @@ function liveUnit(d, side) {
     evade: d.evade ?? 0,
     acc: d.acc ?? 100,
     skills: (d.skills ?? []).map((s) => ({ ...s, level: s.level ?? 1, data: s.data ?? {} })),
+    // Equipped monster-domain gear (Phase 7.2 step C) — each piece doubles as
+    // a pseudo-skill for the battle_start equipment stage below.
+    equipment: (d.equipment ?? []).map((e) => ({ ...e, level: e.level ?? 1, effects: e.effects ?? [] })),
     // Ultimates start ON cooldown — they charge up, they don't open the fight.
     cooldowns: Object.fromEntries(
       (d.skills ?? []).filter((s) => s.cooldown > 0).map((s) => [s.id, s.cooldown])

@@ -6,6 +6,7 @@
 
 import { SKILLS } from "../src/data/skills.js";
 import { EXPERTISES } from "../src/data/expertises.js";
+import { EQUIPMENT } from "../src/data/equipment.js";
 
 /** Build a snapshot lane with sane deterministic defaults. */
 export function lane(idx, over = {}) {
@@ -44,6 +45,16 @@ export function trainerSkill(id, level = 1) {
   const s = EXPERTISES.flatMap((ex) => ex.skills).find((x) => x.id === id);
   if (!s) throw new Error(`fixture references unknown trainer skill ${id}`);
   return { id: s.id, name: s.name, level, data: s.data };
+}
+
+/** Look up a master equipment def by id and attach a level (shape a lane's
+ * `equipment[]` entry / a trainer's `equipment[]` entry expects — see
+ * server/repos/equipment.js: level is enhance_level + 1, so level 1 is an
+ * unenhanced piece). */
+export function equip(id, level = 1) {
+  const e = EQUIPMENT.find((x) => x.id === id);
+  if (!e) throw new Error(`fixture references unknown equipment ${id}`);
+  return { id: e.id, name: e.name, level, effects: e.effects };
 }
 
 // Golden battles: full-fat teams exercising elements, range targeting,

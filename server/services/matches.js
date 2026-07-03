@@ -16,6 +16,7 @@ import { httpError } from "../http.js";
 import { listSpecies, listStarterSpecies } from "../repos/species.js";
 import { listMonstersByTrainer, grantStarters } from "../repos/monsters.js";
 import { insertMatch, getMatch, claimResolve } from "../repos/matches.js";
+import { listEquippedMonsterEquipment } from "../repos/equipment.js";
 import { ensureSeason } from "./pvp.js";
 import { ensureRankEntry, applyRatingResult } from "../repos/pvp.js";
 import { settleActivities } from "./activities.js";
@@ -42,12 +43,21 @@ export async function createMatch(sql, trainerId) {
   if (available.length < TEAM_SIZE) {
     throw httpError(409, "not enough available monsters — some are still working or training");
   }
-  const attacker = available.slice(0, TEAM_SIZE).map(toLane);
+  // Equipped monster-domain gear rides along in the lane (Phase 7.2 step C) —
+  // grouped per monster since a lane only knows its own monster's pieces.
+  // Free matches deliberately do NOT freeze trainer-domain equipment, same
+  // parity as trainer skills (Phase 6): those are PVP-only auras.
+  const byMonster = groupEquipmentByMonster(await listEquippedMonsterEquipment(sql, trainerId));
+  const attacker = available.slice(0, TEAM_SIZE).map((m, i) => toLane(m, i, byMonster.get(m.id) ?? []));
 
   // Server-picked opponent: random species, random lane order, frozen in the
   // snapshot. (Phase 6 swaps this for another trainer's defense formation.)
+  // Wild lanes never carry equipment — .map((m, i) => toLane(m, i)) rather
+  // than the bare .map(toLane): Array#map also passes (index, array) to its
+  // callback, and toLane's 3rd param IS equipment, so a bare `.map(toLane)`
+  // would leak the whole source array in as "equipment".
   const species = await listSpecies(sql);
-  const defender = shuffle(species).slice(0, TEAM_SIZE).map(toLane);
+  const defender = shuffle(species).slice(0, TEAM_SIZE).map((m, i) => toLane(m, i));
   if (attacker.length === 0 || defender.length === 0) {
     throw httpError(500, "no monsters available — is master data seeded?");
   }
@@ -77,11 +87,21 @@ export async function resolveMatch(sql, trainerId, matchId, playerOrder) {
 
   // Snapshots + stored seed in, deterministic event log out: this exact
   // battle can be re-derived from the match row forever. A free match has no
-  // trainer skills frozen in (both null) — resolveBattle treats that exactly
-  // like {} (Step 2 guarantee), so free-match behavior is unchanged.
+  // trainer skills/equipment frozen in (both null) — normalizeTrainer treats
+  // that exactly like {skills:[], equipment:[]} (Step 2 guarantee), so
+  // free-match behavior is unchanged.
+  //
+  // normalizeTrainer also carries matches created before this deploy: those
+  // rows freeze the OLD bare-array shape (`attacker_trainer` = a skills
+  // array, not {skills, equipment}) since trainer equipment didn't exist yet
+  // — a match still open across the deploy boundary must resolve exactly as
+  // it would have before, so an array is read as "just skills, no equipment"
+  // rather than crashing on `.skills`.
+  const normalizeTrainer = (t) =>
+    Array.isArray(t) ? { skills: t, equipment: [] } : { skills: t?.skills ?? [], equipment: t?.equipment ?? [] };
   const result = resolveBattle(rosterA, rosterB, match.seed, {
-    a: { skills: match.attackerTrainer ?? [] },
-    b: { skills: match.defenderTrainer ?? [] },
+    a: normalizeTrainer(match.attackerTrainer),
+    b: normalizeTrainer(match.defenderTrainer),
   });
 
   // PVP rating: computed BEFORE the claim (so both attackerTrainer/defenderId
@@ -147,13 +167,17 @@ export function applyOrder(roster, order) {
 }
 
 /**
- * A snapshot lane: identity + traits + DERIVED battle stats + skills, frozen
- * at match creation. Derivation happens exactly once, here — the engine and
- * the client both consume these numbers as-is (single source of truth).
+ * A snapshot lane: identity + traits + DERIVED battle stats + skills +
+ * equipped monster-domain gear, frozen at match creation. Derivation happens
+ * exactly once, here — the engine and the client both consume these numbers
+ * as-is (single source of truth). `deriveStats()` itself stays untouched by
+ * equipment (CLAUDE.md): gear applies at battle_start inside the engine as
+ * data-driven effect sources, same grammar as a passive skill, never baked
+ * into these base numbers.
  */
 // Exported: server/services/pvp.js reuses this for a defense formation's
 // lanes rather than duplicating the derivation.
-export const toLane = (m, i) => ({
+export const toLane = (m, i, equipment = []) => ({
   idx: i,
   // owned monsters have numeric ids; species-built (wild) lanes have none
   monsterId: typeof m.id === "number" ? m.id : null,
@@ -169,7 +193,27 @@ export const toLane = (m, i) => ({
   attrs: m.attrs,
   ...deriveStats(m.base, m.attrs),
   skills: m.skills ?? [],
+  // Each entry already shaped {id, name, level, effects} by
+  // listEquippedMonsterEquipment — id is the equipment_defs id, level is
+  // enhance_level + 1 (see that repo function for why).
+  equipment,
 });
+
+/**
+ * Group listEquippedMonsterEquipment's rows (one row per equipped piece,
+ * tagged with the owning monster's id) into a Map of monsterId -> lane-shaped
+ * equipment array, so each lane can pull just its own monster's pieces.
+ * Shared by createMatch and pvp.js's createPvpMatch (attacker AND defender
+ * sides) so the grouping logic lives in exactly one place.
+ */
+export function groupEquipmentByMonster(rows) {
+  const byMonster = new Map();
+  for (const { monsterId, ...piece } of rows) {
+    if (!byMonster.has(monsterId)) byMonster.set(monsterId, []);
+    byMonster.get(monsterId).push(piece);
+  }
+  return byMonster;
+}
 
 /** Fisher–Yates on a copy. Match composition randomness is not part of battle
  *  determinism — the snapshot freezes whatever was picked. */

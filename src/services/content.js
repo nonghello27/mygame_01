@@ -127,3 +127,37 @@ export async function fetchLadder() {
 export async function fetchInventory() {
   return getJson("/api/trainer/inventory");
 }
+
+/**
+ * Equip a monster-domain piece onto a monster, or unequip it (monsterId: null).
+ * Equipping into an occupied slot auto-returns the previous occupant to the
+ * bag — no need to unequip first.
+ * @param {number} equipmentId the owned instance's id (inventory row's `id`)
+ * @param {number|null} monsterId owned monster id to equip onto, or null to unequip
+ * @returns {Promise<object>} the refreshed inventory (same shape as fetchInventory())
+ */
+export async function equipMonsterEquipment(equipmentId, monsterId) {
+  return postJson("/api/trainer/equipment/equip", { domain: "monster", equipmentId, monsterId });
+}
+
+/**
+ * Equip or unequip a trainer-domain piece (worn by the trainer, not a monster).
+ * @param {number} equipmentId the owned instance's id
+ * @param {boolean} equip true to equip (into the def's own slot), false to unequip
+ * @returns {Promise<object>} the refreshed inventory
+ */
+export async function equipTrainerEquipment(equipmentId, equip) {
+  return postJson("/api/trainer/equipment/equip", { domain: "trainer", equipmentId, equip });
+}
+
+/**
+ * Raise one owned piece's enhance level by exactly 1, paying its gold (and
+ * optional material) cost from the def's enhance curve.
+ * @param {'trainer'|'monster'} domain
+ * @param {number} equipmentId the owned instance's id
+ * @returns {Promise<{gold:number, inventory:object}>} the trainer's new gold
+ *   balance and the refreshed inventory, in one round trip
+ */
+export async function enhanceEquipment(domain, equipmentId) {
+  return postJson("/api/trainer/equipment/enhance", { domain, equipmentId });
+}
