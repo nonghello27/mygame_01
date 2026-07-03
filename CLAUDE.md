@@ -27,9 +27,10 @@ The vision and plans live in `docs/` — treat them as part of this file:
   (Firebase auth; owned monsters; tamper-proof matches; battle engine v2;
   work & training economy; admin console for master data; PVP ladder &
   trainer progression); Phase 7 (acquisition & itemization) is staged as
-  sub-phases 7.1–7.5 in the roadmap — 7.1 (item schema & inventory) and 7.2
-  (equipment: equip, enhance, engine integration) are code complete; next up
-  is 7.3 (runes: socket, consume, break, repair).
+  sub-phases 7.1–7.5 in the roadmap — 7.1 (item schema & inventory), 7.2
+  (equipment: equip, enhance, engine integration), and 7.3 (runes: socket,
+  consume, break, repair) are code complete; next up is 7.4 (acquisition:
+  Summon Hall, then Adventure).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -103,8 +104,9 @@ per roadmap phase, don't big-bang rename.)
 │   ├── routes/             # one handler per endpoint (happy path + httpError throws):
 │   │                       # auth.js (login/logout), me, classes, activities, match,
 │   │                       # battle, progression, trainerSkills, formation, ladder,
-│   │                       # inventory, equipment.js (equip, enhance), admin.js (master +
-│   │                       # classes/skills/species/jobs/items/equipment/runes CRUD + grant)
+│   │                       # inventory, equipment.js (equip, enhance), runes.js (socket,
+│   │                       # repair), admin.js (master + classes/skills/species/jobs/
+│   │                       # items/equipment/runes CRUD + grant)
 │   ├── db.js               # Neon connection (lazy, from DATABASE_URL)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg) + sendJson()/readJson() + createRouter()
@@ -113,15 +115,21 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # pvp (formations, seasons, rank_entries, matchmaking),
 │   │                       # inventory (items/equipment/runes: grant + atomic consume),
 │   │                       # equipment (equip/unequip both domains, claim-first-then-pay
-│   │                       # enhance + compensating revert/refund, equipped-gear reads)
+│   │                       # enhance + compensating revert/refund, equipped-gear reads),
+│   │                       # runes (socket/unsocket guarded UPDATE, claim-first-then-pay
+│   │                       # repair + revert, listSocketedRunes/applyRuneWear for battle
+│   │                       # snapshots + post-battle durability)
 │   └── services/           # matches.js (applyOrder gate + PVP Elo on resolve, gathers
-│                           # equipped monster gear into toLane()'s snapshot), activities.js
+│                           # equipped monster gear + socketed runes into toLane()'s
+│                           # snapshot, settles rune durability from the engine's runeUse
+│                           # tally after the resolve claim wins), activities.js
 │                           # (lazy settle), admin.js (gate + CRUD + grant) +
 │                           # adminValidate.js (pure grammar), progression.js (expertise/
 │                           # learn-slot use-cases), pvp.js (defense formation, lazy season
 │                           # rollover, matchmaking), inventory.js (grant/consume as atomic
 │                           # claim-style statements for items/equipment/runes), equipment.js
-│                           # (equip/unequip use-cases + enhance's claim-first-then-pay flow)
+│                           # (equip/unequip use-cases + enhance's claim-first-then-pay flow),
+│                           # runes.js (socket/unsocket + repair use-cases, same shape)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
 │   │                       # up to 009_items.sql as of Phase 7.1)
@@ -263,11 +271,38 @@ trainer-domain gear is PVP-only, same parity as trainer skills);
 `resolveBattle`'s trainer arg widened from a bare skills array to
 `{skills, equipment}`.
 Firing order at `battle_start`: trainer skills → unit passives → monster
-equipment → trainer equipment (runes join in 7.3). The 🎒 Inventory panel
+equipment → trainer equipment → runes (7.3). The 🎒 Inventory panel
 (`src/ui/inventory.js`) is tabs Items | Equipment | Runes; the Equipment tab
 now carries equip/unequip controls (a monster picker for monster-domain
 pieces) and a cost-labeled Enhance button ("MAX" at the curve's cap),
 re-rendering from whatever the acted-on endpoint hands back.
+
+Runes (Phase 7.3): `POST /api/trainer/runes/socket {runeId, monsterId|null}`
+sockets/unsockets one owned rune (a guarded UPDATE re-checks ownership,
+`broken = false`, and the target monster's species `rune_slots` capacity
+atomically — 409 "repair it first" / "no free rune slots"); `POST
+/api/trainer/runes/repair {runeId}` fully recharges one owned rune via the
+same claim-first-then-pay shape as equipment's enhance (409 "rune doesn't
+need repair" when already full and unbroken). Both are grouped under the
+`trainer` domain (no new serverless function) and return the refreshed
+inventory (repair also returns `gold`). Grammar: a rune's `effects` are
+EITHER the same `battle_start`/`perm_stat` shape equipment uses, OR a
+rune-only trigger, `{when:"target_select", op:"override_targeting", rule}`,
+that redirects a turn's target choice to a named `targeting.js` rule
+(`rn_hunter` in `src/data/runes.js` seeds this case). Every trigger of
+either kind costs exactly **one charge = one `rune` event**
+(`{t:"rune", side, idx, rune:<defId>, name}`), however many `battle_start`
+effects a def carries — the engine is pure and never writes charge state,
+it only *reports* consumption via a `runeUse:{a,b}` tally (rune instance id
+→ charges spent) on the result; `resolveMatch()`
+(`server/services/matches.js`) spends that tally against the DB, by
+instance id, only AFTER the resolve claim wins (same once-only guard Elo
+rides), and **only against the attacking side** — a PVP defender's saved
+formation is fought while they're offline and never pays durability for it.
+Breaking (`charges_left` hits 0) and auto-unsocketing happen in the same
+guarded UPDATE as the decrement. The replayer (`src/core/battle.js`) just
+narrates each `rune` event as a log line — no math, same shape as its
+`tskill`/`buff` handlers.
 
 ## 4. Recipes for TODAY's code
 
@@ -331,13 +366,13 @@ re-rendering from whatever the acted-on endpoint hands back.
 
 ## 6. Known gaps (today)
 
-- Teams fixed at 3; no DEF/mitigation stat. Equipment now equips, enhances,
-  and feeds battle snapshots (Phase 7.2); runes still exist only as
-  inventory rows — nothing sockets, consumes charges, or feeds a battle yet,
-  that's 7.3. `monster_species.rune_slots` is stored but unread until 7.3.
-  Trainer skills DO join battle (Phase 6, `battle_start`/`after_ally_turns`
-  triggers), and now so does trainer-domain equipment (PVP-only, same
-  parity as trainer skills).
+- Teams fixed at 3; no DEF/mitigation stat. Equipment (Phase 7.2) and runes
+  (Phase 7.3) are both fully live now: equipping/socketing, enhance/repair,
+  and feeding battle snapshots (including runes' `battle_start` effects and
+  `target_select` targeting overrides, with post-battle durability wear on
+  the attacking side) all work end to end. Trainer skills DO join battle
+  (Phase 6, `battle_start`/`after_ally_turns` triggers), and so does
+  trainer-domain equipment (PVP-only, same parity as trainer skills).
 - Battle wins still award nothing directly (gold/exp come from work jobs
   only; PVP moves rating only, no gold/exp) — season-end payouts are the one
   exception, and those are lazy/passive, not per-battle. Monsters have no

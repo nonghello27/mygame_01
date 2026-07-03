@@ -65,3 +65,13 @@ test("rune ids are unique and every row validates unchanged", () => {
     assert.equal(v.repairGold, rn.repairGold);
   }
 });
+
+test("rune seed exercises both effect shapes: battle_start/perm_stat and target_select/override_targeting (Phase 7.3 step C)", () => {
+  const hasBattleStart = RUNES.some((r) => r.effects.some((fx) => fx.when === "battle_start"));
+  const hasOverride = RUNES.some((r) => r.effects.some((fx) => fx.when === "target_select" && fx.op === "override_targeting"));
+  assert.ok(hasBattleStart, "at least one rune keeps the battle_start/perm_stat shape");
+  assert.ok(hasOverride, "at least one rune (rn_hunter) exercises the targeting-override shape");
+  const hunter = RUNES.find((r) => r.id === "rn_hunter");
+  assert.ok(hunter, "rn_hunter must exist");
+  assert.equal(hunter.effects[0].rule, "lowest_hp_pct");
+});

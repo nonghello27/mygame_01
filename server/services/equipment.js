@@ -12,8 +12,8 @@ import {
   equipTrainerEquipment, unequipTrainerEquipment,
   claimEnhanceTrainerEquipment, claimEnhanceMonsterEquipment,
   revertEnhanceTrainerEquipment, revertEnhanceMonsterEquipment,
-  debitGold, refundGold,
 } from "../repos/equipment.js";
+import { debitGold, refundGold } from "../repos/trainers.js";
 import { consumeItem as consumeItemRepo } from "../repos/inventory.js";
 import { getInventory } from "./inventory.js";
 

@@ -1,7 +1,8 @@
-// Inventory panel (Phase 7.1 read + Phase 7.2 equip/enhance): everything a
-// trainer owns — item stacks, equipment (bag + equipped), and runes — plus
-// the controls to equip/unequip and enhance gear. Pure presentation + action
-// layer: all state (including gold and enhance cost curves) comes from the
+// Inventory panel (Phase 7.1 read + Phase 7.2 equip/enhance + Phase 7.3
+// socket/repair): everything a trainer owns — item stacks, equipment (bag +
+// equipped), and runes — plus the controls to equip/unequip, enhance,
+// socket/unsocket, and repair. Pure presentation + action layer: all state
+// (including gold, enhance cost curves, and repair costs) comes from the
 // server; every action re-fetches the whole inventory from the response the
 // server hands back, same round-trip precedent as the Arena panel's
 // saveDefense(). Acquisition is still the admin console's Grant control
@@ -10,6 +11,7 @@
 import {
   fetchInventory, loadFarm,
   equipMonsterEquipment, equipTrainerEquipment, enhanceEquipment,
+  socketRune, repairRune,
 } from "../services/content.js";
 import { fetchMe } from "../services/auth.js";
 import { showProfile } from "./auth.js";
@@ -101,8 +103,8 @@ function button(text, cls, onClick) {
   return b;
 }
 
-function badge(text) {
-  return el("span", "inv-badge", text);
+function badge(text, extraCls) {
+  return el("span", extraCls ? `inv-badge ${extraCls}` : "inv-badge", text);
 }
 
 // ---------- shell ----------
@@ -275,19 +277,75 @@ async function runAction(btn, action, appliedInside = false) {
 
 function runesTab() {
   if (data.runes.length === 0) {
-    return emptyState("No runes yet — socketing arrives in Phase 7.3.");
+    return emptyState("No runes yet — grant one via the admin console, then socket it here.");
   }
   for (const r of data.runes) {
-    const row = el("div", "inv-row");
-    const id = el("div", "inv-id");
-    const txt = el("span");
-    txt.append(el("b", null, r.name), el("small", null, r.description || "—"));
-    id.append(txt);
-    const side = el("div", "inv-actions");
-    side.append(badge(`Lv ${r.level}`), el("span", "inv-charges", `${r.chargesLeft}/${r.maxCharges}`));
-    if (r.broken) side.append(badge("broken"));
-    side.append(el("span", "inv-loc", r.monsterId != null ? `Monster #${r.monsterId}` : "In bag"));
-    row.append(id, side);
-    els.body.appendChild(row);
+    els.body.appendChild(runeRow(r));
   }
+}
+
+function runeLocation(r) {
+  return r.monsterId != null ? `Socketed: ${monsterName(r.monsterId)}` : "In bag";
+}
+
+function runeRow(r) {
+  const row = el("div", "inv-row");
+  const id = el("div", "inv-id");
+  const txt = el("span");
+  txt.append(el("b", null, r.name), el("small", null, r.description || "—"));
+  id.append(txt);
+
+  const side = el("div", "inv-actions");
+  side.append(badge(`Lv ${r.level}`), el("span", "inv-charges", `${r.chargesLeft}/${r.maxCharges}`));
+  if (r.broken) side.append(badge("BROKEN", "inv-broken"));
+  side.append(el("span", "inv-loc", runeLocation(r)));
+  side.append(...socketControls(r));
+  const repairCtl = repairControl(r);
+  if (repairCtl) side.append(repairCtl);
+
+  row.append(id, side);
+  return row;
+}
+
+/** Socket/unsocket controls: a monster picker + Socket button (hidden while
+ *  broken — the server 409s anyway, this just saves the round trip), plus
+ *  Unsocket when already socketed. Same shape as equipment's equipControls(). */
+function socketControls(r) {
+  const controls = [];
+  if (!r.broken && monsters.length > 0) {
+    const select = el("select", "inv-select");
+    for (const m of monsters) {
+      const opt = el("option", null, m.name);
+      opt.value = String(m.id);
+      if (m.id === r.monsterId) opt.selected = true;
+      select.appendChild(opt);
+    }
+    const socketBtn = button("Socket", "btn ghost inv-small", async () => {
+      await runAction(socketBtn, () => socketRune(r.id, Number(select.value)));
+    });
+    controls.push(select, socketBtn);
+  }
+  if (r.monsterId != null) {
+    const unsocketBtn = button("Unsocket", "btn ghost inv-small", async () => {
+      await runAction(unsocketBtn, () => socketRune(r.id, null));
+    });
+    controls.push(unsocketBtn);
+  }
+  return controls;
+}
+
+/** Repair control: cost-labeled button, shown whenever the rune could use
+ *  one (broken, or just short of full charges) — same response shape
+ *  ({gold, inventory}) as enhance, handled the same way. */
+function repairControl(r) {
+  if (!r.broken && r.chargesLeft >= r.maxCharges) return null;
+  const btn = button(`Repair — ${r.repairGold}🪙`, "btn primary inv-small", async () => {
+    await runAction(btn, async () => {
+      const { gold, inventory } = await repairRune(r.id);
+      applyInventory(inventory);
+      refreshProfile(); // fire-and-forget, mirrors gold shown by farm.js's showProfile()
+      return gold;
+    }, true /* already applied inside */);
+  });
+  return btn;
 }

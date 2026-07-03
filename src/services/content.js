@@ -161,3 +161,26 @@ export async function equipTrainerEquipment(equipmentId, equip) {
 export async function enhanceEquipment(domain, equipmentId) {
   return postJson("/api/trainer/equipment/enhance", { domain, equipmentId });
 }
+
+/**
+ * Socket one owned rune onto a monster, or unsocket it (monsterId: null).
+ * 409s when the rune is broken (repair it first) or the monster has no free
+ * rune slots left.
+ * @param {number} runeId the owned instance's id (inventory row's `id`)
+ * @param {number|null} monsterId owned monster id to socket onto, or null to unsocket
+ * @returns {Promise<object>} the refreshed inventory (same shape as fetchInventory())
+ */
+export async function socketRune(runeId, monsterId) {
+  return postJson("/api/trainer/runes/socket", { runeId, monsterId });
+}
+
+/**
+ * Fully recharge one owned rune, paying its def's flat repair_gold. 409s
+ * when the rune is already full and unbroken.
+ * @param {number} runeId the owned instance's id
+ * @returns {Promise<{gold:number, inventory:object}>} the trainer's new gold
+ *   balance and the refreshed inventory, in one round trip
+ */
+export async function repairRune(runeId) {
+  return postJson("/api/trainer/runes/repair", { runeId });
+}

@@ -15,8 +15,9 @@ import {
   ensureRankEntry, topEntries, rankOf, payoutSeason,
 } from "../repos/pvp.js";
 import { listEquippedMonsterEquipment, getTrainerEquipmentSnapshot } from "../repos/equipment.js";
+import { listSocketedRunes } from "../repos/runes.js";
 import { settleActivities } from "./activities.js";
-import { TEAM_SIZE, toLane, groupEquipmentByMonster } from "./matches.js";
+import { TEAM_SIZE, toLane, groupByMonster } from "./matches.js";
 
 /**
  * Lazy season rollover — the same pattern as settleActivities: no cron, this
@@ -145,10 +146,14 @@ export async function createPvpMatch(sql, trainerId) {
   if (available.length < TEAM_SIZE) {
     throw httpError(409, "not enough available monsters — some are still working or training");
   }
-  // Equipped monster-domain gear, grouped per monster (Phase 7.2 step C) —
-  // same helper createMatch uses, so both routes group identically.
-  const byMonster = groupEquipmentByMonster(await listEquippedMonsterEquipment(sql, trainerId));
-  const attacker = available.slice(0, TEAM_SIZE).map((m, i) => toLane(m, i, byMonster.get(m.id) ?? []));
+  // Equipped monster-domain gear AND socketed runes, grouped per monster
+  // (Phase 7.2 step C / 7.3 step C) — same helper createMatch uses, so both
+  // routes group identically.
+  const equipByMonster = groupByMonster(await listEquippedMonsterEquipment(sql, trainerId));
+  const runesByMonster = groupByMonster(await listSocketedRunes(sql, trainerId));
+  const attacker = available.slice(0, TEAM_SIZE).map((m, i) =>
+    toLane(m, i, equipByMonster.get(m.id) ?? [], runesByMonster.get(m.id) ?? [])
+  );
   // Trainer-domain skills AND equipment both freeze into the match row here —
   // PVP-only auras, same reasoning as trainer skills since Phase 6.
   const attackerTrainer = {
@@ -172,8 +177,15 @@ export async function createPvpMatch(sql, trainerId) {
     // as "no opponent available" rather than freezing a partial team.
     throw httpError(409, "opponent's defense formation is incomplete — try again");
   }
-  const defByMonster = groupEquipmentByMonster(await listEquippedMonsterEquipment(sql, opponent.trainerId));
-  const defender = defenderRoster.map((m, i) => toLane(m, i, defByMonster.get(m.id) ?? []));
+  // The defender's runes affect the fight exactly like the attacker's — they
+  // simply don't pay durability for it (ROADMAP 7.3's locked design
+  // decision: only the attacker's runes decay; resolveMatch only ever wears
+  // result.runeUse.a). Still frozen in here so the engine sees them.
+  const defByMonster = groupByMonster(await listEquippedMonsterEquipment(sql, opponent.trainerId));
+  const defRunesByMonster = groupByMonster(await listSocketedRunes(sql, opponent.trainerId));
+  const defender = defenderRoster.map((m, i) =>
+    toLane(m, i, defByMonster.get(m.id) ?? [], defRunesByMonster.get(m.id) ?? [])
+  );
   const defenderTrainer = {
     skills: await getTrainerSkillsSnapshot(sql, opponent.trainerId),
     equipment: await getTrainerEquipmentSnapshot(sql, opponent.trainerId),

@@ -271,6 +271,60 @@ test("validateRune enforces the effects grammar (with perLevel) and charge/gold 
   }), "repairGold must be >= 0");
 });
 
+test("validateRune accepts the target_select/override_targeting shape and rejects bad/mixed shapes", () => {
+  const ok = validateRune({
+    id: "rn_hunter", name: "Hunter Rune",
+    effects: [{ when: "target_select", op: "override_targeting", rule: "lowest_hp_pct" }],
+    maxCharges: 8, repairGold: 50,
+  });
+  assert.deepEqual(ok.effects, [{ when: "target_select", op: "override_targeting", rule: "lowest_hp_pct" }]);
+
+  // A rune may mix battle_start entries and target_select entries across
+  // DIFFERENT array entries — each entry is validated independently.
+  const mixedEntries = validateRune({
+    id: "rn_x", name: "X",
+    effects: [
+      { when: "battle_start", op: "perm_stat", stat: "spd", flat: 1 },
+      { when: "target_select", op: "override_targeting", rule: "backmost" },
+    ],
+    maxCharges: 5, repairGold: 10,
+  });
+  assert.equal(mixedEntries.effects.length, 2);
+
+  rejects(() => validateRune({
+    id: "rn_x", name: "X",
+    effects: [{ when: "target_select", op: "override_targeting", rule: "weakest" }],
+    maxCharges: 5, repairGold: 0,
+  }), "unknown targeting rule");
+  rejects(() => validateRune({
+    id: "rn_x", name: "X",
+    effects: [{ when: "target_select", op: "perm_stat", stat: "spd", flat: 1 }],
+    maxCharges: 5, repairGold: 0,
+  }), "target_select entry must use override_targeting, not perm_stat");
+  rejects(() => validateRune({
+    id: "rn_x", name: "X",
+    effects: [{ when: "battle_start", op: "override_targeting", rule: "front" }],
+    maxCharges: 5, repairGold: 0,
+  }), "battle_start entry must use perm_stat, not override_targeting");
+  rejects(() => validateRune({
+    id: "rn_x", name: "X",
+    effects: [{ when: "target_select", op: "override_targeting", rule: "front", pct: 5 }],
+    maxCharges: 5, repairGold: 0,
+  }), "override_targeting shape rejects extra keys like pct");
+  rejects(() => validateRune({
+    id: "rn_x", name: "X",
+    effects: [{ when: "target_select", op: "override_targeting" }],
+    maxCharges: 5, repairGold: 0,
+  }), "override_targeting requires a rule");
+});
+
+test("validateEquipment regression: still rejects a target_select effect (rune-only shape)", () => {
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "target_select", op: "override_targeting", rule: "lowest_hp_pct" }],
+  }), "equipment must not accept the rune-only target_select trigger");
+});
+
 test("species accepts optional runeSlots (default 1, bounded 0-5)", () => {
   const context = {
     classNames: ["Knight"],

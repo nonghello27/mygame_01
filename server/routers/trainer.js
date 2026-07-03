@@ -17,6 +17,12 @@
 // /api/trainer/equipment/enhance (step B) are the same precedent again:
 // each is a new endpoint inside an existing domain, so it's just another
 // row in this table rather than a new api/ file.
+//
+// /api/trainer/runes/socket (Phase 7.3 step A) follows the same precedent:
+// socket/unsocket one owned rune onto/from an owned monster.
+//
+// /api/trainer/runes/repair (Phase 7.3 step B) is the same precedent again:
+// fully recharge one owned rune, paying its def's flat repair_gold.
 
 import { createRouter } from "../http.js";
 import { me } from "../routes/me.js";
@@ -25,6 +31,7 @@ import { progression } from "../routes/progression.js";
 import { trainerSkills } from "../routes/trainerSkills.js";
 import { inventory } from "../routes/inventory.js";
 import { equip, enhance } from "../routes/equipment.js";
+import { socket, repair } from "../routes/runes.js";
 
 export const route = createRouter({
   "/api/trainer/me": { GET: me },
@@ -34,4 +41,6 @@ export const route = createRouter({
   "/api/trainer/inventory": { GET: inventory },
   "/api/trainer/equipment/equip": { POST: equip },
   "/api/trainer/equipment/enhance": { POST: enhance },
+  "/api/trainer/runes/socket": { POST: socket },
+  "/api/trainer/runes/repair": { POST: repair },
 });

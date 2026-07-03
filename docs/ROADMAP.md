@@ -369,22 +369,96 @@ exactly once per click, and the button shows "MAX" at the level cap.
 **Done when:** equipping visibly changes the next match's derived stats and
 unequipping reverts them; enhance pays exactly once; golden logs unchanged.
 
-### Phase 7.3 — Runes: socket, consume, break, repair
+### Phase 7.3 — Runes: socket, consume, break, repair ✅ CODE COMPLETE (2026-07-03)
 
-- `POST /api/runes/socket` `{ runeId, monsterId | null }` — validates
-  ownership, species `rune_slots`, and `broken = false`.
-- Engine: rune modifiers are data interpreted by the closed op set (e.g. a
-  targeting override during target selection). The engine is pure — it never
-  writes charge state; it **reports** consumption: a `rune` event in the log
-  per trigger + a per-rune-instance tally on the result.
-- `resolveMatch()` settles durability after `claimResolve` wins (same
-  once-only guard as Elo): decrement `charges_left` by instance id from the
-  tally, clamp at 0; at 0 set `broken = true` and unsocket. Settlement must
-  tolerate the instance having been repaired/moved since the snapshot froze
-  (update by id, skip missing).
-- `POST /api/runes/repair` — gold cost, one atomic debit+restore statement.
-- Design decision to make first: whose runes decay in PVP. Recommendation:
-  only the attacker's — a defender shouldn't pay durability while offline.
+Same itemization shape as 7.1/7.2: master/instance rows, the closed
+skill-passive grammar reused (plus one rune-only trigger), gold-gated
+server-authoritative use-cases, and a pure UI layer over one refreshed read.
+
+- ✅ `POST /api/trainer/runes/socket` `{ runeId, monsterId | null }` and
+  `POST /api/trainer/runes/repair` `{ runeId }` — grouped under the
+  `trainer` domain rather than a new top-level `/api/runes/*` domain, same
+  serverless-function-count precedent as `/api/trainer/inventory` (7.1) and
+  `/api/trainer/equipment/*` (7.2). Socket validates ownership, `broken =
+  false`, and the monster's species `rune_slots` capacity (one guarded
+  UPDATE re-checks all three atomically, `server/repos/runes.js`
+  `socketRune`); 409 "rune is broken — repair it first" / "no free rune
+  slots on that monster". Repair is claim-first-then-pay (same shape as
+  equipment's enhance): a guarded UPDATE re-checks the caller's
+  `charges_left`/`broken` snapshot AND enough gold in one statement, then
+  `debitGold`; a losing pay leg after a won claim reverts rather than
+  leaving a free repair in place. Both return the refreshed inventory
+  (`getInventory`); repair also returns `{gold}`. Repair is allowed
+  whenever the rune is drained-but-unbroken too, not only once actually
+  broken — "needs repair" means `charges_left < max_charges OR broken`.
+- ✅ Rune grammar: reuses the exact skill-passive `battle_start`/`perm_stat`
+  shape (with `perLevel`, like equipment), OR a rune-only trigger —
+  `{ when: "target_select", op: "override_targeting", rule }` — validated by
+  `validateRuneEffects` (`server/services/adminValidate.js`); equipment and
+  skills never get the override shape. `src/data/runes.js`'s `rn_hunter`
+  seeds the targeting-override case (`rule: "lowest_hp_pct"`); the other
+  three seed runes exercise `battle_start`/`perm_stat`.
+- ✅ Engine (`shared/engine/resolve.js`): socketed runes join the
+  `battle_start` firing order last (trainer skills → passives → monster
+  equipment → trainer equipment → **runes**), and a target-selecting rune
+  can override that turn's targeting rule. **One trigger = one charge = one
+  `rune` event** (`{t:"rune", side, idx, rune:<defId>, name}`), regardless of
+  how many `battle_start` effects a single rune def carries — `fireRune()`
+  decrements a LOCAL, mutable copy of the frozen `chargesLeft` the lane
+  snapshot carried in and goes silent (no event, next rune/normal targeting
+  tried instead) once that copy hits 0. The engine stays pure: it never
+  writes DB state, it only **reports** consumption via the returned
+  `runeUse: {a:Object<instanceId,count>, b:Object<instanceId,count>}` tally
+  (keyed by the owned rune row's id, not the def id) for the caller to
+  settle.
+- ✅ Durability settlement (`server/services/matches.js` `resolveMatch`):
+  after `claimResolve` wins the once-only claim (same guard Elo rides),
+  `applyRuneWear` spends `runeUse.a` against the attacker's rune rows —
+  **attacker-side only**. Locked design decision (was an open question in
+  this section's draft): a PVP defender's saved formation is snapshotted
+  and fought while they're offline, so their runes never decay from a match
+  they didn't actively play; only `runeUse.a` (the side that actually holds
+  the acting client's own gauge/turns in every match kind — free or pvp) is
+  ever applied. Breaking (`charges_left` hits 0) and auto-unsocketing
+  (`monster_id -> NULL`) happen in the SAME guarded UPDATE as the decrement,
+  by rune id — never by the frozen snapshot state — so an instance that was
+  repaired or resocketed since the match snapshot froze still wears exactly
+  as if it had sat still, and one that's since been reassigned/deleted
+  entirely (no matching row) is silently skipped, not an error.
+- ✅ UI: the 🎒 Inventory panel's Runes tab (`src/ui/inventory.js`) gained
+  socket/unsocket controls (a monster picker + Socket button, hidden while
+  broken since the server 409s anyway; Unsocket when already socketed) and a
+  Repair button labeled with the def's flat `repairGold` cost, shown
+  whenever the rune is broken or short of full charges; each rune row now
+  shows `chargesLeft/maxCharges`, its level badge, a "BROKEN" badge when
+  broken, and "In bag"/"Socketed: `<monster name>`" using the same roster
+  source the Equipment tab's monster picker uses. `src/services/content.js`
+  gained `socketRune`/`repairRune` as the I/O boundary (ui/ never calls
+  fetch directly), mirroring the 7.2 equipment helpers exactly. The
+  replayer (`src/core/battle.js`) gained a `rune` event handler — a
+  synchronous log line (`"<unit>'s <rune name> flares!"`), same shape as
+  `replayBuff`/`replayTrainerSkill`: no math, no state, purely narrating
+  what the server already resolved.
+- ✅ Tests: `tests/items.test.mjs` gained the rune-seed grammar coverage
+  (both effect shapes present, ids unique); the new `tests/rune-engine.test.mjs`
+  covers the `battle_start` firing order landing runes last (after
+  equipment), the targeting override actually redirecting a front-locked
+  attacker, charge exhaustion (reverts to normal targeting once the local
+  copy hits 0), side separation (`runeUse.b` never receives a side-a
+  instance id), and determinism/back-compat (absent vs. empty `runes`
+  fields produce an identical result). **Golden logs regenerated for one
+  reason only:** the
+  additive, always-empty `runeUse: {a:{}, b:{}}` field now present on every
+  result envelope (no fixture carries runes, so every existing event array
+  is byte-identical — verified, not assumed).
+
+**Remaining (operator step):** verify the phase's "Done when" in a browser
+with an admin account — grant `rn_hunter` to yourself, socket it onto a
+monster, start a match, and confirm its `target_select` override actually
+redirects that monster's attacks (event log) alongside `rune` events; watch
+`charges_left` drop by exactly the count of those `rune` events across a few
+matches; drain a rune to 0 and confirm it breaks and auto-unsockets; repair
+it and confirm charges are restored and it can be socketed again.
 
 **Done when:** a socketed rune changes targeting in the event log;
 `charges_left` drops by exactly the count of `rune` events; the rune breaks

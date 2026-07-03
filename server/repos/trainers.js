@@ -41,3 +41,24 @@ export async function getTrainerById(sql, id) {
     FROM trainers WHERE id = ${id}`;
   return shape(rows[0]);
 }
+
+// --- wallet ops (moved from repos/equipment.js — generic trainer-gold ops
+// that Phase 7.2's enhance() and Phase 7.3's repair() both need) -----------
+
+/** Spend gold from a trainer's balance — null (not a row) means insufficient. */
+export async function debitGold(sql, trainerId, amount) {
+  const rows = await sql`
+    UPDATE trainers SET gold = gold - ${amount}
+    WHERE id = ${trainerId} AND gold >= ${amount}
+    RETURNING gold`;
+  return rows[0] || null;
+}
+
+/** Compensation only: give gold back after a later pay leg fails. */
+export async function refundGold(sql, trainerId, amount) {
+  const rows = await sql`
+    UPDATE trainers SET gold = gold + ${amount}
+    WHERE id = ${trainerId}
+    RETURNING gold`;
+  return rows[0] || null;
+}

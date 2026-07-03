@@ -7,6 +7,7 @@
 import { SKILLS } from "../src/data/skills.js";
 import { EXPERTISES } from "../src/data/expertises.js";
 import { EQUIPMENT } from "../src/data/equipment.js";
+import { RUNES } from "../src/data/runes.js";
 
 /** Build a snapshot lane with sane deterministic defaults. */
 export function lane(idx, over = {}) {
@@ -55,6 +56,21 @@ export function equip(id, level = 1) {
   const e = EQUIPMENT.find((x) => x.id === id);
   if (!e) throw new Error(`fixture references unknown equipment ${id}`);
   return { id: e.id, name: e.name, level, effects: e.effects };
+}
+
+/** Look up a master rune def by id and attach the instance fields a lane's
+ * `runes[]` entry expects (shape a lane's runes[] entry expects — see
+ * server/repos/runes.js `listSocketedRunes`): `instanceId` is the OWNED
+ * rune row's id (what runeUse tallies key off of, distinct from `id` the
+ * def id), `chargesLeft` defaults to the def's maxCharges (a fresh rune). */
+export function rune(id, { instanceId = 1, level = 1, chargesLeft } = {}) {
+  const r = RUNES.find((x) => x.id === id);
+  if (!r) throw new Error(`fixture references unknown rune ${id}`);
+  return {
+    instanceId, id: r.id, name: r.name, level,
+    chargesLeft: chargesLeft ?? r.maxCharges,
+    effects: r.effects,
+  };
 }
 
 // Golden battles: full-fat teams exercising elements, range targeting,

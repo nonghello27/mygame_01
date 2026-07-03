@@ -170,29 +170,64 @@ export function validateSkillData(data) {
 }
 
 /**
+ * One battle_start/perm_stat entry (the historical shape). Extracted from
+ * validateBattleStartEffects so validateRuneEffects (below) can reuse the
+ * exact same per-entry logic instead of duplicating it, WITHOUT changing
+ * behavior for skills/equipment — validateBattleStartEffects still maps this
+ * over its list one-for-one.
+ */
+function validateBattleStartEffect(fx, label, allowPerLevel) {
+  if (fx?.when !== "battle_start") throw bad(`${label}.when must be "battle_start"`);
+  if (fx?.op !== "perm_stat") throw bad(`${label}.op must be "perm_stat"`);
+  const o = { when: "battle_start", op: "perm_stat", stat: oneOf(fx.stat, PERM_STATS, `${label}.stat`) };
+  if (fx.pct === undefined && fx.flat === undefined) throw bad(`${label} needs pct or flat`);
+  if (fx.pct !== undefined) o.pct = int(fx.pct, `${label}.pct`, { min: -100, max: 100 });
+  if (fx.flat !== undefined) o.flat = int(fx.flat, `${label}.flat`, { min: -1000, max: 1000 });
+  if (fx.perLevel !== undefined) {
+    if (!allowPerLevel) throw bad(`${label}.perLevel is not allowed here`);
+    o.perLevel = int(fx.perLevel, `${label}.perLevel`, { min: 0, max: 100 });
+  }
+  return o;
+}
+
+/**
  * Shared grammar for a battle_start/perm_stat effects list — used by skill
- * passives, equipment effects, and rune effects alike (all interpreted by
- * the SAME engine op, shared/engine/resolve.js applyEffect()). Skills keep
- * their historical shape (no perLevel); equipment/runes may add perLevel so
- * 7.2's enhancement system has something to scale — pass allowPerLevel=true
- * for those callers.
+ * passives and equipment effects alike (all interpreted by the SAME engine
+ * op, shared/engine/resolve.js applyEffect()). Skills keep their historical
+ * shape (no perLevel); equipment may add perLevel so 7.2's enhancement
+ * system has something to scale — pass allowPerLevel=true for that caller.
+ * Runes use validateRuneEffects (below) instead — they get one extra trigger
+ * shape equipment/skills must NOT accept.
  * @returns {object[]}
  */
 export function validateBattleStartEffects(list, label, allowPerLevel = true) {
   if (!Array.isArray(list) || list.length === 0) throw bad(`${label} must be a non-empty array`);
+  return list.map((fx, i) => validateBattleStartEffect(fx, `${label}[${i}]`, allowPerLevel));
+}
+
+/**
+ * Rune effects grammar (Phase 7.3 step C): each entry is EITHER the historical
+ * battle_start/perm_stat shape (perLevel allowed, identical to equipment) OR
+ * the new rune-only trigger `{ when: "target_select", op: "override_targeting",
+ * rule }` — a rune can steer which enemy a turn targets (GAME_DESIGN §7:
+ * targeting "modified by runes"); `rule` must be one of the same TARGETING
+ * names species/skill targeting uses, so it can never name a rule the engine
+ * doesn't have. The two shapes are distinguished by `when` and are mutually
+ * exclusive per entry — mixing keys from both (or any extra key on the
+ * override shape) is rejected by `onlyKeys`. Equipment/skills call
+ * validateBattleStartEffects instead and never see this shape.
+ * @returns {object[]}
+ */
+export function validateRuneEffects(list, label) {
+  if (!Array.isArray(list) || list.length === 0) throw bad(`${label} must be a non-empty array`);
   return list.map((fx, i) => {
     const l = `${label}[${i}]`;
-    if (fx?.when !== "battle_start") throw bad(`${l}.when must be "battle_start"`);
-    if (fx?.op !== "perm_stat") throw bad(`${l}.op must be "perm_stat"`);
-    const o = { when: "battle_start", op: "perm_stat", stat: oneOf(fx.stat, PERM_STATS, `${l}.stat`) };
-    if (fx.pct === undefined && fx.flat === undefined) throw bad(`${l} needs pct or flat`);
-    if (fx.pct !== undefined) o.pct = int(fx.pct, `${l}.pct`, { min: -100, max: 100 });
-    if (fx.flat !== undefined) o.flat = int(fx.flat, `${l}.flat`, { min: -1000, max: 1000 });
-    if (fx.perLevel !== undefined) {
-      if (!allowPerLevel) throw bad(`${l}.perLevel is not allowed here`);
-      o.perLevel = int(fx.perLevel, `${l}.perLevel`, { min: 0, max: 100 });
+    if (fx?.when === "target_select") {
+      onlyKeys(fx ?? {}, ["when", "op", "rule"], l);
+      if (fx.op !== "override_targeting") throw bad(`${l}.op must be "override_targeting"`);
+      return { when: "target_select", op: "override_targeting", rule: oneOf(fx.rule, TARGET_RULES, `${l}.rule`) };
     }
-    return o;
+    return validateBattleStartEffect(fx, l, true);
   });
 }
 
@@ -355,7 +390,7 @@ export function validateRune(input) {
     id: str(input.id, "rune id", { pattern: /^rn_[a-z0-9_]+$/ }),
     name: str(input.name, "rune name"),
     description: optStr(input.description, "description"),
-    effects: validateBattleStartEffects(input.effects, "effects", true),
+    effects: validateRuneEffects(input.effects, "effects"),
     maxCharges: int(input.maxCharges, "max charges", { min: 1, max: 100 }),
     repairGold: int(input.repairGold, "repair gold", { min: 0, max: 1_000_000 }),
   };

@@ -49,3 +49,6 @@
 }
 .inv-small{padding:6px 11px;font-size:12px;border-radius:8px}
 .inv-small:disabled{opacity:0.5;cursor:default}
+
+/* Phase 7.3: socket/repair controls + a broken-rune badge tint. */
+.inv-broken{color:var(--hp-low);border-color:var(--hp-low)}

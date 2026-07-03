@@ -39,8 +39,22 @@ import { STATUSES, statMod, hasFlag } from "../rules/statuses.js";
  *   equipment (Phase 7.2 step C; same grammar, no per-target rule — a
  *   side-wide aura). Absent/empty ⇒ identical to no trainers/no equipment.
  *   Lanes (laneA/laneB) may also carry an `equipment` array — a monster's
- *   own equipped monster-domain gear, same grammar again.
- * @returns {{youWin:boolean, draw:boolean, survivor:{side:string,idx:number}|null, events:object[]}}
+ *   own equipped monster-domain gear, same grammar again — and a `runes`
+ *   array (Phase 7.3 step C): each entry `{instanceId, id, name, level,
+ *   chargesLeft, effects}` (server/repos/runes.js `listSocketedRunes`).
+ *   Rune effects are EITHER the battle_start/perm_stat shape (fires in the
+ *   battle_start pipeline, after equipment) OR `{when:"target_select",
+ *   op:"override_targeting", rule}` (steers a turn's target choice —
+ *   GAME_DESIGN §7 step 4: targeting "modified by runes"). The engine is
+ *   pure and never writes charge state; it only REPORTS consumption — one
+ *   `rune` event per trigger (regardless of how many battle_start effects
+ *   that trigger applies) plus a per-instance tally on the returned
+ *   `runeUse` object, for the caller (server/services/matches.js
+ *   `resolveMatch`) to settle durability after the fact.
+ * @returns {{youWin:boolean, draw:boolean, survivor:{side:string,idx:number}|null,
+ *   events:object[], runeUse:{a:Object<number,number>, b:Object<number,number>}}}
+ *   runeUse maps each side's rune INSTANCE ids (server row ids, not def ids)
+ *   to how many charges that instance spent this battle.
  */
 export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   const rng = makeRng(seed);
@@ -49,11 +63,19 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   const B = laneB.map((d) => liveUnit(d, "b"));
   const all = [...A, ...B];
 
+  // Rune consumption tally (Phase 7.3 step C): keyed by rune INSTANCE id
+  // (server row id), one entry per side. The engine never writes DB state —
+  // this is purely a report for the caller (resolveMatch) to settle
+  // durability with after the battle resolves. A rune with no instanceId
+  // (e.g. a fixture lane in tests) simply never gets a tally entry.
+  const runeUse = { a: {}, b: {} };
+
   // battle_start order (GAME_DESIGN §7.1, §7's firing order — trainer skills
-  // → passives → equipment → runes[7.3]): trainer skills fire first — side a
-  // in skill-array order, then side b — THEN unit passives, in the existing
+  // → passives → equipment → runes): trainer skills fire first — side a in
+  // skill-array order, then side b — THEN unit passives, in the existing
   // frozen order (player lanes front-to-back, then enemy lanes) — THEN
-  // equipment (monster-domain, then trainer-domain; Phase 7.2 step C).
+  // equipment (monster-domain, then trainer-domain; Phase 7.2 step C) — THEN
+  // runes (Phase 7.3 step C, below).
   fireTrainerEffects("a", "battle_start", trainers, A, events, rng);
   fireTrainerEffects("b", "battle_start", trainers, B, events, rng);
 
@@ -98,6 +120,25 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
     }
   }
 
+  // Runes (Phase 7.3 step C): last in the battle_start order (GAME_DESIGN
+  // §7.1: trainer skills -> passives -> equipment -> runes). Same per-unit
+  // iteration order as the equipment stage above — a rune doubles as the
+  // pseudo-skill source for its own effects, so perLevel scaling (via
+  // scaledFx) works exactly like equipment/passives, scaled by rune LEVEL.
+  // One trigger (= one rune event = one charge) covers ALL of a rune's
+  // battle_start effects, however many there are; a rune out of charges is
+  // simply skipped — it stays silent for the rest of the fight (the engine
+  // never revisits it once exhausted at this stage, since battle_start only
+  // runs once).
+  for (const u of all) {
+    for (const rune of u.runes) {
+      const fxs = (rune.effects ?? []).filter((fx) => fx.when === "battle_start");
+      if (fxs.length === 0) continue;
+      if (!fireRune(u, rune, events, runeUse)) continue;
+      for (const fx of fxs) applyEffect(u, u, fx, rune, events, rng, u.side === "a" ? A : B);
+    }
+  }
+
   // after_ally_turns bookkeeping: per side, the set of currently-acted unit
   // idxs since that side's trigger last fired (or battle start).
   const actedSets = { a: new Set(), b: new Set() };
@@ -117,7 +158,7 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
       if (!unit.alive || !aliveCount(A) || !aliveCount(B)) break;
       unit.gauge -= GAUGE_THRESHOLD;
       const own = unit.side === "a" ? A : B;
-      takeTurn(unit, own, unit.side === "a" ? B : A, events, rng);
+      takeTurn(unit, own, unit.side === "a" ? B : A, events, rng, runeUse);
       markAllyTurn(unit, own, actedSets, trainers, events, rng);
       turns++;
       if (turns >= TURN_CAP) break;
@@ -128,12 +169,33 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   const youWin = !draw && aliveCount(A) > 0;
   if (draw) events.push({ t: "draw", turns });
   const survivor = draw ? null : firstAlive(youWin ? A : B);
-  return { youWin, draw, survivor: survivor ? ref(survivor) : null, events };
+  return { youWin, draw, survivor: survivor ? ref(survivor) : null, events, runeUse };
+}
+
+/**
+ * Fire one rune trigger: one charge, one `rune` event, regardless of how many
+ * effects that trigger applies (battle_start stage may run several perm_stat
+ * fx off a single charge; a target_select override is one fx by definition).
+ * The engine is pure — this only DECREMENTS A LOCAL COPY of the frozen
+ * chargesLeft and reports the spend; it never touches the DB. Durability
+ * settlement (server/services/matches.js resolveMatch) reads the returned
+ * `runeUse` tally after the fact.
+ * @returns {boolean} whether the rune fired (false when already exhausted)
+ */
+function fireRune(unit, rune, events, runeUse) {
+  if (rune.chargesLeft <= 0) return false;
+  rune.chargesLeft--;
+  events.push({ t: "rune", side: unit.side, idx: unit.idx, rune: rune.id, name: rune.name });
+  if (rune.instanceId != null) {
+    const tally = runeUse[unit.side];
+    tally[rune.instanceId] = (tally[rune.instanceId] ?? 0) + 1;
+  }
+  return true;
 }
 
 // --- one unit's turn (the fixed pipeline) --------------------------------------
 
-function takeTurn(unit, own, enemies, events, rng) {
+function takeTurn(unit, own, enemies, events, rng, runeUse) {
   events.push({ t: "turn", side: unit.side, idx: unit.idx });
 
   // 1. turn_start: damage-over-time ticks, status durations, cooldowns.
@@ -173,7 +235,25 @@ function takeTurn(unit, own, enemies, events, rng) {
   const alive = enemies.filter((u) => u.alive);
   if (skill.data.power) {
     const spec = skill.data.target ?? {};
-    for (const target of selectTargets(spec.rule ?? unit.targeting, alive, rng, spec.count ?? 1)) {
+    // Targeting rule, "modified by runes" (GAME_DESIGN §7 step 4): the
+    // acting unit's first socketed rune (socket order) that still has
+    // charges AND carries a target_select/override_targeting effect wins —
+    // one charge, one rune event, one tally bump. It replaces the skill's
+    // own rule (or the unit's innate targeting, e.g. melee's front lock) for
+    // THIS turn only; other runes on the unit stay unconsumed. This applies
+    // to any damaging action, basic attacks included — a rune can override
+    // even a melee unit's hard front lock.
+    let rule = spec.rule ?? unit.targeting;
+    for (const rune of unit.runes) {
+      const override = (rune.effects ?? []).find(
+        (fx) => fx.when === "target_select" && fx.op === "override_targeting"
+      );
+      if (!override) continue;
+      if (!fireRune(unit, rune, events, runeUse)) continue; // exhausted — try the next rune
+      rule = override.rule;
+      break; // first matching, charged rune wins
+    }
+    for (const target of selectTargets(rule, alive, rng, spec.count ?? 1)) {
       strike(unit, target, skill, events, rng, alive);
       if (!target.alive) alive.splice(alive.indexOf(target), 1);
     }
@@ -337,6 +417,13 @@ function liveUnit(d, side) {
     // Equipped monster-domain gear (Phase 7.2 step C) — each piece doubles as
     // a pseudo-skill for the battle_start equipment stage below.
     equipment: (d.equipment ?? []).map((e) => ({ ...e, level: e.level ?? 1, effects: e.effects ?? [] })),
+    // Socketed runes (Phase 7.3 step C) — a LOCAL, mutable copy of the frozen
+    // chargesLeft: fireRune decrements THIS copy as the battle spends
+    // charges, never the snapshot the caller passed in and never the DB —
+    // the engine only reports what it consumed (runeUse, returned above).
+    runes: (d.runes ?? []).map((r) => ({
+      ...r, level: r.level ?? 1, effects: r.effects ?? [], chargesLeft: r.chargesLeft ?? 1,
+    })),
     // Ultimates start ON cooldown — they charge up, they don't open the fight.
     cooldowns: Object.fromEntries(
       (d.skills ?? []).filter((s) => s.cooldown > 0).map((s) => [s.id, s.cooldown])

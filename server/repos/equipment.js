@@ -25,6 +25,9 @@
 // concurrent-spend race (e.g. two enhances racing the same gold pile from
 // different pieces); the service compensates by reverting the claimed level
 // (and any already-paid leg) rather than leaving a free upgrade on the table.
+// debitGold/refundGold themselves are generic trainer-wallet ops, not
+// equipment-specific — they live in repos/trainers.js (Phase 7.3 needs them
+// too, for rune repair) and are imported from there by services/equipment.js.
 
 /** The trainer's own-equipment instance (domain 'trainer'), joined with its def
  *  (including the def's enhance cost curve, needed by the enhance use-case). */
@@ -185,24 +188,6 @@ export async function revertEnhanceMonsterEquipment(sql, trainerId, equipmentId,
     UPDATE monster_equipment SET enhance_level = enhance_level - 1
     WHERE id = ${equipmentId} AND trainer_id = ${trainerId} AND enhance_level = ${expectedLevel + 1}
     RETURNING id, def_id, enhance_level`;
-  return rows[0] || null;
-}
-
-/** Spend gold from a trainer's balance — null (not a row) means insufficient. */
-export async function debitGold(sql, trainerId, amount) {
-  const rows = await sql`
-    UPDATE trainers SET gold = gold - ${amount}
-    WHERE id = ${trainerId} AND gold >= ${amount}
-    RETURNING gold`;
-  return rows[0] || null;
-}
-
-/** Compensation only: give gold back after a later pay leg fails. */
-export async function refundGold(sql, trainerId, amount) {
-  const rows = await sql`
-    UPDATE trainers SET gold = gold + ${amount}
-    WHERE id = ${trainerId}
-    RETURNING gold`;
   return rows[0] || null;
 }
 

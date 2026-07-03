@@ -167,9 +167,9 @@ rune_defs(id TEXT PK, name, description, effects JSONB,
 runes(id, trainer_id, def_id, level DEFAULT 1, charges_left INT,
       broken BOOL DEFAULT false, monster_id NULL)   -- NULL = in the bag
 -- monster_species.rune_slots (added by 009_items.sql, DEFAULT 1) — read by 7.3
--- equipment feeds a battle snapshot as of Phase 7.2 (see §5's toLane()/
--- resolveBattle() notes below); runes still don't (7.3 wires them in). The
--- only acquisition source until 7.4 is the admin-gated POST /api/admin/grant
+-- both equipment (7.2) and socketed runes (7.3) feed a battle snapshot (see
+-- §5's toLane()/resolveBattle() notes below). The only acquisition source
+-- until 7.4 is the admin-gated POST /api/admin/grant
 
 -- trainer progression (Phase 6, real: 007_pvp.sql) ----------------------------
 expertises(id, name)                    -- MASTER: the 3 trainer archetypes
@@ -196,7 +196,9 @@ matches (                    -- the anti-cheat session (CLAUDE.md §roadmap, now
   attacker_id BIGINT, defender_id BIGINT NULL,   -- defender_id set only for kind='pvp'
   attacker_snapshot JSONB NOT NULL, defender_snapshot JSONB NOT NULL,  -- frozen lanes
                                       -- (lanes may carry an `equipment` array
-                                      -- of the monster's equipped gear, 7.2)
+                                      -- of the monster's equipped gear, 7.2,
+                                      -- and a `runes` array of its socketed
+                                      -- runes with their frozen chargesLeft, 7.3)
   attacker_trainer JSONB, defender_trainer JSONB, -- frozen trainer-side loadout,
                                       -- pvp only: {skills, equipment} (7.2 widened
                                       -- this from a bare skills array; pre-7.2
@@ -204,7 +206,11 @@ matches (                    -- the anti-cheat session (CLAUDE.md §roadmap, now
   seed BIGINT NOT NULL,              -- RNG seed; makes the result auditable
   status TEXT NOT NULL DEFAULT 'open',  -- open → resolved (reject replays)
   result JSONB, events JSONB,        -- persisted on resolve; pvp result carries
-                                      -- result.pvp = {yourDelta, theirDelta, yourRating}
+                                      -- result.pvp = {yourDelta, theirDelta, yourRating};
+                                      -- resolveMatch (7.3) also settles rune
+                                      -- durability from the engine's runeUse
+                                      -- tally after the resolve claim wins —
+                                      -- not itself persisted onto this row
   created_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ
 )
 
@@ -298,6 +304,35 @@ resolveBattle(battleState, seed) → { winner, events[], finalState }
   unit passives → monster-domain equipment (per-unit) → trainer-domain
   equipment (side-wide aura). Enhancement scales an effect's `flat`/`pct` via
   `perLevel * (enhanceLevel)`, the same per-level math skills don't get.
+
+  **Runes** (Phase 7.3) are a fourth source, socketed per-unit rather than a
+  side-wide aura, and land LAST in the `battle_start` order (after
+  trainer-domain equipment). A lane's `runes` array (`server/repos/runes.js`
+  `listSocketedRunes`, gathered by `toLane()`'s 4th argument) carries each
+  socketed instance's frozen `chargesLeft` plus its def's `effects`, which are
+  EITHER the same `battle_start`/`perm_stat` grammar as equipment OR a
+  rune-only trigger, `{when:"target_select", op:"override_targeting", rule}`
+  — evaluated when a unit chooses that turn's target, steering it to the
+  named `targeting.js` rule instead of the skill's/species' default. Both
+  triggers are metered the same way: **one trigger = one charge = one `rune`
+  event** (`{t:"rune", side, idx, rune:<defId>, name}`), regardless of how
+  many `battle_start` effects a single def carries; `fireRune()` decrements a
+  LOCAL, mutable copy of the lane's frozen `chargesLeft` and goes silent
+  (no event, next rune/default targeting tried instead) once that copy hits
+  0 — the engine never writes charge state itself. It only *reports*
+  consumption via the returned `runeUse:{a:Object<instanceId,count>,
+  b:Object<instanceId,count>}` tally (keyed by the owned rune row's id, not
+  the def id), which `resolveMatch()` (`server/services/matches.js`) spends
+  against the DB — **attacker side only** — after the resolve claim wins,
+  same once-only guard Elo already rides: `applyRuneWear` decrements
+  `charges_left` by instance id (never by the frozen snapshot state, so a
+  rune repaired/resocketed since the snapshot froze wears correctly, and one
+  reassigned/deleted since is silently skipped), breaking (`charges_left`
+  hits 0) and auto-unsocketing (`monster_id -> NULL`) in the same guarded
+  UPDATE as the decrement. A PVP defender's runes never decay this way —
+  their formation is a frozen snapshot fought while they're offline, and
+  only `runeUse.a` (the attacking/acting side, in every match kind) is ever
+  applied.
 - **Statuses** (stun/freeze/burn/poison/curse…) are just persistent effects
   with a duration, ticked in `turn_start`/checked at the pipeline's control
   and hit steps.
@@ -393,6 +428,18 @@ POST /api/trainer/equipment/enhance  { domain, equipmentId } → raise one owned
                               piece's enhance level by 1, paying its gold (+
                               optional material) cost exactly once; returns
                               { gold, inventory }
+POST /api/trainer/runes/socket       { runeId, monsterId: number|null } →
+                              socket one owned rune onto a monster, or
+                              unsocket it (monsterId: null); 409 when broken
+                              ("repair it first") or the monster has no free
+                              rune slots left; returns the refreshed
+                              inventory (Phase 7.3; same grouping reasoning
+                              as /api/trainer/equipment/*)
+POST /api/trainer/runes/repair       { runeId } → fully recharge one owned
+                              rune and clear `broken`, paying its def's flat
+                              `repair_gold` exactly once; 409 "rune doesn't
+                              need repair" when already full and unbroken;
+                              returns { gold, inventory }
 
 # battle domain — api/battle/[...route].js
 POST /api/battle/match        { mode? } → create match session ('free', default:
@@ -400,7 +447,11 @@ POST /api/battle/match        { mode? } → create match session ('free', defaul
                               matched against another trainer's defense formation)
 POST /api/battle/resolve      { matchId, playerOrder } → persisted result + events;
                               a pvp match's result also carries
-                              pvp: { yourDelta, theirDelta, yourRating }
+                              pvp: { yourDelta, theirDelta, yourRating };
+                              after the resolve claim wins, also settles rune
+                              durability from the engine's runeUse tally
+                              against the ATTACKER's socketed runes only
+                              (Phase 7.3) — not itself part of the response
 GET  /api/battle/formation    the trainer's saved defense formation, or null
 POST /api/battle/formation    { monsterIds } → save (upsert) the defense
                               formation as exactly 3 owned monster ids

@@ -44,6 +44,7 @@ export async function runBattle({ setStatus, showWinner }) {
     if (ev.t === "turn") await replayTurn(ev, setStatus);
     else if (ev.t === "skill") replaySkill(ev);
     else if (ev.t === "tskill") replayTrainerSkill(ev);
+    else if (ev.t === "rune") replayRune(ev);
     else if (ev.t === "strike") await replayStrike(ev);
     else if (ev.t === "miss") await replayMiss(ev);
     else if (ev.t === "dot") await replayDot(ev);
@@ -97,6 +98,14 @@ function replaySkill(ev) {
  * the heal/status/buff events that follow already animate themselves. */
 function replayTrainerSkill(ev) {
   log(`Trainer skill: <b>${ev.name}</b>!`, true);
+}
+
+/** A socketed rune fires (battle_start perm_stat, or a target_select
+ * override spends its charge for this turn) — announce it; no math, no
+ * state, same synchronous shape as replayBuff/replaySkill. */
+function replayRune(ev) {
+  const u = unitByRef(ev);
+  if (u) log(`${nameSpan(u, ev.side)}'s <b>${ev.name}</b> flares!`, true);
 }
 
 async function replayMiss(ev) {
