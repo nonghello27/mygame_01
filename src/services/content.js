@@ -27,7 +27,7 @@ async function postJson(path, body) {
 
 /** @returns {Promise<Record<string, object>>} class metadata keyed by class name. */
 export async function loadClasses() {
-  return getJson("/api/classes");
+  return getJson("/api/trainer/classes");
 }
 
 /** @returns {Promise<Record<string, object>>} sprite manifest keyed by sprite id. */
@@ -45,7 +45,7 @@ export async function loadSprites() {
  * @returns {Promise<{matchId:string, you:object[], enemy:object[], opponent?:{name:string,rating:number}}>}
  */
 export async function createMatch(mode) {
-  return postJson("/api/match", mode ? { mode } : {});
+  return postJson("/api/battle/match", mode ? { mode } : {});
 }
 
 /**
@@ -75,7 +75,7 @@ export async function startJob(monsterId, jobId) {
  * @returns {Promise<{youWin:boolean, survivor:{side:string,idx:number}|null, events:object[]}>}
  */
 export async function requestBattle(matchId, playerOrder) {
-  return postJson("/api/battle", { matchId, playerOrder });
+  return postJson("/api/battle/resolve", { matchId, playerOrder });
 }
 
 /**
@@ -84,17 +84,17 @@ export async function requestBattle(matchId, playerOrder) {
  * @returns {Promise<{expertises:object[], skillDefs:object[], skills:object[], expertise:string|null, exp:number, unlockExp:number}>}
  */
 export async function fetchProgression() {
-  return getJson("/api/progression");
+  return getJson("/api/trainer/progression");
 }
 
 /** Pick (or switch) expertise. Switching wipes both learned skill slots. */
 export async function chooseExpertise(expertiseId) {
-  return postJson("/api/progression", { expertiseId });
+  return postJson("/api/trainer/progression", { expertiseId });
 }
 
 /** Learn a trainer skill into a slot, or clear it (skillId: null). */
 export async function learnTrainerSkill(slot, skillId) {
-  return postJson("/api/trainer-skills", { slot, skillId });
+  return postJson("/api/trainer/skills", { slot, skillId });
 }
 
 /**
@@ -102,12 +102,12 @@ export async function learnTrainerSkill(slot, skillId) {
  * @returns {Promise<{formationId:number, name:string, slots:object[]}|null>}
  */
 export async function fetchDefense() {
-  return getJson("/api/formation");
+  return getJson("/api/battle/formation");
 }
 
 /** Save (upsert) the defense formation as exactly 3 owned monster ids, front-first. */
 export async function saveDefense(monsterIds) {
-  return postJson("/api/formation", { monsterIds });
+  return postJson("/api/battle/formation", { monsterIds });
 }
 
 /**
@@ -115,5 +115,5 @@ export async function saveDefense(monsterIds) {
  * @returns {Promise<{season:object, top:object[], me:object}>}
  */
 export async function fetchLadder() {
-  return getJson("/api/ladder");
+  return getJson("/api/battle/ladder");
 }

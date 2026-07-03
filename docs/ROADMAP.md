@@ -227,15 +227,130 @@ climb a visible ladder.
 
 ## Phase 7 — Acquisition & itemization
 
-Order within this phase is flexible:
+Too big for one shot — executed as five sub-phases, each independently
+shippable. Order rationale: schema + inventory first (everything else
+references it), equipment into the engine next (smallest engine touch), runes
+after (adds post-battle durability settlement), then the acquisition loops,
+and trading — the one place that needs real transactional care — last.
 
-- **Summon Hall** (gold/item-condition summons first; pluggable-scorer quest
-  hooks, but NOT the photo quest yet).
-- **Runes** (charges, breakage, repair) and **equipment** (+enhance) — mostly
-  master data + instance tables; the engine consumes them as effect sources.
-- **Adventure** (map session in DB, POST-per-step, catches/materials).
-- **Marketplace** (escrowed gold transfers; needs SQL transactions — the one
-  place to be extra careful).
+Cross-cutting rules for all five sub-phases:
+
+- **No player-facing acquisition exists until 7.4**, so 7.1's grant service
+  must be admin-exposed — that's how 7.1–7.3 get tested live, and where 7.2's
+  enhancement materials come from until adventure ships.
+- New master tables follow the Phase 5 workflow **in the same sub-phase that
+  creates them**: seed file in `src/data/`, admin-console tab, server-side
+  validation, guarded deletes, and `/api/admin/master` returns them.
+- Item/rune/equipment effects reuse the skills JSONB grammar and the closed
+  op set in `shared/rules/`. A genuinely new mechanic = one new op/trigger in
+  the registry — never an engine branch for one item.
+
+### Phase 7.1 — Item schema & inventory
+
+- `009_items.sql`: master `item_defs`, `equipment_defs` (domain
+  `'trainer'|'monster'`, slot, effects JSONB, enhance cost curve),
+  `rune_defs` (effects JSONB, max_charges); instance `items` (qty stacks),
+  `trainer_equipment` / `monster_equipment` (enhance_level, equipped
+  slot / monster_id nullable), `runes` (charges_left, broken, monster_id
+  nullable) — per ARCHITECTURE §4. **Also adds `monster_species.rune_slots`**:
+  it's in ARCHITECTURE's draft but was never migrated, 7.3 depends on it, and
+  the admin species editor must expose it.
+- Seed files `src/data/items.js` / `equipment.js` / `runes.js`; admin tabs +
+  validation (`adminValidate.js` grammar for effects JSONB) + guarded deletes.
+- `server/services/inventory.js`: grant/consume as atomic claim-style
+  statements (the `settleActivities` pattern); admin-only grant endpoint for
+  testing until 7.4 provides real sources.
+- `GET /api/inventory` — items + equipment + runes in one call.
+- UI: inventory panel with tabs Items | Equipment | Runes.
+
+**Start here:** the migration + seed files.
+**Done when:** goods granted via the admin endpoint appear in all three tabs;
+admin CRUD works on the three new master tables; deleting a def referenced by
+an instance row answers 409.
+
+### Phase 7.2 — Equipment: equip, enhance, engine integration
+
+- `POST /api/equipment/equip` `{ equipmentId, monsterId | trainerSlot | null }`
+  — ownership + domain/slot validated against DB state; `null` unequips; an
+  item is equipped in at most one place (enforced by the update's guard).
+- `POST /api/equipment/enhance` — gold and/or material cost read from master
+  data; one atomic debit+upgrade statement, exactly once.
+- Engine integration: **`deriveStats()` stays pure** — `toLane()` in
+  `server/services/matches.js` gathers the monster's equipped items and folds
+  their effects into the frozen snapshot as effect sources, so matches stay
+  tamper-proof/replayable and existing golden logs don't move (fixtures carry
+  no equipment).
+- `battle_start` firing order per GAME_DESIGN §7: trainer skills → unit
+  passives → **equipment** → runes; equipment effects go through the
+  existing op set.
+
+**Done when:** equipping visibly changes the next match's derived stats and
+unequipping reverts them; enhance pays exactly once; golden logs unchanged.
+
+### Phase 7.3 — Runes: socket, consume, break, repair
+
+- `POST /api/runes/socket` `{ runeId, monsterId | null }` — validates
+  ownership, species `rune_slots`, and `broken = false`.
+- Engine: rune modifiers are data interpreted by the closed op set (e.g. a
+  targeting override during target selection). The engine is pure — it never
+  writes charge state; it **reports** consumption: a `rune` event in the log
+  per trigger + a per-rune-instance tally on the result.
+- `resolveMatch()` settles durability after `claimResolve` wins (same
+  once-only guard as Elo): decrement `charges_left` by instance id from the
+  tally, clamp at 0; at 0 set `broken = true` and unsocket. Settlement must
+  tolerate the instance having been repaired/moved since the snapshot froze
+  (update by id, skip missing).
+- `POST /api/runes/repair` — gold cost, one atomic debit+restore statement.
+- Design decision to make first: whose runes decay in PVP. Recommendation:
+  only the attacker's — a defender shouldn't pay durability while offline.
+
+**Done when:** a socketed rune changes targeting in the event log;
+`charges_left` drops by exactly the count of `rune` events; the rune breaks
+at 0 and is auto-unsocketed; repair restores charges.
+
+### Phase 7.4 — Acquisition: Summon Hall, then Adventure
+
+Two loops in one sub-phase — ship Summon first (it's small, gives gold its
+first sink, and finally makes 7.1–7.3 testable without the admin grant).
+
+- Summon: audit table `summons` (trainer, cost, seed, result);
+  `POST /api/summon` — validate the cost (gold and/or items like summoning
+  scrolls) against DB state → one atomic debit → **seeded** weighted roll
+  (stored seed ⇒ auditable, per the determinism principle) → mint the monster
+  instance. Quest-style summon requirements go through a pluggable checker
+  interface from day one — the photo-quest scorer (Phase 8 ⚠) plugs in later.
+- Adventure: `adventure_sessions` (map JSONB, party, position, seed, state);
+  `POST /api/adventure/start` locks the party (`busy_kind = 'adventure'` —
+  the value has been reserved since 005) and generates the map from a stored
+  seed; `POST /api/adventure/move` validates the step server-side and
+  resolves the node — auto-battle via `resolveBattle()`, loot chest →
+  inventory grant, gather node → materials; finishing/abandoning frees the
+  party through the existing guarded busy-clear.
+
+**Done when:** a summon mints a monster exactly once for its cost with a
+replayable seed; a full adventure run yields loot in the inventory (and any
+catch in the roster) and the party unlocks correctly, including on abandon.
+
+### Phase 7.5 — Marketplace
+
+- `marketplace_listings` (seller, kind `item|equipment|rune|monster`, ref id,
+  qty, price, status `open|sold|cancelled`). Listing **escrows** the good —
+  removed from usable inventory at list time; cancel returns it.
+- Monsters are listable only when free of obligations: not busy, not in the
+  defense formation, equipment and runes stripped first.
+- `POST /api/market/list` / `buy` / `cancel`; `GET /api/market` with
+  search/filter.
+- Concurrency: prefer the codebase's one-statement claim CTE (mark sold +
+  debit buyer + credit seller + transfer ownership, guarded by
+  `status = 'open'` and `gold >= price`) — it's the same exactly-once shape
+  as activity settlement. Caveat: the Neon **HTTP driver can't run
+  interactive transactions**; if a flow truly needs multi-statement
+  `SELECT FOR UPDATE`, that endpoint must use the websocket `Pool` client.
+- UI: catalog screen with search/filter + a "my listings" management view.
+
+**Done when:** with two real accounts, list → buy transfers gold and goods
+exactly once; a concurrent second buy answers 409; cancel restores the
+escrowed good.
 
 ## Phase 8 — Social & events (later)
 

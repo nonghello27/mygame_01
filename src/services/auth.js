@@ -5,7 +5,7 @@
 /** @returns the trainer, or null when not logged in / API unreachable. */
 export async function fetchMe() {
   try {
-    const r = await fetch("/api/me");
+    const r = await fetch("/api/trainer/me");
     if (!r.ok) return null;
     return (await r.json()).trainer;
   } catch {

@@ -10,8 +10,15 @@ this document disagree, fix one of them in the same change.
 - **Client:** vanilla JS ES modules + Vite, CSS/SVG/PNG-sprite rendering.
   No framework until the DOM demonstrably can't keep up (then consider Phaser
   for the battle screen only).
-- **Server:** Vercel serverless functions in `api/` (plain Node handlers,
-  also served by Vite dev middleware). Stateless per request.
+- **Server:** 5 Vercel serverless functions, one per domain —
+  `api/auth/[...route].js`, `api/battle/[...route].js`,
+  `api/trainer/[...route].js`, `api/activities.js`, `api/admin/[...route].js`
+  — each dispatching its domain's `/api/*` requests through its own table in
+  `server/routers/<domain>.js` (plain Node handlers; the Vite dev middleware
+  calls the matching router directly). Domain-grouped, not one-per-endpoint,
+  because the Vercel Hobby plan caps a deployment at 12 functions; growth
+  inside a domain (new route in an existing table) never costs a new
+  function. Stateless per request.
 - **DB:** Neon Postgres via `@neondatabase/serverless`. The DB is the only
   state; functions must assume they share nothing between invocations.
 - **No websockets, no cron, no queue** until a feature proves it needs them
@@ -24,7 +31,8 @@ Everything below is an application of these. New code must not violate them.
 1. **Server-authoritative.** The client sends *choices* (a formation, a lane
    order, a job id, a step direction) — never stats, damage, rewards, or
    outcomes. Every handler validates choices against DB state (the
-   `applyOrder()` permutation check in `api/battle.js` is the model).
+   `applyOrder()` permutation check behind `server/routes/battle.js` is the
+   model).
 2. **Pure engine, event-log replay.** Battle resolution is a pure function
    `(state, seed) → { result, events[] }` with no DOM, no I/O, no wall clock.
    The client only animates the returned events. This is already how
@@ -47,12 +55,18 @@ shared pure logic in `shared/`. Migrate existing files opportunistically
 (Roadmap phase 0/1), don't big-bang rename.
 
 ```
-├── api/                  # THIN handlers only: parse → auth → call server/ → respond
-│   ├── _db.js            #   (exists) Neon client + JSON helpers
-│   ├── auth/…            #   login/session endpoints
-│   └── <feature>.js      #   one file per endpoint (Vercel routing)
+├── api/                  # 5 serverless functions (Hobby 12-function cap), one per domain:
+│   ├── auth/[...route].js      #   /api/auth/*    → server/routers/auth.js
+│   ├── battle/[...route].js    #   /api/battle/*   → server/routers/battle.js
+│   ├── trainer/[...route].js   #   /api/trainer/*  → server/routers/trainer.js
+│   ├── activities.js           #   /api/activities → server/routers/activities.js (plain file)
+│   └── admin/[...route].js     #   /api/admin/*    → server/routers/admin.js
 ├── server/               # server-only logic, imported by api/ (never by src/)
+│   ├── routers/          #   one file per domain: createRouter({pathname→{METHOD:handler}})
+│   ├── routes/           #   THIN handlers only: parse → auth → call services → respond
+│   ├── db.js             #   Neon client (lazy connection)
 │   ├── auth.js           #   Google token verify, session issue/check
+│   ├── http.js           #   httpError + sendJson/readJson helpers
 │   ├── repos/            #   SQL lives here, one file per aggregate
 │   └── services/         #   use-cases: startWork(), resolveMatch(), listMarket()…
 ├── shared/               # PURE game logic, imported by BOTH api/ and src/
@@ -71,8 +85,12 @@ shared pure logic in `shared/`. Migrate existing files opportunistically
 ```
 
 Rules of the arrows: `src/` never imports `server/`; `server/` never imports
-`src/`; `shared/` imports neither. `api/` files stay under ~50 lines — logic
-belongs in `server/services/`.
+`src/`; `shared/` imports neither. `server/routes/` files stay under ~50
+lines — logic belongs in `server/services/`. New route in an existing
+domain = a handler in `server/routes/` + one row in that domain's table in
+`server/routers/<domain>.js`; a genuinely new domain = a new
+`api/<domain>/[...route].js` + `server/routers/<domain>.js` pair — the only
+time to add a file under `api/`.
 
 ## 4. Data model
 
@@ -270,9 +288,10 @@ battles before it grows features.
 - **Lazy resolution:** `activities.ends_at` in the past on next read ⇒ the
   service resolves rewards, marks `resolved`, returns the outcome. Same for
   season rollovers (resolve on first read after the boundary). No cron.
-- **Match sessions:** `POST /api/match` creates the `matches` row — server
-  picks/loads the defender formation, snapshots it, generates the seed —
-  then `POST /api/battle { matchId, playerOrder }` resolves once and persists.
+- **Match sessions:** `POST /api/battle/match` creates the `matches` row —
+  server picks/loads the defender formation, snapshots it, generates the
+  seed — then `POST /api/battle/resolve { matchId, playerOrder }` resolves
+  once and persists.
   This closes the "client picks the enemy order" hole and rejects replays.
 - **Adventure sessions:** a row holding the generated map + party + position;
   each move is a POST that validates and advances it. Only if a future
@@ -286,8 +305,8 @@ battles before it grows features.
 (`src/services/firebase.js`; Google popup and email/password — register +
 password reset — today, more providers are a Firebase-console toggle). The
 client shows a landing/login screen and keeps the game (`#app`) hidden until
-`GET /api/me` confirms a session. Firebase is the identity *provider only* — the game
-session is ours: the client POSTs the Firebase ID token to `api/auth/login`,
+`GET /api/trainer/me` confirms a session. Firebase is the identity *provider only* — the game
+session is ours: the client POSTs the Firebase ID token to `/api/auth/login`,
 the server verifies it locally (RS256 against Google's published securetoken
 certs; audience = `FIREBASE_PROJECT_ID`, issuer checked — no firebase-admin
 dependency), upserts the `trainers` row keyed by `('firebase', uid)` (the uid
@@ -299,41 +318,61 @@ server secrets are `SESSION_SECRET` and `DATABASE_URL`.
 
 ## 8. API surface (grows with the roadmap)
 
+The surface below groups URLs by the domain that owns them: 5 serverless
+functions, each internally routing multiple endpoints via a static table in
+its `server/routers/<domain>.js` — the Vercel Hobby plan's 12-function limit
+is the reason for grouping (never a file-per-endpoint), and growth inside a
+domain (a new route) never costs a new function. Two domains renamed their
+URLs when they picked up a prefix that collided with an existing endpoint
+name: `/api/match` → `/api/battle/match`, `/api/battle` →
+`/api/battle/resolve`, `/api/me` → `/api/trainer/me`, `/api/classes` →
+`/api/trainer/classes`, `/api/progression` → `/api/trainer/progression`,
+`/api/trainer-skills` → `/api/trainer/skills`. `auth`, `activities`, and
+`admin` kept their existing URLs.
+
 ```
+# auth domain — api/auth/[...route].js
 POST /api/auth/login          idtoken → session cookie (creates trainer)
-GET  /api/me                  trainer profile + resolves any finished timers
+POST /api/auth/logout         clears the session cookie
+
+# trainer domain — api/trainer/[...route].js
+GET  /api/trainer/me          trainer profile + resolves any finished timers
                               + trainerSkills (the 2 learned trainer-skill slots)
-GET  /api/monsters            owned monsters
-POST /api/match               { mode? } → create match session ('free', default:
+GET  /api/trainer/classes     class metadata
+GET  /api/trainer/progression expertises + trainer_skill_defs + this trainer's
+                              expertise/exp/learned skills, in one call
+POST /api/trainer/progression { expertiseId } → pick/switch expertise (switching
+                              wipes both learned skill slots)
+POST /api/trainer/skills      { slot, skillId } → learn a trainer skill into a
+                              learn slot, or clear it (skillId: null)
+
+# battle domain — api/battle/[...route].js
+POST /api/battle/match        { mode? } → create match session ('free', default:
                               server picks a random defender + seed | 'pvp':
                               matched against another trainer's defense formation)
-POST /api/battle              { matchId, playerOrder } → persisted result + events;
+POST /api/battle/resolve      { matchId, playerOrder } → persisted result + events;
                               a pvp match's result also carries
                               pvp: { yourDelta, theirDelta, yourRating }
+GET  /api/battle/formation    the trainer's saved defense formation, or null
+POST /api/battle/formation    { monsterIds } → save (upsert) the defense
+                              formation as exactly 3 owned monster ids
+GET  /api/battle/ladder       { season, top, me } → lazily rolls the season
+                              (close+payout / open) before reading it
+
+# activities domain — api/activities.js (plain file: one route today)
 GET  /api/activities          the farm: jobs + monsters + running assignments
                               (settles finished ones first — lazy time)
 POST /api/activities          start work/training { monsterId, jobId }
-POST /api/adventure/*         session create / step
-GET  /api/market  POST /api/market/*    listings / buy / sell
-(existing: GET /api/rosters, /api/classes — become monster/species reads)
 
-# PVP ladder & trainer progression (Phase 6)
-GET  /api/progression         expertises + trainer_skill_defs + this trainer's
-                              expertise/exp/learned skills, in one call
-POST /api/progression         { expertiseId } → pick/switch expertise (switching
-                              wipes both learned skill slots)
-POST /api/trainer-skills      { slot, skillId } → learn a trainer skill into a
-                              learn slot, or clear it (skillId: null)
-GET  /api/formation           the trainer's saved defense formation, or null
-POST /api/formation           { monsterIds } → save (upsert) the defense
-                              formation as exactly 3 owned monster ids
-GET  /api/ladder              { season, top, me } → lazily rolls the season
-                              (close+payout / open) before reading it
-
-# admin console (Phase 5) — every call re-checks trainers.is_admin (403)
+# admin domain — api/admin/[...route].js
+# every call re-checks trainers.is_admin (403)
 GET    /api/admin/master      all 4 master tables + engine enum registries
 POST   /api/admin/{classes,skills,species,jobs}   validated upsert
 DELETE /api/admin/{classes,skills,species,jobs}   guarded delete (409 in use)
+
+# not yet built (future domains, still under the 12-function cap)
+POST /api/adventure/*         session create / step
+GET  /api/market  POST /api/market/*    listings / buy / sell
 ```
 
 Handler contract: authenticate → load DB state → validate the client's

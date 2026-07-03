@@ -26,7 +26,8 @@ The vision and plans live in `docs/` — treat them as part of this file:
   "what next?", answer from here.** Current position: Phases 0–6 complete
   (Firebase auth; owned monsters; tamper-proof matches; battle engine v2;
   work & training economy; admin console for master data; PVP ladder &
-  trainer progression); next up is Phase 7 (acquisition & itemization).
+  trainer progression); next up is Phase 7 (acquisition & itemization),
+  staged as sub-phases 7.1–7.5 in the roadmap.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -36,7 +37,8 @@ is the layout that is real today.
 
 1. **Server-authoritative.** The client sends *choices* (orders, formations,
    job ids) — never stats, damage, rewards, or outcomes. Every handler
-   validates choices against DB state (`applyOrder()` in `api/battle.js` is
+   validates choices against DB state (`applyOrder()` in
+   `server/services/matches.js`, reached via `server/routes/battle.js`, is
    the model). Any value a handler trusts from the request body is a bug.
 2. **Pure engine + event-log replay.** Battle resolution is a pure function
    — no DOM, no I/O, no wall clock — returning an ordered event list the
@@ -56,9 +58,14 @@ is the layout that is real today.
 
 - **Vanilla JavaScript, ES modules.** No framework — intentional; keep
   dependencies minimal and the codebase approachable.
-- **Vite** for dev server + build; deploys as a static site + **Vercel
-  serverless functions** (`api/`, also served by Vite dev middleware).
-- **Neon Postgres** via `@neondatabase/serverless` (connection in `api/_db.js`).
+- **Vite** for dev server + build; deploys as a static site + **5 Vercel
+  serverless functions, grouped by domain** (`api/auth/`, `api/battle/`,
+  `api/trainer/`, `api/activities.js`, `api/admin/` — Hobby plan caps
+  deployments at 12 functions; each domain internally routes multiple
+  endpoints via a table in `server/routers/`, so growth inside a domain
+  never costs a new function; the Vite dev middleware calls the matching
+  `server/routers/<domain>.js` directly).
+- **Neon Postgres** via `@neondatabase/serverless` (connection in `server/db.js`).
 - **CSS + inline SVG + PNG sprite sheets** for art; motion is CSS keyframes.
 
 Node 18+ recommended.
@@ -80,26 +87,24 @@ per roadmap phase, don't big-bang rename.)
 
 ```
 ├── index.html              # static shell + DOM the app mounts into
-├── vite.config.js          # base:'./'; serves api/ via dev middleware
-├── api/                    # serverless functions (thin: parse → auth → server/ → respond)
-│   ├── _db.js              # Neon connection + sendJson()/readJson()
-│   ├── auth/login.js       # POST -> verify Firebase ID token, set session cookie
-│   ├── auth/logout.js      # POST -> clear session cookie
-│   ├── me.js               # GET  -> trainer for the session; settles finished jobs first
-│   ├── classes.js          # GET  /api/classes  -> class metadata
-│   ├── activities.js       # GET farm state | POST {monsterId, jobId} start a job
-│   ├── match.js            # POST {mode?} -> open a match: free (default) or pvp
-│   ├── battle.js           # POST {matchId, playerOrder} -> resolve once, persist
-│   ├── progression.js      # GET/POST -> expertise + trainer-skill picture; POST picks expertise
-│   ├── trainer-skills.js   # POST {slot, skillId} -> learn/clear a trainer-skill slot
-│   ├── formation.js        # GET/POST -> the trainer's saved defense formation
-│   ├── ladder.js           # GET -> season + top ranks + this trainer's rank
-│   └── admin/              # admin-only master-data CRUD (is_admin re-checked per call)
-│       ├── master.js       # GET everything: 4 master tables + engine enum registries
-│       └── {classes,skills,species,jobs}.js  # POST upsert | DELETE (guarded)
+├── vite.config.js          # base:'./'; routes /api/<domain>/* to server/routers/<domain>.js in dev
+├── api/                    # 5 serverless functions (Vercel Hobby caps at 12), one per domain:
+│   ├── auth/[...route].js      # /api/auth/*      -> server/routers/auth.js
+│   ├── battle/[...route].js    # /api/battle/*     -> server/routers/battle.js
+│   ├── trainer/[...route].js   # /api/trainer/*    -> server/routers/trainer.js
+│   ├── activities.js           # /api/activities   -> server/routers/activities.js (plain file: one route)
+│   └── admin/[...route].js     # /api/admin/*      -> server/routers/admin.js
 ├── server/                 # server-only logic (imported by api/, never by src/)
+│   ├── routers/            # one file per domain: createRouter({...}) table (pathname→
+│   │                       # {METHOD:handler}) + export route(); auth, battle, trainer,
+│   │                       # activities, admin — matches the api/ entries 1:1
+│   ├── routes/             # one handler per endpoint (happy path + httpError throws):
+│   │                       # auth.js (login/logout), me, classes, activities, match,
+│   │                       # battle, progression, trainerSkills, formation, ladder,
+│   │                       # admin.js (master + classes/skills/species/jobs CRUD)
+│   ├── db.js               # Neon connection (lazy, from DATABASE_URL)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
-│   ├── http.js             # httpError(status, msg), shared by services
+│   ├── http.js             # httpError(status, msg) + sendJson()/readJson() + createRouter()
 │   ├── repos/              # SQL: trainers, species, monsters, matches, activities, admin,
 │   │                       # progression (expertises/trainer_skill_defs/trainer_skills),
 │   │                       # pvp (formations, seasons, rank_entries, matchmaking)
@@ -152,9 +157,10 @@ The stable `idx` is the only identity the client and server exchange. Two linkin
 (falls back to `emoji`). Nothing in `core/`/`ui/` calls the API directly —
 always via `services/content.js`.
 
-Flow: login → `POST /api/match` (server assembles YOUR team from `monsters`,
-picks + freezes the enemy team/order, mints + stores the seed in `matches`) →
-drag your lanes only → `POST /api/battle {matchId, playerOrder}` (permutation
+Flow: login → `POST /api/battle/match` (server assembles YOUR team from
+`monsters`, picks + freezes the enemy team/order, mints + stores the seed in
+`matches`) → drag your lanes only → `POST /api/battle/resolve {matchId,
+playerOrder}` (permutation
 gate `applyOrder()` in `server/services/matches.js`; each match resolves
 exactly once — replays get 409) → server runs `resolveBattle(A, B, seed)`
 from the snapshots and persists the result → client replays the event log
@@ -175,7 +181,7 @@ outcomes client-side.
 Economy (Phase 4): `job_defs` (master, seeded from `src/data/jobs.js`) →
 `activities` (instance; `ends_at` + persisted `outcome`). Lazy time in
 practice: `settleActivities()` (`server/services/activities.js`) runs on
-every authenticated read (`/api/me`, `/api/activities`, match creation) and
+every authenticated read (`/api/trainer/me`, `/api/activities`, match creation) and
 pays out finished jobs — work → trainer gold/exp, training → +1 monster
 attribute — each in ONE atomic claim+pay statement, exactly once. Busy lock:
 `monsters.busy_until`/`busy_kind`, taken atomically at job start; busy
@@ -197,7 +203,7 @@ PVP (Phase 6): `expertises` + `trainer_skill_defs` (master, seeded from
 `src/data/expertises.js`) → `trainer_skills` (instance; 2 fixed learn slots,
 switching expertise wipes both atomically). A trainer saves a 3-monster
 `formations`/`formation_slots` row (`purpose='defense'`) as the team PVP
-attackers fight while they're offline. `POST /api/match {mode:"pvp"}`
+attackers fight while they're offline. `POST /api/battle/match {mode:"pvp"}`
 matches the attacker's own available roster against another trainer's
 complete defense formation drawn from a small pool ordered by rating
 proximity (`listPvpCandidates`); both sides' derived-stat lanes AND
@@ -245,7 +251,15 @@ both pure display over their `/api/*` reads.
 
 - Keep **core logic DOM-free**; pass UI behavior in as hooks (see `runBattle`).
 - One module = one responsibility; if a file does two jobs, split it.
-- `api/` handlers stay thin (parse → validate → logic → respond).
+- Route handlers stay thin (parse → validate → logic → respond); each
+  domain's router (`server/routers/<domain>.js`) owns method checks and the
+  error→JSON envelope via `createRouter()`.
+- New route in an existing domain = one row in that domain's table in
+  `server/routers/<domain>.js`; a genuinely new domain = new
+  `api/<domain>/[...route].js` + `server/routers/<domain>.js` — the only
+  time to add a file under `api/` (Vercel deploys each top-level `api/`
+  entry as another serverless function, and the Hobby plan caps a
+  deployment at 12; today's 5 domains leave room for ~4 more).
 - Faction colors are synced in two places: CSS vars `--a`/`--b` in
   `styles/base.css` and `COLORS` in `src/config.js`. Update both.
 - Cutscene keyframes are authored against a **2.1s timeline, impact ~66%**;

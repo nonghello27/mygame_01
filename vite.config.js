@@ -1,10 +1,12 @@
 import { defineConfig, loadEnv } from "vite";
 
-// Dev-only: serve the api/ serverless functions through Vite's middleware so
-// `npm run dev` behaves like production (where Vercel runs them). Each request
-// to /api/<name> is handled by api/<name>.js's default export. Secrets from .env
-// (e.g. DATABASE_URL) are injected into process.env here — server-side only,
-// never into the browser bundle.
+// Dev-only: serve the API through Vite's middleware so `npm run dev` behaves
+// like production (where Vercel runs 5 domain-grouped serverless functions,
+// one per api/<domain>/[...route].js — Hobby plan caps a deployment at 12).
+// Every request to /api/* is dispatched to the matching server/routers/
+// module by prefix, mirroring how Vercel's file-based routing resolves the
+// same URLs in prod. Secrets from .env (e.g. DATABASE_URL) are injected into
+// process.env here — server-side only, never into the browser bundle.
 function apiDevServer(env) {
   return {
     name: "api-dev-server",
@@ -15,10 +17,22 @@ function apiDevServer(env) {
       }
       server.middlewares.use(async (req, res, next) => {
         if (!req.url || !req.url.startsWith("/api/")) return next();
-        const name = req.url.split("?")[0].slice("/api/".length).replace(/\/+$/, "");
+        const pathname = req.url.split("?")[0];
+        const routerPath = pathname === "/api/activities" ? "/server/routers/activities.js"
+          : pathname.startsWith("/api/auth/") ? "/server/routers/auth.js"
+          : pathname.startsWith("/api/battle/") ? "/server/routers/battle.js"
+          : pathname.startsWith("/api/trainer/") ? "/server/routers/trainer.js"
+          : pathname.startsWith("/api/admin/") ? "/server/routers/admin.js"
+          : null;
+        if (!routerPath) {
+          res.statusCode = 404;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "not found" }));
+          return;
+        }
         try {
-          const mod = await server.ssrLoadModule(`/api/${name}.js`);
-          await mod.default(req, res);
+          const { route } = await server.ssrLoadModule(routerPath);
+          await route(req, res);
         } catch (e) {
           res.statusCode = 500;
           res.setHeader("Content-Type", "application/json");
