@@ -43,6 +43,24 @@
 //                            repairGold }  -> upsert a rune
 // DELETE /api/admin/runes { id }  -> delete (409 while any trainer owns it)
 //
+// POST   /api/admin/summons { id, name, description, cost, pool, enabled }
+//        -> upsert a Summon Hall banner (Phase 7.4 step A). cost: a
+//        non-empty list of {type:'gold',amount} | {type:'item',itemId,qty}
+//        (at most one gold entry, no duplicate itemIds; every itemId must
+//        name a real item_defs row). pool: a non-empty list of
+//        {speciesId, weight} (no duplicate speciesIds; every speciesId must
+//        name a real monster_species row). enabled defaults to true.
+// DELETE /api/admin/summons { id }  -> delete (409 while any pull references it)
+//
+// POST   /api/admin/adventures { id, name, description, config, enabled }
+//        -> upsert an Adventure route (Phase 7.4 step B). config: {steps,
+//        choices, nodes, encounters, loot, gather, catchPct} — see
+//        src/data/adventures.js's header for the full grammar; every
+//        encounters speciesId must name a real monster_species row, every
+//        loot/gather itemId must name a real item_defs row. enabled
+//        defaults to true.
+// DELETE /api/admin/adventures { id }  -> delete (409 while any session references it)
+//
 // Every mutation above responds with a fresh masterState. Admin only.
 //
 // POST /api/admin/grant { trainerId?, kind, defId, qty? }
@@ -70,6 +88,10 @@ import {
   removeEquipment,
   saveRune,
   removeRune,
+  saveSummon,
+  removeSummon,
+  saveAdventure,
+  removeAdventure,
   grantToTrainer,
 } from "../services/admin.js";
 import { getInventory } from "../services/inventory.js";
@@ -107,6 +129,8 @@ export const jobs = crudHandler(saveJob, removeJob);
 export const items = crudHandler(saveItem, removeItem);
 export const equipment = crudHandler(saveEquipment, removeEquipment);
 export const runes = crudHandler(saveRune, removeRune);
+export const summons = crudHandler(saveSummon, removeSummon);
+export const adventures = crudHandler(saveAdventure, removeAdventure);
 
 export async function grant(req, res) {
   const sql = db();

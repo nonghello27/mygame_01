@@ -184,3 +184,72 @@ export async function socketRune(runeId, monsterId) {
 export async function repairRune(runeId) {
   return postJson("/api/trainer/runes/repair", { runeId });
 }
+
+/**
+ * The Summon Hall (Phase 7.4 step A): the enabled banners a trainer can pull
+ * from right now. Pure read — the pull itself is performSummon().
+ * @returns {Promise<{summons:{id:string, name:string, description:string,
+ *   cost:object[], pool:object[]}[]}>}
+ */
+export async function fetchSummonHall() {
+  return getJson("/api/trainer/summon");
+}
+
+/**
+ * Pull one Summon Hall banner: pays its cost (gold and/or items) and mints a
+ * new monster from a seeded weighted roll over the banner's pool.
+ * @param {string} summonId
+ * @returns {Promise<{summonId:string, seed:number, monster:object,
+ *   gold:number, inventory:object}>} the minted monster (same shape as a
+ *   farm roster entry), the trainer's new gold balance, and the refreshed
+ *   inventory, in one round trip
+ */
+export async function performSummon(summonId) {
+  return postJson("/api/trainer/summon", { summonId });
+}
+
+/**
+ * The Adventure panel's one read (Phase 7.4 step B): the enabled routes
+ * (public fields only — id/name/description) plus the trainer's current
+ * session, if any (null when nothing is running). The session view exposes
+ * ONLY the step in front of the player — the server never ships the whole
+ * frozen map.
+ * @returns {Promise<{adventures:{id:string,name:string,description:string}[],
+ *   session:object|null}>}
+ */
+export async function fetchAdventureState() {
+  return getJson("/api/adventure/state");
+}
+
+/**
+ * Start a run: lock exactly 3 owned, free monsters as the party — their
+ * ORDER is the lane order for the whole run — and freeze a freshly
+ * generated map behind a seed. 409s if a run is already active or a chosen
+ * monster is busy/not owned.
+ * @param {string} adventureId
+ * @param {number[]} monsterIds exactly 3 distinct owned free monster ids
+ * @returns {Promise<{session:object}>}
+ */
+export async function startAdventure(adventureId, monsterIds) {
+  return postJson("/api/adventure/start", { adventureId, monsterIds });
+}
+
+/**
+ * Resolve the current step's chosen option. Every roll (loot, the wild
+ * team, the fight, the catch) happens server-side, seeded from the frozen
+ * session — this only ever sends an index into the step's own options.
+ * @param {number} choice index into the current step's `options`
+ * @returns {Promise<{session:object, node:{position:number, choice:number,
+ *   type:string, loot?:{itemId:string,qty:number}[],
+ *   battle?:{won:boolean,events:object[]},
+ *   catch?:{speciesId:string,name:string,monsterId:number}}>}
+ */
+export async function moveAdventure(choice) {
+  return postJson("/api/adventure/move", { choice });
+}
+
+/** Give up the active run early — same terminal effect as a lost battle,
+ *  except by the player's own choice; releases the party either way. */
+export async function abandonAdventure() {
+  return postJson("/api/adventure/abandon", {});
+}

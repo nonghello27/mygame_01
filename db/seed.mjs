@@ -22,6 +22,8 @@ import { EXPERTISES } from "../src/data/expertises.js";
 import { ITEMS } from "../src/data/items.js";
 import { EQUIPMENT } from "../src/data/equipment.js";
 import { RUNES } from "../src/data/runes.js";
+import { SUMMONS } from "../src/data/summons.js";
+import { ADVENTURES } from "../src/data/adventures.js";
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is not set. Put it in .env (see .env.example).");
@@ -154,6 +156,31 @@ async function main() {
     );
   }
 
+  // 8. Summon Hall banners (Phase 7.4 step A; upsert so balance edits land).
+  for (const sm of SUMMONS) {
+    await pool.query(
+      `INSERT INTO summon_defs (id, name, description, cost, pool, enabled)
+       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name, description = EXCLUDED.description,
+         cost = EXCLUDED.cost, pool = EXCLUDED.pool, enabled = EXCLUDED.enabled`,
+      [sm.id, sm.name, sm.description ?? "", JSON.stringify(sm.cost), JSON.stringify(sm.pool),
+       sm.enabled ?? true]
+    );
+  }
+
+  // 9. Adventure routes (Phase 7.4 step B; upsert so balance edits land).
+  for (const ad of ADVENTURES) {
+    await pool.query(
+      `INSERT INTO adventure_defs (id, name, description, config, enabled)
+       VALUES ($1, $2, $3, $4::jsonb, $5)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name, description = EXCLUDED.description,
+         config = EXCLUDED.config, enabled = EXCLUDED.enabled`,
+      [ad.id, ad.name, ad.description ?? "", JSON.stringify(ad.config), ad.enabled ?? true]
+    );
+  }
+
   const c = await pool.query(`SELECT count(*)::int AS count FROM classes`);
   const sp = await pool.query(`SELECT count(*)::int AS count FROM monster_species`);
   const sk = await pool.query(`SELECT count(*)::int AS count FROM skills`);
@@ -163,11 +190,14 @@ async function main() {
   const it = await pool.query(`SELECT count(*)::int AS count FROM item_defs`);
   const eq = await pool.query(`SELECT count(*)::int AS count FROM equipment_defs`);
   const rn = await pool.query(`SELECT count(*)::int AS count FROM rune_defs`);
+  const sm = await pool.query(`SELECT count(*)::int AS count FROM summon_defs`);
+  const ad = await pool.query(`SELECT count(*)::int AS count FROM adventure_defs`);
   console.log(
     `Seed complete: ${c.rows[0].count} classes, ${sp.rows[0].count} species, ` +
     `${sk.rows[0].count} skills, ${jb.rows[0].count} jobs, ` +
     `${ex.rows[0].count} expertises, ${ts.rows[0].count} trainer skills, ` +
-    `${it.rows[0].count} items, ${eq.rows[0].count} equipment, ${rn.rows[0].count} runes.`
+    `${it.rows[0].count} items, ${eq.rows[0].count} equipment, ${rn.rows[0].count} runes, ` +
+    `${sm.rows[0].count} summon banners, ${ad.rows[0].count} adventures.`
   );
 }
 

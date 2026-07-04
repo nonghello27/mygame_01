@@ -15,7 +15,8 @@ async function request(path, method, body) {
 }
 
 /** @typedef {{classes:object[], skills:object[], species:object[], jobs:object[],
- *   itemDefs:object[], equipmentDefs:object[], runeDefs:object[], enums:object}} MasterState */
+ *   itemDefs:object[], equipmentDefs:object[], runeDefs:object[],
+ *   summonDefs:object[], adventureDefs:object[], enums:object}} MasterState */
 
 /** @returns {Promise<MasterState>} everything the console renders, in one read. */
 export const loadMaster = () => request("/api/admin/master", "GET");
@@ -41,10 +42,17 @@ export const deleteEquipment = (id) => request("/api/admin/equipment", "DELETE",
 export const saveRune = (row) => request("/api/admin/runes", "POST", row);
 export const deleteRune = (id) => request("/api/admin/runes", "DELETE", { id });
 
+export const saveSummon = (row) => request("/api/admin/summons", "POST", row);
+export const deleteSummon = (id) => request("/api/admin/summons", "DELETE", { id });
+
+export const saveAdventure = (row) => request("/api/admin/adventures", "POST", row);
+export const deleteAdventure = (id) => request("/api/admin/adventures", "DELETE", { id });
+
 /**
  * Grant an item/equipment piece/rune to a trainer (defaults to the calling
- * admin server-side when trainerId is omitted) — the only acquisition
- * source until Phase 7.4 (marketplace/summons).
+ * admin server-side when trainerId is omitted) — an admin-only shortcut for
+ * seeding test data; the Summon Hall (Phase 7.4 step A, `/api/trainer/summon`)
+ * is now the player-facing acquisition path.
  * @param {{trainerId?:number, kind:'item'|'equipment'|'rune', defId:string, qty?:number}} body
  * @returns {Promise<{trainer:object, inventory:object}>}
  */

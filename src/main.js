@@ -12,6 +12,8 @@ import "./styles/admin.css";
 import "./styles/pvp.css";
 import "./styles/trainer.css";
 import "./styles/inventory.css";
+import "./styles/summon.css";
+import "./styles/adventure.css";
 
 import { state, resetState, initContent, newMatch } from "./core/state.js";
 import { runBattle } from "./core/battle.js";
@@ -24,6 +26,8 @@ import { initAdmin } from "./ui/admin.js";
 import { initPvp } from "./ui/pvp.js";
 import { initTrainer } from "./ui/trainer.js";
 import { initInventory } from "./ui/inventory.js";
+import { initSummon } from "./ui/summon.js";
+import { initAdventure } from "./ui/adventure.js";
 
 const startBtn = document.getElementById("startBtn");
 const resetBtn = document.getElementById("resetBtn");
@@ -127,6 +131,8 @@ initAdmin();
 initPvp(startRankedBattle);
 initTrainer();
 initInventory();
+initSummon();
+initAdventure();
 // The landing/login screen owns the start: once the session is confirmed it
 // calls startSession(), which loads content and opens the first match.
 initAuth(startSession);

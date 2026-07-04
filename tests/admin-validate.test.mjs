@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   validateClass, validateSkill, validateSpecies, validateJob, enums,
-  validateItem, validateEquipment, validateRune,
+  validateItem, validateEquipment, validateRune, validateSummon, validateAdventure,
 } from "../server/services/adminValidate.js";
 import { SKILLS } from "../src/data/skills.js";
 import { JOBS } from "../src/data/jobs.js";
@@ -347,4 +347,152 @@ test("skill passives still reject perLevel (grammar unchanged from before 7.1)",
     id: "sk_x", name: "X", slot: "passive", cooldown: 0,
     data: { passive: [{ when: "battle_start", op: "perm_stat", stat: "atk", flat: 5, perLevel: 2 }] },
   }), "skills don't get perLevel on passives");
+});
+
+// --- summon hall (Phase 7.4 step A) ---------------------------------------------
+
+test("validateSummon accepts a happy-path def and defaults description/enabled", () => {
+  const ok = validateSummon({
+    id: "sm_novice", name: "Novice Summon",
+    cost: [{ type: "gold", amount: 100 }],
+    pool: [{ speciesId: "sp_vorth", weight: 1 }],
+  });
+  assert.equal(ok.id, "sm_novice");
+  assert.equal(ok.description, "", "description defaults to empty string");
+  assert.equal(ok.enabled, true, "enabled defaults to true");
+  assert.deepEqual(ok.cost, [{ type: "gold", amount: 100 }]);
+  assert.deepEqual(ok.pool, [{ speciesId: "sp_vorth", weight: 1 }]);
+
+  const full = validateSummon({
+    id: "sm_scroll", name: "Scroll Summon", description: "  spends a scroll  ", enabled: false,
+    cost: [{ type: "item", itemId: "it_summon_scroll", qty: 1 }],
+    pool: [
+      { speciesId: "sp_vorth", weight: 25 },
+      { speciesId: "sp_garran", weight: 15 },
+    ],
+  });
+  assert.equal(full.description, "spends a scroll");
+  assert.equal(full.enabled, false);
+});
+
+test("validateSummon rejects malformed cost/pool shapes", () => {
+  const base = { id: "sm_x", name: "X" };
+  rejects(() => validateSummon({ ...base, cost: [], pool: [{ speciesId: "sp_vorth", weight: 1 }] }),
+    "empty cost");
+  rejects(() => validateSummon({ ...base,
+    cost: [{ type: "quest", amount: 1 }], pool: [{ speciesId: "sp_vorth", weight: 1 }] }),
+    "unknown cost type");
+  rejects(() => validateSummon({ ...base,
+    cost: [{ type: "gold", amount: 10 }, { type: "gold", amount: 20 }],
+    pool: [{ speciesId: "sp_vorth", weight: 1 }] }),
+    "at most one gold entry");
+  rejects(() => validateSummon({ ...base,
+    cost: [
+      { type: "item", itemId: "it_summon_scroll", qty: 1 },
+      { type: "item", itemId: "it_summon_scroll", qty: 2 },
+    ],
+    pool: [{ speciesId: "sp_vorth", weight: 1 }] }),
+    "duplicate itemId in cost");
+  rejects(() => validateSummon({ ...base,
+    cost: [{ type: "gold", amount: 0 }], pool: [{ speciesId: "sp_vorth", weight: 1 }] }),
+    "cost amount must be >= 1");
+  rejects(() => validateSummon({ ...base,
+    cost: [{ type: "gold", amount: 10 }], pool: [] }),
+    "empty pool");
+  rejects(() => validateSummon({ ...base,
+    cost: [{ type: "gold", amount: 10 }],
+    pool: [{ speciesId: "sp_vorth", weight: 1 }, { speciesId: "sp_vorth", weight: 2 }] }),
+    "duplicate speciesId in pool");
+  rejects(() => validateSummon({ ...base,
+    cost: [{ type: "gold", amount: 10 }], pool: [{ speciesId: "sp_vorth", weight: 0 }] }),
+    "pool weight must be >= 1");
+  rejects(() => validateSummon({ ...base,
+    cost: [{ type: "gold", amount: 10 }], pool: [{ speciesId: "sp_vorth", weight: -1 }] }),
+    "negative pool weight");
+  rejects(() => validateSummon({ name: "X",
+    cost: [{ type: "gold", amount: 10 }], pool: [{ speciesId: "sp_vorth", weight: 1 }] }),
+    "missing id");
+  rejects(() => validateSummon({ id: "smbad", name: "X",
+    cost: [{ type: "gold", amount: 10 }], pool: [{ speciesId: "sp_vorth", weight: 1 }] }),
+    "id must be sm_*");
+});
+
+test("enums include summonCostTypes", () => {
+  assert.deepEqual(enums().summonCostTypes, ["gold", "item"]);
+});
+
+// --- adventures (Phase 7.4 step B) --------------------------------------------
+
+const ADVENTURE_CONFIG = {
+  steps: 5,
+  choices: 2,
+  nodes: [
+    { type: "battle", weight: 50 },
+    { type: "chest", weight: 25 },
+    { type: "gather", weight: 25 },
+  ],
+  encounters: [
+    { speciesId: "sp_vorth", weight: 40 },
+    { speciesId: "sp_mesha", weight: 35 },
+  ],
+  loot: [
+    { itemId: "it_potion_small", weight: 50, qtyMin: 1, qtyMax: 2 },
+    { itemId: "it_enhance_stone", weight: 40, qtyMin: 1, qtyMax: 3 },
+  ],
+  gather: [
+    { itemId: "it_enhance_stone", weight: 80, qtyMin: 1, qtyMax: 2 },
+  ],
+  catchPct: 25,
+};
+
+test("validateAdventure accepts a happy-path def and defaults description/enabled", () => {
+  const ok = validateAdventure({ id: "ad_verdant_trail", name: "Verdant Trail", config: ADVENTURE_CONFIG });
+  assert.equal(ok.id, "ad_verdant_trail");
+  assert.equal(ok.description, "", "description defaults to empty string");
+  assert.equal(ok.enabled, true, "enabled defaults to true");
+  assert.deepEqual(ok.config, ADVENTURE_CONFIG);
+
+  const full = validateAdventure({
+    id: "ad_x", name: "X", description: "  a route  ", enabled: false, config: ADVENTURE_CONFIG,
+  });
+  assert.equal(full.description, "a route");
+  assert.equal(full.enabled, false);
+});
+
+test("validateAdventure rejects malformed config shapes", () => {
+  const base = { id: "ad_x", name: "X" };
+  const cfg = (patch) => ({ ...ADVENTURE_CONFIG, ...patch });
+
+  rejects(() => validateAdventure({ ...base, config: cfg({ steps: 2 }) }), "steps below min");
+  rejects(() => validateAdventure({ ...base, config: cfg({ steps: 11 }) }), "steps above max");
+  rejects(() => validateAdventure({ ...base, config: cfg({ choices: 1 }) }), "choices below min");
+  rejects(() => validateAdventure({ ...base, config: cfg({ choices: 4 }) }), "choices above max");
+  rejects(() => validateAdventure({ ...base, config: cfg({ nodes: [] }) }), "empty nodes");
+  rejects(() => validateAdventure({ ...base, config: cfg({ nodes: [{ type: "shop", weight: 1 }] }) }),
+    "unknown node type");
+  rejects(() => validateAdventure({ ...base, config: cfg({
+    nodes: [{ type: "battle", weight: 1 }, { type: "battle", weight: 2 }],
+  }) }), "duplicate node type");
+  rejects(() => validateAdventure({ ...base, config: cfg({ encounters: [] }) }), "empty encounters");
+  rejects(() => validateAdventure({ ...base, config: cfg({
+    encounters: [{ speciesId: "sp_vorth", weight: 1 }, { speciesId: "sp_vorth", weight: 2 }],
+  }) }), "duplicate encounters speciesId");
+  rejects(() => validateAdventure({ ...base, config: cfg({ loot: [] }) }), "empty loot");
+  rejects(() => validateAdventure({ ...base, config: cfg({
+    loot: [
+      { itemId: "it_potion_small", weight: 1, qtyMin: 1, qtyMax: 2 },
+      { itemId: "it_potion_small", weight: 2, qtyMin: 1, qtyMax: 2 },
+    ],
+  }) }), "duplicate loot itemId");
+  rejects(() => validateAdventure({ ...base, config: cfg({
+    loot: [{ itemId: "it_potion_small", weight: 1, qtyMin: 3, qtyMax: 2 }],
+  }) }), "qtyMax < qtyMin");
+  rejects(() => validateAdventure({ ...base, config: cfg({ catchPct: -1 }) }), "catchPct below min");
+  rejects(() => validateAdventure({ ...base, config: cfg({ catchPct: 101 }) }), "catchPct above max");
+  rejects(() => validateAdventure({ name: "X", config: ADVENTURE_CONFIG }), "missing id");
+  rejects(() => validateAdventure({ id: "adbad", name: "X", config: ADVENTURE_CONFIG }), "id must be ad_*");
+});
+
+test("enums include adventureNodeTypes", () => {
+  assert.deepEqual(enums().adventureNodeTypes, ["battle", "chest", "gather"]);
 });

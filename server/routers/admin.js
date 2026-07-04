@@ -1,4 +1,4 @@
-// One of 5 domain routers behind the 5 Vercel serverless functions
+// One of 6 domain routers behind the 6 Vercel serverless functions
 // (Hobby plan caps a deployment at 12; grouping by domain keeps room to
 // grow). This table owns the `admin` domain's URLs; api/admin/[...route].js
 // (prod) and vite.config.js's dev middleware (local) both just call route().
@@ -15,5 +15,7 @@ export const route = createRouter({
   "/api/admin/items": { POST: admin.items, DELETE: admin.items },
   "/api/admin/equipment": { POST: admin.equipment, DELETE: admin.equipment },
   "/api/admin/runes": { POST: admin.runes, DELETE: admin.runes },
+  "/api/admin/summons": { POST: admin.summons, DELETE: admin.summons },
+  "/api/admin/adventures": { POST: admin.adventures, DELETE: admin.adventures },
   "/api/admin/grant": { POST: admin.grant },
 });

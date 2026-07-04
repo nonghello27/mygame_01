@@ -238,3 +238,61 @@ export async function runeUsage(sql, id) {
 }
 
 export const deleteRune = (sql, id) => sql`DELETE FROM rune_defs WHERE id = ${id}`;
+
+// --- summon hall (Phase 7.4 step A) -----------------------------------------
+
+export async function listSummonsAdmin(sql) {
+  const rows = await sql`
+    SELECT s.id, s.name, s.description, s.cost, s.pool, s.enabled,
+      (SELECT count(*)::int FROM summons t WHERE t.summon_id = s.id) AS pull_count
+    FROM summon_defs s ORDER BY s.id`;
+  return rows.map((r) => ({
+    id: r.id, name: r.name, description: r.description, cost: r.cost, pool: r.pool,
+    enabled: r.enabled, pullCount: r.pull_count,
+  }));
+}
+
+export async function upsertSummon(sql, { id, name, description, cost, pool, enabled }) {
+  await sql`
+    INSERT INTO summon_defs (id, name, description, cost, pool, enabled)
+    VALUES (${id}, ${name}, ${description}, ${JSON.stringify(cost)}::jsonb, ${JSON.stringify(pool)}::jsonb, ${enabled})
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name, description = EXCLUDED.description,
+      cost = EXCLUDED.cost, pool = EXCLUDED.pool, enabled = EXCLUDED.enabled`;
+}
+
+export async function summonUsage(sql, id) {
+  const rows = await sql`SELECT count(*)::int AS n FROM summons WHERE summon_id = ${id}`;
+  return { pulls: rows[0].n };
+}
+
+export const deleteSummon = (sql, id) => sql`DELETE FROM summon_defs WHERE id = ${id}`;
+
+// --- adventures (Phase 7.4 step B) ------------------------------------------
+
+export async function listAdventuresAdmin(sql) {
+  const rows = await sql`
+    SELECT a.id, a.name, a.description, a.config, a.enabled,
+      (SELECT count(*)::int FROM adventure_sessions s WHERE s.adventure_id = a.id) AS session_count
+    FROM adventure_defs a ORDER BY a.id`;
+  return rows.map((r) => ({
+    id: r.id, name: r.name, description: r.description, config: r.config,
+    enabled: r.enabled, sessionCount: r.session_count,
+  }));
+}
+
+export async function upsertAdventure(sql, { id, name, description, config, enabled }) {
+  await sql`
+    INSERT INTO adventure_defs (id, name, description, config, enabled)
+    VALUES (${id}, ${name}, ${description}, ${JSON.stringify(config)}::jsonb, ${enabled})
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name, description = EXCLUDED.description,
+      config = EXCLUDED.config, enabled = EXCLUDED.enabled`;
+}
+
+export async function adventureUsage(sql, id) {
+  const rows = await sql`SELECT count(*)::int AS n FROM adventure_sessions WHERE adventure_id = ${id}`;
+  return { sessions: rows[0].n };
+}
+
+export const deleteAdventure = (sql, id) => sql`DELETE FROM adventure_defs WHERE id = ${id}`;

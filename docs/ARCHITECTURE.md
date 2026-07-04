@@ -10,9 +10,11 @@ this document disagree, fix one of them in the same change.
 - **Client:** vanilla JS ES modules + Vite, CSS/SVG/PNG-sprite rendering.
   No framework until the DOM demonstrably can't keep up (then consider Phaser
   for the battle screen only).
-- **Server:** 5 Vercel serverless functions, one per domain —
+- **Server:** 6 Vercel serverless functions, one per domain —
   `api/auth/[...route].js`, `api/battle/[...route].js`,
-  `api/trainer/[...route].js`, `api/activities.js`, `api/admin/[...route].js`
+  `api/trainer/[...route].js`, `api/activities.js`, `api/admin/[...route].js`,
+  `api/adventure/[...route].js` (Phase 7.4 step B — the first new domain
+  added since the original five)
   — each dispatching its domain's `/api/*` requests through its own table in
   `server/routers/<domain>.js` (plain Node handlers; the Vite dev middleware
   calls the matching router directly). Domain-grouped, not one-per-endpoint,
@@ -55,12 +57,13 @@ shared pure logic in `shared/`. Migrate existing files opportunistically
 (Roadmap phase 0/1), don't big-bang rename.
 
 ```
-├── api/                  # 5 serverless functions (Hobby 12-function cap), one per domain:
-│   ├── auth/[...route].js      #   /api/auth/*    → server/routers/auth.js
-│   ├── battle/[...route].js    #   /api/battle/*   → server/routers/battle.js
-│   ├── trainer/[...route].js   #   /api/trainer/*  → server/routers/trainer.js
-│   ├── activities.js           #   /api/activities → server/routers/activities.js (plain file)
-│   └── admin/[...route].js     #   /api/admin/*    → server/routers/admin.js
+├── api/                  # 6 serverless functions (Hobby 12-function cap), one per domain:
+│   ├── auth/[...route].js      #   /api/auth/*      → server/routers/auth.js
+│   ├── battle/[...route].js    #   /api/battle/*     → server/routers/battle.js
+│   ├── trainer/[...route].js   #   /api/trainer/*    → server/routers/trainer.js
+│   ├── activities.js           #   /api/activities   → server/routers/activities.js (plain file)
+│   ├── admin/[...route].js     #   /api/admin/*      → server/routers/admin.js
+│   └── adventure/[...route].js #   /api/adventure/*  → server/routers/adventure.js
 ├── server/               # server-only logic, imported by api/ (never by src/)
 │   ├── routers/          #   one file per domain: createRouter({pathname→{METHOD:handler}})
 │   ├── routes/           #   THIN handlers only: parse → auth → call services → respond
@@ -168,8 +171,29 @@ runes(id, trainer_id, def_id, level DEFAULT 1, charges_left INT,
       broken BOOL DEFAULT false, monster_id NULL)   -- NULL = in the bag
 -- monster_species.rune_slots (added by 009_items.sql, DEFAULT 1) — read by 7.3
 -- both equipment (7.2) and socketed runes (7.3) feed a battle snapshot (see
--- §5's toLane()/resolveBattle() notes below). The only acquisition source
--- until 7.4 is the admin-gated POST /api/admin/grant
+-- §5's toLane()/resolveBattle() notes below). Granting is admin-only
+-- (POST /api/admin/grant); the Summon Hall below is the player-facing path.
+
+-- summon hall (Phase 7.4 step A, real: 010_summons.sql) -----------------------
+summon_defs(id TEXT PK,             -- 'sm_novice' — stable, never renumber
+  name, description, enabled BOOL DEFAULT true,   -- retirement lever; a
+                                     -- referenced def is 409-undeletable anyway
+  cost JSONB NOT NULL,               -- [{type:'gold',amount} | {type:'item',
+                                      --   itemId, qty}] — pluggable requirement
+                                      --   registry (server/services/summon.js
+                                      --   REQUIREMENT_CHECKERS); a later
+                                      --   'quest' type is one new entry
+  pool JSONB NOT NULL)               -- [{speciesId, weight}]; shared/rules/
+                                      --   summon.js rollSummon() draws one,
+                                      --   weighted, per pull
+summons(id, trainer_id, summon_id REFERENCES summon_defs(id),
+  cost JSONB, pool JSONB,            -- SNAPSHOTS of the def at pull time —
+                                      --   an audit row never drifts if the
+                                      --   banner is edited later
+  seed BIGINT NOT NULL,              -- stored ⇒ auditable/replayable
+  result_species_id TEXT NOT NULL, monster_id BIGINT REFERENCES monsters(id),
+  created_at)                        -- one row per pull; never touches a
+                                      --   battle snapshot
 
 -- trainer progression (Phase 6, real: 007_pvp.sql) ----------------------------
 expertises(id, name)                    -- MASTER: the 3 trainer archetypes
@@ -362,10 +386,14 @@ battles before it grows features.
   once and persists.
   This closes the "client picks the enemy order" hole and rejects replays.
 - **Adventure sessions:** a row holding the generated map + party + position;
-  each move is a POST that validates and advances it. Only if a future
-  feature needs push (live GVG spectating, chat) do we add websockets — and
-  then via a hosted realtime service, since Vercel functions can't hold
-  sockets.
+  each move is a POST that validates and advances it exactly once
+  (`claimAdvance`, same claim-guard shape as `applyOrder`), resolving battle
+  nodes with a direct `resolveBattle()` call rather than a `matches` row.
+  `ends_at` is the lazy-time valve (same shape as season rollover): an
+  overdue 'active' session is marked 'abandoned' on next read, no cron.
+  Only if a future feature needs push (live GVG spectating, chat) do we add
+  websockets — and then via a hosted realtime service, since Vercel
+  functions can't hold sockets.
 
 ## 7. Auth
 
@@ -386,7 +414,7 @@ server secrets are `SESSION_SECRET` and `DATABASE_URL`.
 
 ## 8. API surface (grows with the roadmap)
 
-The surface below groups URLs by the domain that owns them: 5 serverless
+The surface below groups URLs by the domain that owns them: 6 serverless
 functions, each internally routing multiple endpoints via a static table in
 its `server/routers/<domain>.js` — the Vercel Hobby plan's 12-function limit
 is the reason for grouping (never a file-per-endpoint), and growth inside a
@@ -440,6 +468,18 @@ POST /api/trainer/runes/repair       { runeId } → fully recharge one owned
                               `repair_gold` exactly once; 409 "rune doesn't
                               need repair" when already full and unbroken;
                               returns { gold, inventory }
+GET  /api/trainer/summon      the enabled Summon Hall banners (Phase 7.4
+                              step A; ROADMAP drafted top-level /api/summon,
+                              grouped here instead, same reasoning as
+                              /api/trainer/inventory)
+POST /api/trainer/summon      { summonId } → pull one banner: pays its cost
+                              (gold and/or items, claim-first-then-pay per
+                              leg), rolls a species from its pool with a
+                              freshly minted stored seed, mints the monster,
+                              and writes an audit row; returns { summonId,
+                              seed, monster, gold, inventory }; 404 for an
+                              unknown or disabled banner, 409 "check gold or
+                              materials" when a cost leg can't be paid
 
 # battle domain — api/battle/[...route].js
 POST /api/battle/match        { mode? } → create match session ('free', default:
@@ -465,21 +505,53 @@ POST /api/activities          start work/training { monsterId, jobId }
 
 # admin domain — api/admin/[...route].js
 # every call re-checks trainers.is_admin (403)
-GET    /api/admin/master      all 7 master tables (classes, skills, species,
-                              jobs, item_defs, equipment_defs, rune_defs) +
-                              engine enum registries (now incl. item kinds,
-                              equipment domains/slots)
-POST   /api/admin/{classes,skills,species,jobs,items,equipment,runes}
+GET    /api/admin/master      all 8 master tables (classes, skills, species,
+                              jobs, item_defs, equipment_defs, rune_defs,
+                              summon_defs — the last gained a pullCount
+                              usage badge, Phase 7.4) + engine enum
+                              registries (now incl. item kinds, equipment
+                              domains/slots, summonCostTypes)
+POST   /api/admin/{classes,skills,species,jobs,items,equipment,runes,summons}
                               validated upsert
-DELETE /api/admin/{classes,skills,species,jobs,items,equipment,runes}
+DELETE /api/admin/{classes,skills,species,jobs,items,equipment,runes,summons}
                               guarded delete (409 in use)
 POST   /api/admin/grant       { trainerId?, kind, defId, qty? } → grant an
                               item/equipment/rune to a trainer (defaults to
-                              the caller); the only acquisition source until
-                              Phase 7.4 (marketplace/summons) — admin-only
+                              the caller); an admin-only shortcut for seeding
+                              test data — the Summon Hall
+                              (`/api/trainer/summon`, Phase 7.4 step A) is
+                              now the player-facing acquisition path
+
+# adventure domain — api/adventure/[...route].js (Phase 7.4 step B; the 6th
+# domain, anticipated by the "not yet built" note this section used to carry)
+GET  /api/adventure/state     { adventures, session } → the enabled routes
+                              (id/name/description only — a route's `config`
+                              is server balance data, never shipped) plus the
+                              trainer's current session view, or null; lazily
+                              expires a stale (past ends_at) session first
+POST /api/adventure/start     { adventureId, monsterIds:number[3] } → lock
+                              the party (busy_kind='adventure', 24h),
+                              generate the map from a freshly minted stored
+                              seed, freeze both into a new session; 409
+                              "already on an adventure" / "a monster is busy
+                              or not yours", 404 unknown/disabled route
+POST /api/adventure/move      { choice:number } → resolve the CURRENT step's
+                              chosen option exactly once (claim-guarded, same
+                              shape as battle/resolve's applyOrder): chest/
+                              gather grant loot via the inventory repo,
+                              battle auto-resolves through resolveBattle()
+                              directly (seeded from deriveNodeSeed(session.seed,
+                              position) — no `matches` row) and settles the
+                              party's rune durability; a lost/drawn battle
+                              fails the run, the final step's win completes
+                              it, either way releasing the party; returns
+                              { session, node } (node carries the battle
+                              event log, if any — never persisted to the row)
+POST /api/adventure/abandon   {} → give up the active run early (guarded
+                              'active'→'abandoned'), releases the party;
+                              404 if no active session
 
 # not yet built (future domains, still under the 12-function cap)
-POST /api/adventure/*         session create / step
 GET  /api/market  POST /api/market/*    listings / buy / sell
 ```
 

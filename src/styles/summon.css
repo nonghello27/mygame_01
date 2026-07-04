@@ -1,0 +1,47 @@
+/* Summon Hall panel (src/ui/summon.js) — Phase 7.4 step A. Same chrome
+   family as the inventory panel (header, msgs, body of cards). */
+
+.summon{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.summon h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+}
+
+.summon-msgs{padding:0 14px}
+.summon-msgs p{margin:9px 0 0;font-size:13px;color:var(--hp-good)}
+.summon-msgs p.err{color:var(--hp-low)}
+
+.summon-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.summon-hint{margin:0;font-size:12.5px;color:var(--muted)}
+
+.summon-card{
+  background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+}
+.summon-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.summon-head b{font-size:14.5px}
+.summon-cost{
+  font-family:Rajdhani,sans-serif;font-weight:700;font-size:13px;color:var(--clash);
+  white-space:nowrap;
+}
+.summon-desc{margin:0;font-size:12.5px;color:var(--muted)}
+
+.summon-pull{align-self:flex-start;padding:8px 16px;font-size:12.5px;border-radius:9px}
+.summon-pull:disabled{opacity:0.5;cursor:default}
+
+.summon-result{
+  display:flex;align-items:center;gap:10px;background:var(--panel-2);
+  border:1px solid var(--line-strong);border-radius:9px;padding:9px 12px;
+}
+.summon-emoji{font-size:28px;line-height:1}
+.summon-result-txt{display:flex;flex-direction:column;gap:2px}
+.summon-result-txt b{font-size:13.5px}
+.summon-result-txt small{color:var(--muted);font-size:11.5px}
+.summon-gold{
+  margin-left:auto;font-family:Rajdhani,sans-serif;font-weight:700;
+  font-size:13.5px;color:var(--text);
+}

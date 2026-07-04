@@ -1,4 +1,4 @@
-// One of 5 domain routers behind the 5 Vercel serverless functions
+// One of 6 domain routers behind the 6 Vercel serverless functions
 // (Hobby plan caps a deployment at 12; grouping by domain keeps room to
 // grow). This table owns the `auth` domain's URLs; api/auth/[...route].js
 // (prod) and vite.config.js's dev middleware (local) both just call route().

@@ -469,23 +469,164 @@ at 0 and is auto-unsocketed; repair restores charges.
 Two loops in one sub-phase — ship Summon first (it's small, gives gold its
 first sink, and finally makes 7.1–7.3 testable without the admin grant).
 
-- Summon: audit table `summons` (trainer, cost, seed, result);
-  `POST /api/summon` — validate the cost (gold and/or items like summoning
-  scrolls) against DB state → one atomic debit → **seeded** weighted roll
-  (stored seed ⇒ auditable, per the determinism principle) → mint the monster
-  instance. Quest-style summon requirements go through a pluggable checker
-  interface from day one — the photo-quest scorer (Phase 8 ⚠) plugs in later.
-- Adventure: `adventure_sessions` (map JSONB, party, position, seed, state);
-  `POST /api/adventure/start` locks the party (`busy_kind = 'adventure'` —
-  the value has been reserved since 005) and generates the map from a stored
-  seed; `POST /api/adventure/move` validates the step server-side and
-  resolves the node — auto-battle via `resolveBattle()`, loot chest →
-  inventory grant, gather node → materials; finishing/abandoning frees the
-  party through the existing guarded busy-clear.
+#### Summon Hall ✅ CODE COMPLETE (2026-07-03)
+
+- ✅ `010_summons.sql`: master `summon_defs` (`cost` JSONB — a pluggable list
+  of `{type:'gold',amount}` / `{type:'item',itemId,qty}` requirement objects;
+  `pool` JSONB — a weighted `{speciesId, weight}` list; `enabled` — the
+  retirement lever, since the audit FK below makes a referenced banner
+  undeletable via the usual admin-CRUD 409 anyway) and instance/audit table
+  `summons` (trainer, banner, **snapshots** of `cost`/`pool` at pull time,
+  the `seed` `rollSummon()` used, `result_species_id`, `monster_id`) — same
+  "freeze what mattered" shape as `matches`.
+- ✅ `shared/rules/summon.js` `rollSummon(pool, seed)`: a pure, seeded
+  weighted draw over a pool — no DB, no client input, same determinism
+  contract as the engine's own RNG use.
+- ✅ `server/services/summon.js` `performSummon()`: the client sends exactly
+  ONE choice, `summonId` — cost, seed, and the drawn species are all decided
+  server-side. Pays cost legs through a `REQUIREMENT_CHECKERS` **pluggable
+  checker registry** (`{gold, item}` today, pay/refund per type) —
+  claim-first-then-pay per leg, same shape as equipment's enhance; a losing
+  leg (or a failure anywhere in the seed→mint→audit-insert span, including
+  an unknown-species pool) triggers a compensating refund of every already-paid
+  leg, and — since minting happens inside that same span — a compensating
+  `unmintMonster()` too, so a failure after the free monster was minted can
+  never leave it in the roster with nothing charged for it. A later "quest"
+  requirement type is one new registry entry, never a branch in
+  `performSummon()` — the closed-op-set philosophy the engine uses for
+  skills/statuses, applied to costs.
+- ✅ `GET /api/trainer/summon` → `{ summons }`, the enabled banners only;
+  `POST /api/trainer/summon { summonId }` → `{ summonId, seed, monster,
+  gold, inventory }`. **Deviation from this section's original draft:**
+  grouped under the `trainer` domain (`/api/trainer/summon`, not the drafted
+  top-level `/api/summon`) — same serverless-function-count reasoning as
+  `/api/trainer/inventory` (7.1) and `/api/trainer/equipment/*` (7.2). A
+  disabled or unknown `summonId` both 404 (a retired banner never leaks that
+  it existed, same precedent as equipment's ownership 404s).
+- ✅ Admin: `summon_defs` gets the **full Phase 5 workflow** in this one
+  sub-phase — `src/data/summons.js` seed (2 banners), `validateSummon()`
+  (`server/services/adminValidate.js`, `SUMMON_COST_TYPES` enum), guarded
+  CRUD (`POST`/`DELETE /api/admin/summons`, 409 while any pull references a
+  banner) and a `masterState()`/`GET /api/admin/master` `summonDefs` field
+  (now 8 master tables) with a `pullCount` usage badge — a ✨ Summons tab in
+  the admin console (`src/ui/admin.js`) mirrors the Items/Runes tabs' JSON
+  textarea approach for `cost`/`pool`, plus an `enabled` checkbox.
+- ✅ UI: a ✨ Summon Hall panel (`src/ui/summon.js`) — same panel shell as
+  the 🎒 Inventory panel (msgs + body, one refresh-on-open) — lists each
+  enabled banner as a card (name, description, a human-readable cost line,
+  a Summon button); pulling shows the minted monster (emoji, name,
+  species/element) and the new gold balance inline, and refreshes the
+  header's gold chip the same way enhance/repair do.
+  `src/services/content.js` gained `fetchSummonHall()`/`performSummon()` as
+  the I/O boundary.
+- ✅ Tests: `tests/summons.test.mjs` covers the seed grammar (ids
+  unique/`sm_`-prefixed, every pool `speciesId` and cost `itemId` real) and
+  `rollSummon()` determinism (same pool+seed ⇒ same draw) and weight
+  coverage. No engine change — summoning never touches `resolve.js`; golden
+  logs untouched.
+
+**Remaining (operator step):** verify in a browser — pull `sm_novice` with
+100 gold, confirm gold debits exactly once and the new monster appears in
+the farm roster; grant `it_summon_scroll` via the admin console, pull
+`sm_scroll`, confirm the scroll is consumed; disable a banner in the admin
+✨ tab and confirm it disappears from the Summon Hall panel and 404s if
+pulled directly.
+
+**Done when:** a summon mints a monster exactly once for its cost with a
+replayable seed.
+
+#### Adventure ✅ CODE COMPLETE (2026-07-04)
+
+- ✅ `011_adventures.sql`: master `adventure_defs` (`config` JSONB — steps,
+  choices-per-step, a weighted node-type table, the wild `encounters` pool,
+  `loot`/`gather` tables, `catchPct`; see `src/data/adventures.js`'s header
+  for the full grammar) and instance table `adventure_sessions` (trainer,
+  route, **frozen** `seed`/`map`/`party` — `party` mirrors `toLane()`'s
+  battle-snapshot shape, `map` is `generateMap(config, seed)`'s output —
+  `position`, `state` (`active → completed | failed | abandoned`), a running
+  `loot` log, `ends_at`). At most one `active` session per trainer
+  (`adventure_sessions_one_active_idx`, same partial-unique-index precedent
+  as seasons).
+- ✅ `shared/rules/adventure.js`: `generateMap()` (pure, seeded — every
+  non-final step's options are a weighted node-type draw, the final step is
+  forced all-`battle`, the exit guard), `deriveNodeSeed()` (a fresh,
+  position-keyed mulberry32 stream per node — any node re-derivable in
+  isolation from the session seed alone), `rollLoot()`, and (this step)
+  `rollEncounter()` — draw `n` speciesIds with replacement off one node-seeded
+  rng stream, same accounting style as `rollLoot`.
+- ✅ `api/adventure/[...route].js` + `server/routers/adventure.js`: the 6th
+  domain-grouped serverless function (Hobby-plan-cap reasoning unchanged;
+  this was the "not yet built" entry `docs/ARCHITECTURE.md` already
+  anticipated). `GET /api/adventure/state`, `POST /api/adventure/{start,
+  move,abandon}` — `server/routes/adventure.js` are thin wire handlers over
+  `server/services/adventure.js`.
+- ✅ `server/services/adventure.js`: every read/write starts by lazily
+  expiring overdue `active` sessions (`ends_at` past ⇒ `abandoned`, same
+  read-then-claim shape as `ensureSeason`). `start()` claims the 3-monster
+  party's busy lock (`claimPartyForAdventure`, one statement, same shape as
+  `claimMonsterForJob`) with a compensating `releaseParty()` on any failure
+  from the claim onward (same spirit as `performSummon`'s unmint/refund),
+  freezes the chosen order's `toLane()` lanes (equipped gear + socketed runes
+  included, same as `createMatch`) plus a display list into `party`, and
+  mints/stores the map's seed. `move()` validates `choice` against the
+  CURRENT step only (`options` is the only route data ever sent to the
+  client — the full map, and every OTHER route's `config`, never leaves the
+  server), claims the step exactly once (`claimAdvance`, same claim-guard
+  shape as `applyOrder`), then dispatches the node through a closed
+  `NODE_RESOLVERS` registry (`battle`/`chest`/`gather` — a new node kind is
+  one registry entry, never a branch in `move()`): chest/gather roll+grant
+  via the inventory repo; battle calls `resolveBattle()` directly (seeded
+  from `deriveNodeSeed`, **no `matches` row** — an adventure fight has no
+  opposing trainer and only ever needs to update this one session), settles
+  the party's rune durability the same way `resolveMatch` does, and on a win
+  rolls a `catchPct` chance to mint one of the defeated wild species via
+  `mintMonster`. A lost/drawn battle fails the run; the final step's win
+  completes it; either terminal state releases the party. The event log is
+  never persisted to the row (re-derivable forever from the stored seed) —
+  only in the response.
+- ✅ Tests: `tests/adventures.test.mjs` gained `rollEncounter()` coverage
+  (determinism, shape, weight coverage) alongside the foundations step's
+  `generateMap`/`deriveNodeSeed`/`rollLoot` tests. The DB-touching service
+  isn't unit-tested, same precedent as `matches.js`/`pvp.js`. No engine
+  change; golden logs untouched.
+- ✅ Admin: `adventure_defs` gets the CRUD half of the Phase 5 workflow —
+  `POST`/`DELETE /api/admin/adventures` (`validateAdventure()`, guarded 409
+  delete while a session references a route), a `masterState()` /
+  `GET /api/admin/master` `adventureDefs` field with a `sessionCount` usage
+  badge, and a 🗺 Adventures tab in the admin console (`src/ui/admin.js`)
+  mirroring the ✨ Summons tab — id/name/description/enabled fields plus one
+  JSON textarea for the whole `config` grammar.
+- ✅ UI: a 🗺 Adventure panel (`src/ui/adventure.js`) — same panel shell as
+  🎒 Inventory / ✨ Summon Hall (msgs + body, refresh-on-open).
+  `src/services/content.js` gained `fetchAdventureState()`/
+  `startAdventure()`/`moveAdventure()`/`abandonAdventure()` as the I/O
+  boundary. With no active run: one card per enabled route plus a shared
+  party picker (borrowed from the Arena defense editor's row shape —
+  `loadFarm()`'s `busyUntil`/`busyKind` disable a busy monster, pick order is
+  shown and IS the lane order) and a per-route "Set out" button gated on
+  exactly 3 picks. With an active run: a step header ("Verdant Trail — step
+  3/5"), party chips, the loot log so far, and the current step's options as
+  Go-able cards (⚔/🎁/🌿), plus an Abandon button (confirm-gated). A move's
+  outcome (win/loss with an optional fall count read off the response's
+  `t:"fall"` events, loot dropped, a catch) is narrated as a message line —
+  no cutscene replay this slice, the full event log only rides the response
+  for a future replay feature (never computed client-side). A terminal
+  session (completed/failed/abandoned) shows a one-screen run summary, kept
+  in module memory (same precedent as `ui/summon.js`'s results map, since the
+  state read only ever returns *active* sessions) until "New adventure" is
+  clicked.
+
+**Remaining (operator step):** verify in a browser — start a run with 3
+monsters and confirm they show busy on the 🏕 farm panel; hit a chest or
+gather node and confirm the items land in the 🎒 Inventory panel; win a
+battle node and, on a catch, confirm the new monster appears in the roster;
+lose a battle (or Abandon) and confirm the party frees up again; try
+starting a second run while one is active and confirm it 409s.
 
 **Done when:** a summon mints a monster exactly once for its cost with a
 replayable seed; a full adventure run yields loot in the inventory (and any
-catch in the roster) and the party unlocks correctly, including on abandon.
+catch in the roster) and the party unlocks correctly, including on abandon —
+both loops playable end to end from the UI, no direct API calls required.
 
 ### Phase 7.5 — Marketplace
 

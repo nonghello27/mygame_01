@@ -29,6 +29,16 @@ export const EQUIP_SLOTS = {
   monster: ["weapon", "armor", "accessory"],
   trainer: ["head", "body", "charm"],
 };
+// Phase 7.4 step A — Summon Hall cost-requirement kinds. A later phase's
+// "quest" requirement is one more entry here AND one more entry in
+// server/services/summon.js's REQUIREMENT_CHECKERS registry — never a
+// branch in either validateSummon or performSummon.
+export const SUMMON_COST_TYPES = ["gold", "item"];
+// Phase 7.4 step B — Adventure node kinds a map step's option can be. A
+// later node kind (e.g. a shop, an event) is one more entry here AND one
+// more resolver entry in the step-B session service — never a branch in
+// validateAdventure or generateMap.
+export const ADVENTURE_NODE_TYPES = ["battle", "chest", "gather"];
 
 /** Everything the admin UI needs to render its dropdowns. */
 export function enums() {
@@ -46,6 +56,8 @@ export function enums() {
     itemKinds: ITEM_KINDS,
     equipDomains: EQUIP_DOMAINS,
     equipSlots: EQUIP_SLOTS,
+    summonCostTypes: SUMMON_COST_TYPES,
+    adventureNodeTypes: ADVENTURE_NODE_TYPES,
   };
 }
 
@@ -393,5 +405,183 @@ export function validateRune(input) {
     effects: validateRuneEffects(input.effects, "effects"),
     maxCharges: int(input.maxCharges, "max charges", { min: 1, max: 100 }),
     repairGold: int(input.repairGold, "repair gold", { min: 0, max: 1_000_000 }),
+  };
+}
+
+// --- summon hall (Phase 7.4 step A) -----------------------------------------
+
+/**
+ * A summon banner's `cost` grammar: a non-empty list of requirement objects,
+ * each `{type:"gold", amount}` or `{type:"item", itemId, qty}`. At most one
+ * gold entry, no duplicate itemIds. An unknown `type` is a 400 — this is the
+ * pluggable-requirement interface a later phase's "quest" type extends by
+ * adding one more entry to SUMMON_COST_TYPES + one more branch here + one
+ * more server/services/summon.js REQUIREMENT_CHECKERS entry, never a change
+ * to how performSummon() itself pays/refunds.
+ */
+function validateSummonCost(list) {
+  if (!Array.isArray(list) || list.length === 0) throw bad("cost must be a non-empty array");
+  let goldSeen = false;
+  const itemIds = new Set();
+  return list.map((c, i) => {
+    const label = `cost[${i}]`;
+    const type = oneOf(c?.type, SUMMON_COST_TYPES, `${label}.type`);
+    if (type === "gold") {
+      if (goldSeen) throw bad("cost may only include one gold entry");
+      goldSeen = true;
+      onlyKeys(c, ["type", "amount"], label);
+      return { type: "gold", amount: int(c.amount, `${label}.amount`, { min: 1, max: 1_000_000 }) };
+    }
+    // type === "item"
+    onlyKeys(c, ["type", "itemId", "qty"], label);
+    const itemId = str(c.itemId, `${label}.itemId`, { pattern: /^it_[a-z0-9_]+$/ });
+    if (itemIds.has(itemId)) throw bad(`cost: duplicate itemId "${itemId}"`);
+    itemIds.add(itemId);
+    return { type: "item", itemId, qty: int(c.qty, `${label}.qty`, { min: 1, max: 1000 }) };
+  });
+}
+
+/**
+ * A summon banner's `pool` grammar: a non-empty list of
+ * {speciesId, weight >= 1}, no duplicate speciesIds, capped at 50 entries
+ * (shared/rules/summon.js rollSummon() walks this list once per pull).
+ */
+function validateSummonPool(list) {
+  if (!Array.isArray(list) || list.length === 0) throw bad("pool must be a non-empty array");
+  if (list.length > 50) throw bad("pool may have at most 50 entries");
+  const seen = new Set();
+  return list.map((p, i) => {
+    const label = `pool[${i}]`;
+    onlyKeys(p ?? {}, ["speciesId", "weight"], label);
+    const speciesId = str(p?.speciesId, `${label}.speciesId`, { pattern: /^sp_[a-z0-9_]+$/ });
+    if (seen.has(speciesId)) throw bad(`pool: duplicate speciesId "${speciesId}"`);
+    seen.add(speciesId);
+    return { speciesId, weight: int(p?.weight, `${label}.weight`, { min: 1, max: 1_000_000 }) };
+  });
+}
+
+/**
+ * @returns {{id:string, name:string, description:string, cost:object[],
+ *   pool:object[], enabled:boolean}}
+ */
+export function validateSummon(input) {
+  let enabled = true;
+  if (input.enabled !== undefined) {
+    if (typeof input.enabled !== "boolean") throw bad("enabled must be a boolean");
+    enabled = input.enabled;
+  }
+  return {
+    id: str(input.id, "summon id", { pattern: /^sm_[a-z0-9_]+$/ }),
+    name: str(input.name, "summon name"),
+    description: input.description === undefined || input.description === null || input.description === ""
+      ? "" : str(input.description, "description", { max: 500 }),
+    cost: validateSummonCost(input.cost),
+    pool: validateSummonPool(input.pool),
+    enabled,
+  };
+}
+
+// --- adventures (Phase 7.4 step B) ------------------------------------------
+
+/**
+ * `nodes`: a non-empty list of {type, weight>=1}, type one of
+ * ADVENTURE_NODE_TYPES, no duplicate types — the weighted table
+ * generateMap() draws each non-final-step option's type from.
+ */
+function validateAdventureNodes(list) {
+  if (!Array.isArray(list) || list.length === 0) throw bad("nodes must be a non-empty array");
+  const seen = new Set();
+  return list.map((n, i) => {
+    const label = `nodes[${i}]`;
+    onlyKeys(n ?? {}, ["type", "weight"], label);
+    const type = oneOf(n?.type, ADVENTURE_NODE_TYPES, `${label}.type`);
+    if (seen.has(type)) throw bad(`nodes: duplicate type "${type}"`);
+    seen.add(type);
+    return { type, weight: int(n?.weight, `${label}.weight`, { min: 1, max: 1_000_000 }) };
+  });
+}
+
+/**
+ * `encounters`: a non-empty list (max 50) of {speciesId, weight>=1}, no
+ * duplicate speciesIds — the wild pool a "battle" node's enemy team is drawn
+ * from.
+ */
+function validateAdventureEncounters(list) {
+  if (!Array.isArray(list) || list.length === 0) throw bad("encounters must be a non-empty array");
+  if (list.length > 50) throw bad("encounters may have at most 50 entries");
+  const seen = new Set();
+  return list.map((e, i) => {
+    const label = `encounters[${i}]`;
+    onlyKeys(e ?? {}, ["speciesId", "weight"], label);
+    const speciesId = str(e?.speciesId, `${label}.speciesId`, { pattern: /^sp_[a-z0-9_]+$/ });
+    if (seen.has(speciesId)) throw bad(`encounters: duplicate speciesId "${speciesId}"`);
+    seen.add(speciesId);
+    return { speciesId, weight: int(e?.weight, `${label}.weight`, { min: 1, max: 1_000_000 }) };
+  });
+}
+
+/**
+ * `loot`/`gather`: a non-empty list (max 50) of
+ * {itemId, weight>=1, qtyMin>=1, qtyMax>=qtyMin (both <=100)}, no duplicate
+ * itemIds — what a chest drops, or a gather node yields.
+ */
+function validateAdventureLootTable(list, label) {
+  if (!Array.isArray(list) || list.length === 0) throw bad(`${label} must be a non-empty array`);
+  if (list.length > 50) throw bad(`${label} may have at most 50 entries`);
+  const seen = new Set();
+  return list.map((row, i) => {
+    const l = `${label}[${i}]`;
+    onlyKeys(row ?? {}, ["itemId", "weight", "qtyMin", "qtyMax"], l);
+    const itemId = str(row?.itemId, `${l}.itemId`, { pattern: /^it_[a-z0-9_]+$/ });
+    if (seen.has(itemId)) throw bad(`${label}: duplicate itemId "${itemId}"`);
+    seen.add(itemId);
+    const weight = int(row?.weight, `${l}.weight`, { min: 1, max: 1_000_000 });
+    const qtyMin = int(row?.qtyMin, `${l}.qtyMin`, { min: 1, max: 100 });
+    const qtyMax = int(row?.qtyMax, `${l}.qtyMax`, { min: qtyMin, max: 100 });
+    return { itemId, weight, qtyMin, qtyMax };
+  });
+}
+
+/**
+ * An adventure route's `config` grammar — see src/data/adventures.js's
+ * header for the authoritative description, kept in sync with this
+ * validator. Pure grammar only (no DB); the referential checks (every
+ * encounters speciesId/loot/gather itemId must be a real row) happen in
+ * server/services/admin.js's saveAdventure, same split as validateSummon /
+ * saveSummon.
+ */
+function validateAdventureConfig(config) {
+  if (typeof config !== "object" || config === null || Array.isArray(config)) {
+    throw bad("config must be a JSON object");
+  }
+  onlyKeys(config, ["steps", "choices", "nodes", "encounters", "loot", "gather", "catchPct"], "config");
+  return {
+    steps: int(config.steps, "config.steps", { min: 3, max: 10 }),
+    choices: int(config.choices, "config.choices", { min: 2, max: 3 }),
+    nodes: validateAdventureNodes(config.nodes),
+    encounters: validateAdventureEncounters(config.encounters),
+    loot: validateAdventureLootTable(config.loot, "config.loot"),
+    gather: validateAdventureLootTable(config.gather, "config.gather"),
+    catchPct: int(config.catchPct, "config.catchPct", { min: 0, max: 100 }),
+  };
+}
+
+/**
+ * @returns {{id:string, name:string, description:string, config:object,
+ *   enabled:boolean}}
+ */
+export function validateAdventure(input) {
+  let enabled = true;
+  if (input.enabled !== undefined) {
+    if (typeof input.enabled !== "boolean") throw bad("enabled must be a boolean");
+    enabled = input.enabled;
+  }
+  return {
+    id: str(input.id, "adventure id", { pattern: /^ad_[a-z0-9_]+$/ }),
+    name: str(input.name, "adventure name"),
+    description: input.description === undefined || input.description === null || input.description === ""
+      ? "" : str(input.description, "description", { max: 500 }),
+    config: validateAdventureConfig(input.config),
+    enabled,
   };
 }

@@ -28,9 +28,10 @@ The vision and plans live in `docs/` — treat them as part of this file:
   work & training economy; admin console for master data; PVP ladder &
   trainer progression); Phase 7 (acquisition & itemization) is staged as
   sub-phases 7.1–7.5 in the roadmap — 7.1 (item schema & inventory), 7.2
-  (equipment: equip, enhance, engine integration), and 7.3 (runes: socket,
-  consume, break, repair) are code complete; next up is 7.4 (acquisition:
-  Summon Hall, then Adventure).
+  (equipment: equip, enhance, engine integration), 7.3 (runes: socket,
+  consume, break, repair), and 7.4 (acquisition: Summon Hall + Adventure,
+  both with a live panel now) are all code complete; next up is 7.5
+  (marketplace).
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -61,13 +62,13 @@ is the layout that is real today.
 
 - **Vanilla JavaScript, ES modules.** No framework — intentional; keep
   dependencies minimal and the codebase approachable.
-- **Vite** for dev server + build; deploys as a static site + **5 Vercel
+- **Vite** for dev server + build; deploys as a static site + **6 Vercel
   serverless functions, grouped by domain** (`api/auth/`, `api/battle/`,
-  `api/trainer/`, `api/activities.js`, `api/admin/` — Hobby plan caps
-  deployments at 12 functions; each domain internally routes multiple
-  endpoints via a table in `server/routers/`, so growth inside a domain
-  never costs a new function; the Vite dev middleware calls the matching
-  `server/routers/<domain>.js` directly).
+  `api/trainer/`, `api/activities.js`, `api/admin/`, `api/adventure/` —
+  Hobby plan caps deployments at 12 functions; each domain internally routes
+  multiple endpoints via a table in `server/routers/`, so growth inside a
+  domain never costs a new function; the Vite dev middleware calls the
+  matching `server/routers/<domain>.js` directly).
 - **Neon Postgres** via `@neondatabase/serverless` (connection in `server/db.js`).
 - **CSS + inline SVG + PNG sprite sheets** for art; motion is CSS keyframes.
 
@@ -91,22 +92,25 @@ per roadmap phase, don't big-bang rename.)
 ```
 ├── index.html              # static shell + DOM the app mounts into
 ├── vite.config.js          # base:'./'; routes /api/<domain>/* to server/routers/<domain>.js in dev
-├── api/                    # 5 serverless functions (Vercel Hobby caps at 12), one per domain:
+├── api/                    # 6 serverless functions (Vercel Hobby caps at 12), one per domain:
 │   ├── auth/[...route].js      # /api/auth/*      -> server/routers/auth.js
 │   ├── battle/[...route].js    # /api/battle/*     -> server/routers/battle.js
 │   ├── trainer/[...route].js   # /api/trainer/*    -> server/routers/trainer.js
 │   ├── activities.js           # /api/activities   -> server/routers/activities.js (plain file: one route)
-│   └── admin/[...route].js     # /api/admin/*      -> server/routers/admin.js
+│   ├── admin/[...route].js     # /api/admin/*      -> server/routers/admin.js
+│   └── adventure/[...route].js # /api/adventure/*  -> server/routers/adventure.js
 ├── server/                 # server-only logic (imported by api/, never by src/)
 │   ├── routers/            # one file per domain: createRouter({...}) table (pathname→
 │   │                       # {METHOD:handler}) + export route(); auth, battle, trainer,
-│   │                       # activities, admin — matches the api/ entries 1:1
+│   │                       # activities, admin, adventure — matches the api/ entries 1:1
 │   ├── routes/             # one handler per endpoint (happy path + httpError throws):
 │   │                       # auth.js (login/logout), me, classes, activities, match,
 │   │                       # battle, progression, trainerSkills, formation, ladder,
 │   │                       # inventory, equipment.js (equip, enhance), runes.js (socket,
-│   │                       # repair), admin.js (master + classes/skills/species/jobs/
-│   │                       # items/equipment/runes CRUD + grant)
+│   │                       # repair), summon.js (summonHall, summon), adventure.js (state,
+│   │                       # start, move, abandon), admin.js (master +
+│   │                       # classes/skills/species/jobs/items/equipment/runes/summons/
+│   │                       # adventures CRUD + grant)
 │   ├── db.js               # Neon connection (lazy, from DATABASE_URL)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg) + sendJson()/readJson() + createRouter()
@@ -118,7 +122,11 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # enhance + compensating revert/refund, equipped-gear reads),
 │   │                       # runes (socket/unsocket guarded UPDATE, claim-first-then-pay
 │   │                       # repair + revert, listSocketedRunes/applyRuneWear for battle
-│   │                       # snapshots + post-battle durability)
+│   │                       # snapshots + post-battle durability), summons.js (enabled-
+│   │                       # banner list, one banner's full detail incl. enabled, audit
+│   │                       # insertSummon), adventures.js (enabled-route list, one route's
+│   │                       # full detail incl. enabled, one-active-session read, claim
+│   │                       # advance/abandon, loot-log append, party busy-lock claim/release)
 │   └── services/           # matches.js (applyOrder gate + PVP Elo on resolve, gathers
 │                           # equipped monster gear + socketed runes into toLane()'s
 │                           # snapshot, settles rune durability from the engine's runeUse
@@ -129,10 +137,17 @@ per roadmap phase, don't big-bang rename.)
 │                           # rollover, matchmaking), inventory.js (grant/consume as atomic
 │                           # claim-style statements for items/equipment/runes), equipment.js
 │                           # (equip/unequip use-cases + enhance's claim-first-then-pay flow),
-│                           # runes.js (socket/unsocket + repair use-cases, same shape)
+│                           # runes.js (socket/unsocket + repair use-cases, same shape),
+│                           # summon.js (performSummon: pluggable REQUIREMENT_CHECKERS
+│                           # pay/refund per cost leg, seeded rollSummon() + mint +
+│                           # audit insert, compensating refund/unmint on failure),
+│                           # adventure.js (getState/start/move/abandon: lazy session expiry,
+│                           # party busy-claim with compensating release, closed
+│                           # NODE_RESOLVERS registry dispatching chest/gather/battle — battle
+│                           # calls resolveBattle() directly, no matches row)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
-│   │                       # up to 009_items.sql as of Phase 7.1)
+│   │                       # up to 011_adventures.sql as of Phase 7.4)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
@@ -141,16 +156,19 @@ per roadmap phase, don't big-bang rename.)
 │   │   └── rng.js          # seeded PRNG (mulberry32); ALL outcome randomness
 │   └── rules/              # balance data: formulas, elements, targeting, statuses,
 │                           # progression (expertise unlock exp, learn-slot validation),
-│                           # pvp (Elo delta, season-end reward tiers)
+│                           # pvp (Elo delta, season-end reward tiers), summon.js
+│                           # (rollSummon: pure seeded weighted roll over a pool),
+│                           # adventure.js (generateMap/deriveNodeSeed/rollLoot/rollEncounter:
+│                           # pure seeded map generation + node rolls)
 ├── tests/                  # node --test; fixtures.mjs + golden/ (regen.mjs)
 ├── public/sprites/         # uNN.png sheets + TEMPLATE.md (art spec)
 └── src/
     ├── main.js             # ENTRY: imports CSS, inits modules, wires buttons
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm | admin
-    │                       # | pvp | trainer | inventory
+    │                       # | pvp | trainer | inventory | summon | adventure
     ├── data/               # seed content: classes, sprites, units, skills, jobs, expertises,
-    │                       # items, equipment, runes
+    │                       # items, equipment, runes, summons, adventures
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js, admin.js
     ├── core/
     │   ├── units.js        # makeUnit(), cloneRoster()
@@ -158,7 +176,9 @@ per roadmap phase, don't big-bang rename.)
     │   └── battle.js       # client REPLAYER: requestBattle() + animate events
     ├── ui/                 # board, sprite, dragdrop, log, chroma, auth, farm, admin,
     │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
-    │                       # skills), inventory (🎒 panel: Items | Equipment | Runes)
+    │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),
+    │                       # summon (✨ Summon Hall panel: banner cards + pull), adventure
+    │                       # (🗺 panel: route list + party picker, step options, run log)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -249,10 +269,12 @@ bag"). Effects reuse the exact skill-passive `battle_start`/`perm_stat`
 grammar (`validateBattleStartEffects` in `server/services/adminValidate.js`
 is shared with skill passives, with an optional `perLevel` skills don't get —
 7.2's enhancement system scales off it).
-`monster_species.rune_slots` is added here for 7.3 to consume later. The ONLY
-acquisition source until 7.4 is the admin-gated `POST /api/admin/grant`;
-`GET /api/trainer/inventory` is the one read (items + equipment + runes in
-one call).
+`monster_species.rune_slots` is added here for 7.3 to consume later.
+Acquisition was admin-grant-only at this phase (`POST /api/admin/grant`) —
+the Summon Hall (Phase 7.4) later added a player-facing path for monsters,
+though items/equipment/runes still only reach a trainer via grant until
+Adventure/the marketplace. `GET /api/trainer/inventory` is the one read
+(items + equipment + runes in one call).
 
 Equipment (Phase 7.2): `POST /api/trainer/equipment/equip {domain:'trainer'|
 'monster', equipmentId, monsterId?, equip?}` equips/unequips one owned piece
@@ -304,6 +326,96 @@ guarded UPDATE as the decrement. The replayer (`src/core/battle.js`) just
 narrates each `rune` event as a log line — no math, same shape as its
 `tskill`/`buff` handlers.
 
+Summon Hall (Phase 7.4 step A): `summon_defs` (master, seeded from
+`src/data/summons.js`; a banner's `cost` is a non-empty list of
+`{type:'gold',amount}`/`{type:'item',itemId,qty}` requirement objects
+dispatched through a pluggable `REQUIREMENT_CHECKERS` pay/refund registry in
+`server/services/summon.js`, and its `pool` a non-empty weighted
+`{speciesId, weight}` list; `enabled` is the retirement lever) →
+`summons`, an audit-only instance table (one row per pull: trainer, banner,
+**snapshots** of that banner's `cost`/`pool` at pull time so a later admin
+edit can't retroactively change what an old pull says was charged/offered,
+the RNG `seed`, and the resulting species/monster). Flow: `GET
+/api/trainer/summon` lists enabled banners → `POST /api/trainer/summon
+{summonId}` pays every cost leg claim-first-then-pay (a losing leg refunds
+every already-paid leg, LIFO) → mints a fresh seed → `rollSummon()`
+(`shared/rules/summon.js`, pure/seeded, same determinism contract as the
+engine's own RNG) draws one species from the pool → mints the monster
+(`mintMonster`, the same helper `grantStarters` uses) → writes the audit
+row — with a compensating `unmintMonster()` **and** a full cost refund if
+anything from the seed mint through the audit insert fails, so a pull can
+never leave a trainer charged with nothing minted, or minted with nothing
+charged. `summon_defs` gets the full Phase 5 admin workflow (validated CRUD,
+guarded 409 delete, a `pullCount` usage badge) in this same step. The ✨
+Summon Hall panel (`src/ui/summon.js`) is pure display over one banner list
+plus one pull action, same panel shell as 🎒 Inventory (msgs + body,
+refresh-on-open) — it shows each banner's human-readable cost line and, on a
+successful pull, the minted monster's emoji/name/species and the trainer's
+new gold balance.
+
+Adventure (Phase 7.4 step B, session engine — SIXTH domain, `api/adventure/`):
+`adventure_defs` (master, seeded from `src/data/adventures.js`; `config` is
+the whole map/loot grammar `shared/rules/adventure.js` reads — `steps`,
+`choices` per step, a weighted node-type table (`battle`/`chest`/`gather`),
+the wild `encounters` pool, `loot`/`gather` tables, `catchPct`) → `adventure_
+sessions`, an instance row per run — **frozen** at start exactly like
+`matches` freezes a battle's inputs: `seed`, `map` (`generateMap(config,
+seed)`'s output), `party` (`{lanes, display}` — `lanes` mirrors `toLane()`'s
+battle-snapshot shape, equipped gear/socketed runes included, in the
+player's CHOSEN lane order), `position`, `state`
+(`active → completed | failed | abandoned`), a running `loot` log, `ends_at`.
+At most one `active` session per trainer (partial unique index, same
+precedent as "at most one active season"). Flow: `GET /api/adventure/state`
+lazily expires an overdue session (`ends_at` past ⇒ `abandoned`, same
+read-then-claim shape as `ensureSeason`) and returns the enabled routes
+(id/name/description ONLY — `config` is server balance data, never shipped)
+plus the current session view, which exposes ONLY the step in front of the
+player (`options`), never the whole frozen map — revealing the route would
+leak upcoming nodes. `POST /api/adventure/start {adventureId, monsterIds}`
+claims the 3-monster party's busy lock in one statement
+(`claimPartyForAdventure`, same shape as `claimMonsterForJob`, `busy_kind =
+'adventure'`) with a compensating `releaseParty()` on any later failure (same
+spirit as Summon Hall's unmint/refund), then mints the seed and freezes the
+map + party. `POST /api/adventure/move {choice}` validates `choice` against
+the CURRENT step only, claims the step exactly once (`claimAdvance`, same
+claim-guard shape as `applyOrder`'s resolve claim), then resolves the node
+DETERMINISTICALLY off `deriveNodeSeed(session.seed, position)` through a
+closed `NODE_RESOLVERS` registry in `server/services/adventure.js` — a new
+node kind is one registry entry, never a branch in `move()`
+(`ADVENTURE_NODE_TYPES`, same closed-set philosophy the engine uses for
+skills): `chest`/`gather` roll `rollLoot()` and grant via the inventory repo;
+`battle` draws `PARTY_SIZE` wild species with `rollEncounter()` (new this
+step, same style as `rollLoot`), then calls `resolveBattle()` **directly** —
+**no `matches` row**, since an adventure fight has no opposing trainer and
+only ever needs to update this one session — settles the party's rune
+durability exactly like `resolveMatch` (against the frozen snapshot's
+charges, the same accepted wrinkle as two open matches sharing a snapshot),
+and on a win rolls a `catchPct` chance to mint one defeated wild species via
+`mintMonster`. A lost/drawn battle fails the run; the final step's win
+completes it; either terminal state releases the party. The battle event log
+never touches the session row (re-derivable forever from the stored seed,
+CLAUDE.md §1.6) — it only ever rides in the response's `node.battle.events`.
+`POST /api/adventure/abandon {}` gives up early (guarded `active →
+abandoned`), releasing the party. `adventure_defs` gets the admin CRUD half
+of the Phase 5 workflow (`validateAdventure()`, guarded 409 delete, a
+`sessionCount` usage badge, and a 🗺 Adventures tab in `src/ui/admin.js`
+mirroring Summons' one-JSON-textarea-for-config approach). The 🗺 Adventure
+panel (`src/ui/adventure.js`) is pure display + action over the four
+endpoints above (`src/services/content.js`'s `fetchAdventureState()`/
+`startAdventure()`/`moveAdventure()`/`abandonAdventure()`): no session shows
+a route list with a shared party picker (borrowed straight from the Arena
+defense editor's row shape — `loadFarm()`'s `busyUntil`/`busyKind` disable a
+busy monster) and a per-route "Set out" button gated on exactly 3 picks; an
+active session shows the step header, party chips, the run's loot log so
+far, and the CURRENT step's options as Go-able cards; a terminal session
+(completed/failed/abandoned) is narrated from the just-returned outcome and
+kept in module memory for a one-screen summary (same precedent as
+`ui/summon.js`'s results map) until "New adventure" is clicked. The panel
+never replays the battle event log through the cutscene system — a battle
+node's outcome is a text summary (win/loss, an optional fall count read
+straight off `t:"fall"` events) — the event log itself only rides the
+response for a future replay feature.
+
 ## 4. Recipes for TODAY's code
 
 - **Add a species / skill / class / job (live):** admin console (⚙ button)
@@ -331,6 +443,20 @@ narrates each `rune` event as a log line — no math, same shape as its
   db:seed` for content meant to ship with the repo. Equipment/rune `effects`
   must stay within the `battle_start`/`perm_stat` grammar (`perLevel`
   allowed) until a later phase widens the op set.
+- **Add a summon banner (live):** admin console (✨ Summons tab) — validated
+  writes straight to `summon_defs`, no redeploy. Or a row in
+  `src/data/summons.js` + `npm run db:seed` for content meant to ship with
+  the repo. `cost` entries must use a registered type (`gold`, `item` —
+  `server/services/adminValidate.js`'s `SUMMON_COST_TYPES`), and every `pool`
+  `speciesId` must name a real `monster_species` row.
+- **Add an adventure route (live):** admin console (🗺 Adventures tab) —
+  validated writes straight to `adventure_defs`, no redeploy. Or a row in
+  `src/data/adventures.js` + `npm run db:seed` for content meant to ship
+  with the repo. `config`'s grammar (steps/choices/nodes/encounters/loot/
+  gather/catchPct) is documented in that file's header and enforced by
+  `validateAdventure()`; a new node TYPE (beyond `battle`/`chest`/`gather`)
+  needs one more `ADVENTURE_NODE_TYPES` entry AND one more `NODE_RESOLVERS`
+  entry in `server/services/adventure.js` — never a branch in `move()`.
 - **Add a stat:** attrs live in `monster_species`/`monsters` (new migration);
   derived stats in `shared/rules/formulas.js` `deriveStats()`; consumed via
   `toLane()` in `server/services/matches.js` → card markup in `ui/board.js`.
@@ -349,7 +475,7 @@ narrates each `rune` event as a log line — no math, same shape as its
   `api/<domain>/[...route].js` + `server/routers/<domain>.js` — the only
   time to add a file under `api/` (Vercel deploys each top-level `api/`
   entry as another serverless function, and the Hobby plan caps a
-  deployment at 12; today's 5 domains leave room for ~4 more).
+  deployment at 12; today's 6 domains leave room for ~3 more).
 - Faction colors are synced in two places: CSS vars `--a`/`--b` in
   `styles/base.css` and `COLORS` in `src/config.js`. Update both.
 - Cutscene keyframes are authored against a **2.1s timeline, impact ~66%**;
@@ -373,12 +499,19 @@ narrates each `rune` event as a log line — no math, same shape as its
   the attacking side) all work end to end. Trainer skills DO join battle
   (Phase 6, `battle_start`/`after_ally_turns` triggers), and so does
   trainer-domain equipment (PVP-only, same parity as trainer skills).
-- Battle wins still award nothing directly (gold/exp come from work jobs
-  only; PVP moves rating only, no gold/exp) — season-end payouts are the one
-  exception, and those are lazy/passive, not per-battle. Monsters have no
-  level/exp of their own — training raises attributes directly. Gold still
-  has nothing to buy — the admin-gated `POST /api/admin/grant` is the only
-  acquisition source until Phase 7.4 ships Summon/Adventure (marketplace is 7.5).
+- Battle wins still award nothing directly OUTSIDE Adventure (gold/exp come
+  from work jobs only; PVP moves rating only, no gold/exp) — season-end
+  payouts are the one lazy/passive exception. An Adventure battle-node win is
+  the one direct exception: it can mint a caught monster (`catchPct` roll) on
+  top of the run's loot. Monsters have no level/exp of their own — training
+  raises attributes directly. Gold has its first sink now (the Summon Hall)
+  but still nothing else to buy until Phase 7.5's marketplace. Acquisition is
+  no longer admin-grant-only — it now has TWO player-facing paths: the ✨
+  Summon Hall mints a monster per pull (gold/item cost), and the 🗺 Adventure
+  panel sends a 3-monster party down a route for loot items and a chance at a
+  caught monster per run; the admin-gated `POST /api/admin/grant` remains for
+  items/equipment/runes (and for seeding summon scrolls / adventure loot)
+  until the marketplace (7.5) widens that path too.
 - Opponents in a `mode:"pvp"` match ARE real trainers' saved defense
   formations now (matched by rating proximity); free matches (default mode)
   are still random species teams. No sound.

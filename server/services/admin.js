@@ -15,10 +15,12 @@ import {
   listItemsAdmin, upsertItem, itemUsage, deleteItem,
   listEquipmentAdmin, upsertEquipment, equipmentUsage, deleteEquipment,
   listRunesAdmin, upsertRune, runeUsage, deleteRune,
+  listSummonsAdmin, upsertSummon, summonUsage, deleteSummon,
+  listAdventuresAdmin, upsertAdventure, adventureUsage, deleteAdventure,
 } from "../repos/admin.js";
 import {
   enums, validateClass, validateSkill, validateSpecies, validateJob,
-  validateItem, validateEquipment, validateRune,
+  validateItem, validateEquipment, validateRune, validateSummon, validateAdventure,
 } from "./adminValidate.js";
 import { grant as grantInventory } from "./inventory.js";
 
@@ -44,11 +46,16 @@ export async function requireAdmin(sql, trainerId) {
 /** Everything the console renders, in one read: all master tables
  *  (with usage counts) + the enum registries the dropdowns are built from. */
 export async function masterState(sql) {
-  const [classes, skills, species, jobs, itemDefs, equipmentDefs, runeDefs] = await Promise.all([
-    listClassesAdmin(sql), listSkillsAdmin(sql), listSpeciesAdmin(sql), listJobsAdmin(sql),
-    listItemsAdmin(sql), listEquipmentAdmin(sql), listRunesAdmin(sql),
-  ]);
-  return { classes, skills, species, jobs, itemDefs, equipmentDefs, runeDefs, enums: enums() };
+  const [classes, skills, species, jobs, itemDefs, equipmentDefs, runeDefs, summonDefs, adventureDefs] =
+    await Promise.all([
+      listClassesAdmin(sql), listSkillsAdmin(sql), listSpeciesAdmin(sql), listJobsAdmin(sql),
+      listItemsAdmin(sql), listEquipmentAdmin(sql), listRunesAdmin(sql), listSummonsAdmin(sql),
+      listAdventuresAdmin(sql),
+    ]);
+  return {
+    classes, skills, species, jobs, itemDefs, equipmentDefs, runeDefs, summonDefs, adventureDefs,
+    enums: enums(),
+  };
 }
 
 // --- writes: validate → persist. Handlers respond with a fresh masterState. ---
@@ -149,6 +156,66 @@ export async function removeRune(sql, id) {
   const used = await runeUsage(sql, id);
   if (used.owned > 0) throw httpError(409, `cannot delete "${id}": ${used.owned} trainers own it`);
   await deleteRune(sql, id);
+}
+
+// --- summon hall (Phase 7.4 step A) --------------------------------------------
+
+/**
+ * validateSummon() is pure grammar only (no DB); the referential checks a
+ * banner actually needs — every pool speciesId must be a real species, every
+ * item cost's itemId must be a real item — happen here against fresh DB
+ * state, same precedent as saveSpecies() checking class/skill relations.
+ */
+export async function saveSummon(sql, input) {
+  const summon = validateSummon(input);
+  const [species, items] = await Promise.all([listSpeciesAdmin(sql), listItemsAdmin(sql)]);
+  const speciesIds = new Set(species.map((s) => s.id));
+  const itemIds = new Set(items.map((i) => i.id));
+  for (const p of summon.pool) {
+    if (!speciesIds.has(p.speciesId)) throw httpError(400, `pool references unknown species "${p.speciesId}"`);
+  }
+  for (const c of summon.cost) {
+    if (c.type === "item" && !itemIds.has(c.itemId)) throw httpError(400, `cost references unknown item "${c.itemId}"`);
+  }
+  await upsertSummon(sql, summon);
+}
+
+export async function removeSummon(sql, id) {
+  if (typeof id !== "string" || !id) throw httpError(400, "id is required");
+  const used = await summonUsage(sql, id);
+  if (used.pulls > 0) throw httpError(409, `cannot delete "${id}": ${used.pulls} pulls reference it`);
+  await deleteSummon(sql, id);
+}
+
+// --- adventures (Phase 7.4 step B) --------------------------------------------
+
+/**
+ * validateAdventure() is pure grammar only (no DB); the referential checks a
+ * route actually needs — every encounters speciesId must be a real species,
+ * every loot/gather itemId must be a real item — happen here against fresh
+ * DB state, same precedent as saveSummon() checking pool/cost relations.
+ */
+export async function saveAdventure(sql, input) {
+  const adventure = validateAdventure(input);
+  const [species, items] = await Promise.all([listSpeciesAdmin(sql), listItemsAdmin(sql)]);
+  const speciesIds = new Set(species.map((s) => s.id));
+  const itemIds = new Set(items.map((i) => i.id));
+  for (const e of adventure.config.encounters) {
+    if (!speciesIds.has(e.speciesId)) {
+      throw httpError(400, `encounters references unknown species "${e.speciesId}"`);
+    }
+  }
+  for (const row of [...adventure.config.loot, ...adventure.config.gather]) {
+    if (!itemIds.has(row.itemId)) throw httpError(400, `loot/gather references unknown item "${row.itemId}"`);
+  }
+  await upsertAdventure(sql, adventure);
+}
+
+export async function removeAdventure(sql, id) {
+  if (typeof id !== "string" || !id) throw httpError(400, "id is required");
+  const used = await adventureUsage(sql, id);
+  if (used.sessions > 0) throw httpError(409, `cannot delete "${id}": ${used.sessions} sessions reference it`);
+  await deleteAdventure(sql, id);
 }
 
 /**

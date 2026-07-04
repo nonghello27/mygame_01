@@ -13,6 +13,8 @@ import {
   loadMaster, saveClass, deleteClass, saveSkill, deleteSkill,
   saveSpecies, deleteSpecies, saveJob, deleteJob,
   saveItem, deleteItem, saveEquipment, deleteEquipment, saveRune, deleteRune,
+  saveSummon, deleteSummon,
+  saveAdventure, deleteAdventure,
   grant,
 } from "../services/admin.js";
 import { SPRITES } from "../data/sprites.js";
@@ -26,6 +28,8 @@ const TABS = [
   ["items", "🎒 Items"],
   ["equipment", "⚔ Equipment"],
   ["runes", "🔮 Runes"],
+  ["summons", "✨ Summons"],
+  ["adventures", "🗺 Adventures"],
   ["sprites", "🖼 Sprites"],
 ];
 
@@ -198,7 +202,8 @@ function renderBody() {
   if (!data) return;
   ({
     species: speciesTab, skills: skillsTab, classes: classesTab, jobs: jobsTab,
-    items: itemsTab, equipment: equipmentTab, runes: runesTab, sprites: spritesTab,
+    items: itemsTab, equipment: equipmentTab, runes: runesTab,
+    summons: summonsTab, adventures: adventuresTab, sprites: spritesTab,
   })[tab]();
 }
 
@@ -778,6 +783,191 @@ function runeForm(rn) {
         effects, maxCharges: +f.maxCharges.value, repairGold: +f.repairGold.value,
       });
     }, "Rune saved"));
+  els.body.appendChild(form);
+}
+
+// ---------- summons (Phase 7.4 step A) ----------
+
+const SUMMON_COST_HINT =
+  'cost [{type:"gold", amount} | {type:"item", itemId, qty}] — at most one ' +
+  "gold entry, no duplicate itemIds, every itemId must name a real item.";
+const SUMMON_POOL_HINT =
+  'pool [{speciesId, weight}] — no duplicate speciesIds, every speciesId ' +
+  "must name a real species; rollSummon() draws one, weighted, per pull.";
+
+function summonsTab() {
+  if (editing) return summonForm(editing);
+  els.body.appendChild(toolbar("＋ New summon", () => ({
+    id: "", name: "", description: "",
+    cost: [{ type: "gold", amount: 100 }],
+    pool: [{ speciesId: data.species[0]?.id ?? "", weight: 1 }],
+    enabled: true, pullCount: 0, isNew: true,
+  })));
+
+  for (const sm of data.summonDefs) {
+    const row = el("div", "adm-row");
+    const id = el("div", "adm-id");
+    const txt = el("span");
+    txt.append(el("b", null, sm.name), el("small", null, `${sm.id} · ${sm.description || "—"}`));
+    id.append(txt);
+    const side = el("div", "adm-actions");
+    side.append(badge(sm.enabled ? "enabled" : "disabled"));
+    if (sm.pullCount > 0) side.append(badge(`${sm.pullCount} pulls`));
+    side.append(
+      button("Edit", "btn ghost adm-small", () => { editing = structuredClone(sm); renderBody(); }),
+      button("Delete", "btn ghost adm-small adm-danger", () => confirmDelete(
+        `Delete summon "${sm.name}" (${sm.id})?`, () => deleteSummon(sm.id), "Summon deleted")),
+    );
+    row.append(id, side);
+    els.body.appendChild(row);
+  }
+}
+
+function summonForm(sm) {
+  const form = el("div", "adm-form");
+  form.appendChild(el("h4", null, sm.isNew ? "New summon" : `Edit summon — ${sm.name}`));
+
+  const f = {
+    id: textInput(sm.id, "sm_my_banner"),
+    name: textInput(sm.name),
+    description: textInput(sm.description ?? "", "optional"),
+    enabled: el("input"),
+    cost: el("textarea"),
+    pool: el("textarea"),
+  };
+  f.id.disabled = !sm.isNew;
+  f.enabled.type = "checkbox";
+  f.enabled.checked = sm.enabled !== false;
+  f.cost.rows = 5;
+  f.cost.spellcheck = false;
+  f.cost.value = JSON.stringify(sm.cost, null, 2);
+  f.pool.rows = 6;
+  f.pool.spellcheck = false;
+  f.pool.value = JSON.stringify(sm.pool, null, 2);
+
+  const grid = el("div", "adm-grid");
+  grid.append(field("Id (permanent)", f.id), field("Name", f.name),
+    field("Description", f.description), field("Enabled", f.enabled));
+
+  const costField = field("Cost (JSON)", f.cost);
+  costField.classList.add("adm-wide");
+  const poolField = field("Pool (JSON)", f.pool);
+  poolField.classList.add("adm-wide");
+
+  form.append(grid,
+    costField, el("p", "adm-hint", SUMMON_COST_HINT),
+    poolField, el("p", "adm-hint", SUMMON_POOL_HINT),
+    formButtons(() => {
+      let cost, pool;
+      try {
+        cost = JSON.parse(f.cost.value);
+      } catch {
+        throw new Error("Cost is not valid JSON — fix the syntax and save again");
+      }
+      try {
+        pool = JSON.parse(f.pool.value);
+      } catch {
+        throw new Error("Pool is not valid JSON — fix the syntax and save again");
+      }
+      return saveSummon({
+        id: f.id.value.trim(), name: f.name.value.trim(),
+        description: f.description.value.trim() || null,
+        cost, pool, enabled: f.enabled.checked,
+      });
+    }, "Summon saved"));
+  els.body.appendChild(form);
+}
+
+// ---------- adventures (Phase 7.4 step B) ----------
+
+const ADVENTURE_CONFIG_HINT =
+  "config (JSON) — steps 3-10, choices 2-3 per step, nodes [{type: " +
+  '"battle"|"chest"|"gather", weight}] (no duplicate types, the table each ' +
+  "non-final step's options draw from — the final step is always all-battle), " +
+  "encounters [{speciesId, weight}] (the wild pool a battle node's enemy " +
+  "team draws from), loot / gather [{itemId, weight, qtyMin, qtyMax}] " +
+  "(chest / gather drops), catchPct 0-100 (chance to catch one defeated " +
+  "wild monster after winning a battle node). Full grammar: " +
+  "src/data/adventures.js's header.";
+
+function adventuresTab() {
+  if (editing) return adventureForm(editing);
+  els.body.appendChild(toolbar("＋ New adventure", () => ({
+    id: "", name: "", description: "",
+    config: {
+      steps: 5, choices: 2,
+      nodes: [
+        { type: "battle", weight: 50 },
+        { type: "chest", weight: 25 },
+        { type: "gather", weight: 25 },
+      ],
+      encounters: [{ speciesId: data.species[0]?.id ?? "", weight: 1 }],
+      loot: [{ itemId: data.itemDefs[0]?.id ?? "", weight: 1, qtyMin: 1, qtyMax: 1 }],
+      gather: [{ itemId: data.itemDefs[0]?.id ?? "", weight: 1, qtyMin: 1, qtyMax: 1 }],
+      catchPct: 25,
+    },
+    enabled: true, sessionCount: 0, isNew: true,
+  })));
+
+  for (const ad of data.adventureDefs) {
+    const row = el("div", "adm-row");
+    const id = el("div", "adm-id");
+    const txt = el("span");
+    txt.append(el("b", null, ad.name), el("small", null, `${ad.id} · ${ad.description || "—"}`));
+    id.append(txt);
+    const side = el("div", "adm-actions");
+    side.append(badge(ad.enabled ? "enabled" : "disabled"));
+    if (ad.sessionCount > 0) side.append(badge(`${ad.sessionCount} sessions`));
+    side.append(
+      button("Edit", "btn ghost adm-small", () => { editing = structuredClone(ad); renderBody(); }),
+      button("Delete", "btn ghost adm-small adm-danger", () => confirmDelete(
+        `Delete adventure "${ad.name}" (${ad.id})?`, () => deleteAdventure(ad.id), "Adventure deleted")),
+    );
+    row.append(id, side);
+    els.body.appendChild(row);
+  }
+}
+
+function adventureForm(ad) {
+  const form = el("div", "adm-form");
+  form.appendChild(el("h4", null, ad.isNew ? "New adventure" : `Edit adventure — ${ad.name}`));
+
+  const f = {
+    id: textInput(ad.id, "ad_my_route"),
+    name: textInput(ad.name),
+    description: textInput(ad.description ?? "", "optional"),
+    enabled: el("input"),
+    config: el("textarea"),
+  };
+  f.id.disabled = !ad.isNew;
+  f.enabled.type = "checkbox";
+  f.enabled.checked = ad.enabled !== false;
+  f.config.rows = 14;
+  f.config.spellcheck = false;
+  f.config.value = JSON.stringify(ad.config, null, 2);
+
+  const grid = el("div", "adm-grid");
+  grid.append(field("Id (permanent)", f.id), field("Name", f.name),
+    field("Description", f.description), field("Enabled", f.enabled));
+
+  const configField = field("Config (JSON)", f.config);
+  configField.classList.add("adm-wide");
+
+  form.append(grid,
+    configField, el("p", "adm-hint", ADVENTURE_CONFIG_HINT),
+    formButtons(() => {
+      let config;
+      try {
+        config = JSON.parse(f.config.value);
+      } catch {
+        throw new Error("Config is not valid JSON — fix the syntax and save again");
+      }
+      return saveAdventure({
+        id: f.id.value.trim(), name: f.name.value.trim(),
+        description: f.description.value.trim() || null,
+        config, enabled: f.enabled.checked,
+      });
+    }, "Adventure saved"));
   els.body.appendChild(form);
 }
 

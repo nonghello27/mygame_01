@@ -1,0 +1,71 @@
+/* Adventure panel (src/ui/adventure.js) — Phase 7.4 step B. Same chrome
+   family as the Summon Hall / Arena panels (header, msgs, body); the party
+   picker reuses the Arena defense-editor's row shape (renamed .adv-*). */
+
+.adventure{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.adventure h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+}
+
+.adv-msgs{padding:0 14px}
+.adv-msgs p{margin:9px 0 0;font-size:13px;color:var(--hp-good)}
+.adv-msgs p.err{color:var(--hp-low)}
+
+.adv-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:12px}
+.adv-hint{margin:0;font-size:12.5px;color:var(--muted)}
+.adv-subhead{
+  margin:4px 0 -2px;font-family:Rajdhani,sans-serif;font-weight:600;
+  letter-spacing:0.1em;text-transform:uppercase;font-size:11.5px;color:var(--muted);
+}
+.adv-header{margin:0;font-size:14.5px;font-weight:600;color:var(--text)}
+
+.adv-card{
+  background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+}
+.adv-card b{font-size:14.5px}
+.adv-desc{margin:0;font-size:12.5px;color:var(--muted)}
+
+button.btn.adv-small{align-self:flex-start;padding:8px 16px;font-size:12.5px;border-radius:9px}
+button.btn.adv-small:disabled{opacity:0.5;cursor:default}
+button.btn.adv-danger{align-self:flex-start;color:var(--hp-low);border-color:var(--hp-low)}
+
+/* party picker */
+.adv-mon-list{display:flex;flex-direction:column;gap:8px}
+.adv-mon{
+  display:flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:9px 12px;cursor:pointer;
+}
+.adv-mon:hover{border-color:var(--line-strong)}
+.adv-mon.picked{border-color:var(--a-deep);background:var(--a-soft)}
+.adv-mon.busy{opacity:0.6;cursor:default}
+.adv-mon-emoji{font-size:22px}
+.adv-mon-name{font-size:13px;font-weight:600;flex:1}
+.adv-mon-busy-tag{font-size:11px;color:var(--clash)}
+.adv-pick-badge{
+  display:flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:var(--a-deep);color:#06150f;font-weight:700;font-size:12px;flex:none;
+}
+
+/* active session */
+.adv-party{display:flex;gap:10px;flex-wrap:wrap}
+.adv-party-chip{
+  display:flex;align-items:center;gap:6px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:9px;padding:6px 10px;font-size:12.5px;
+}
+
+.adv-options{display:flex;gap:10px;flex-wrap:wrap}
+.adv-option{flex:1 1 140px;align-items:flex-start}
+.adv-option-icon{font-size:22px}
+
+.adv-log{display:flex;flex-direction:column;gap:4px}
+.adv-log-line{
+  display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);
+  padding:6px 10px;background:var(--bg-2);border-radius:8px;
+}
+.adv-log-icon{font-size:14px}
