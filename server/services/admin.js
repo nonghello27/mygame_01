@@ -8,6 +8,12 @@
 import { httpError } from "../http.js";
 import { getTrainerById } from "../repos/trainers.js";
 import {
+  listMonstersByTrainer, mintMonster, getMonsterById,
+  listUnassignedMonsters, detachMonster, returnMonsterGearToBag, attachMonster,
+  getMonsterDetachDiagnostic,
+} from "../repos/monsters.js";
+import { getSpeciesById } from "../repos/species.js";
+import {
   listClassesAdmin, upsertClass, classUsage, deleteClass,
   listSkillsAdmin, upsertSkill, skillUsage, deleteSkill,
   listSpeciesAdmin, upsertSpecies, speciesUsage, deleteSpecies,
@@ -17,6 +23,7 @@ import {
   listRunesAdmin, upsertRune, runeUsage, deleteRune,
   listSummonsAdmin, upsertSummon, summonUsage, deleteSummon,
   listAdventuresAdmin, upsertAdventure, adventureUsage, deleteAdventure,
+  listTrainersAdmin,
 } from "../repos/admin.js";
 import {
   enums, validateClass, validateSkill, validateSpecies, validateJob,
@@ -233,4 +240,130 @@ export async function grantToTrainer(sql, adminId, { trainerId, kind, defId, qty
   if (!trainer) throw httpError(404, "unknown trainer");
   await grantInventory(sql, id, { kind, defId, qty });
   return trainer;
+}
+
+// --- trainer accounts + monster minting/detach/attach (admin roster browser) ---
+//
+// Ownership is detachable (012_monster_release.sql): an admin can DETACH a
+// monster from an account (trainer_id -> NULL) without deleting it — the
+// row, its grown attributes, and its skills persist as "unassigned" — and
+// later ATTACH that same unassigned monster to a (possibly different)
+// trainer. listUnassignedMonsters() rides along on every read below so the
+// console's detail view always shows both a trainer's roster AND the pool
+// of orphans available to attach.
+
+export async function listTrainers(sql) {
+  return listTrainersAdmin(sql);
+}
+
+export async function trainerMonsters(sql, trainerId) {
+  if (!Number.isInteger(trainerId) || trainerId <= 0) {
+    throw httpError(400, "trainerId must be a trainer's id");
+  }
+  const trainer = await getTrainerById(sql, trainerId);
+  if (!trainer) throw httpError(404, "unknown trainer");
+  return {
+    trainer,
+    monsters: await listMonstersByTrainer(sql, trainerId),
+    unassigned: await listUnassignedMonsters(sql),
+  };
+}
+
+/**
+ * Mint one new monster instance for any trainer from a species master row.
+ * No payment legs (unlike performSummon) — this is an admin grant, not an
+ * acquisitive action a trainer paid for — so there's nothing to compensate
+ * on failure; mintMonster() itself is the only write.
+ */
+export async function mintMonsterForTrainer(sql, { trainerId, speciesId }) {
+  const id = Number(trainerId);
+  if (!Number.isInteger(id) || id <= 0) throw httpError(400, "trainerId must be a trainer's id");
+  const trainer = await getTrainerById(sql, id);
+  if (!trainer) throw httpError(404, "unknown trainer");
+
+  if (typeof speciesId !== "string" || !speciesId) throw httpError(400, "speciesId is required");
+  const species = await getSpeciesById(sql, speciesId);
+  if (!species) throw httpError(404, "unknown species");
+
+  const monsterId = await mintMonster(sql, id, species);
+  return {
+    trainer,
+    monster: await getMonsterById(sql, id, monsterId),
+    monsters: await listMonstersByTrainer(sql, id),
+    unassigned: await listUnassignedMonsters(sql),
+  };
+}
+
+/**
+ * Attach an existing UNASSIGNED monster (trainer_id IS NULL) to a trainer's
+ * account — the second way to grow a roster besides minting fresh. The
+ * guarded UPDATE (attachMonster) is the whole gate: a lost claim and a
+ * nonexistent monsterId are indistinguishable by design (both just mean
+ * "there is no unassigned monster with that id right now"), so this
+ * deliberately does NOT pre-read to tell them apart — same 409-covers-both
+ * shape as equipment's enhance()/runes' repair() claim failures.
+ */
+export async function attachMonsterToTrainer(sql, { trainerId, monsterId }) {
+  const id = Number(trainerId);
+  if (!Number.isInteger(id) || id <= 0) throw httpError(400, "trainerId must be a trainer's id");
+  const trainer = await getTrainerById(sql, id);
+  if (!trainer) throw httpError(404, "unknown trainer");
+
+  const mId = Number(monsterId);
+  if (!Number.isInteger(mId) || mId <= 0) throw httpError(400, "monsterId must be a monster's id");
+
+  const claimed = await attachMonster(sql, id, mId);
+  if (!claimed) throw httpError(409, "monster is already owned or does not exist");
+
+  return {
+    trainer,
+    monster: await getMonsterById(sql, id, mId),
+    monsters: await listMonstersByTrainer(sql, id),
+    unassigned: await listUnassignedMonsters(sql),
+  };
+}
+
+/**
+ * Detach one monster from a trainer's account, leaving it "unassigned"
+ * (trainer_id -> NULL) rather than deleting it — see 012_monster_release.sql.
+ * detachMonster()'s guarded UPDATE is the only gate; when it loses, this
+ * re-reads the row (diagnostics only, never a second gate — same spirit as
+ * equipment.js's claim-first-then-pay services distinguishing WHY a claim
+ * failed after the fact) to answer a specific 409/404 instead of one generic
+ * message, because unlike attach, a lost detach claim has several distinct,
+ * actionable causes worth telling apart (busy / in a formation / not yours).
+ */
+export async function detachMonsterFromTrainer(sql, { trainerId, monsterId }) {
+  const id = Number(trainerId);
+  if (!Number.isInteger(id) || id <= 0) throw httpError(400, "trainerId must be a trainer's id");
+  const trainer = await getTrainerById(sql, id);
+  if (!trainer) throw httpError(404, "unknown trainer");
+
+  const mId = Number(monsterId);
+  if (!Number.isInteger(mId) || mId <= 0) throw httpError(400, "monsterId must be a monster's id");
+
+  const claimed = await detachMonster(sql, id, mId);
+  if (!claimed) {
+    const row = await getMonsterDetachDiagnostic(sql, mId);
+    if (!row || Number(row.trainer_id) !== id) {
+      throw httpError(404, "monster does not belong to that trainer");
+    }
+    if (row.busy_until && new Date(row.busy_until) > new Date()) {
+      throw httpError(409, `monster is busy (${row.busy_kind})`);
+    }
+    if (row.in_formation) {
+      throw httpError(409, "monster is in the defense formation — remove it there first");
+    }
+    // The claim lost for a reason the diagnostic couldn't pin down (e.g. a
+    // race that resolved between the two reads) — one generic fallback.
+    throw httpError(409, "detach failed — try again");
+  }
+
+  await returnMonsterGearToBag(sql, mId);
+
+  return {
+    trainer,
+    monsters: await listMonstersByTrainer(sql, id),
+    unassigned: await listUnassignedMonsters(sql),
+  };
 }

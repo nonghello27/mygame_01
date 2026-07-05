@@ -57,3 +57,35 @@ export const deleteAdventure = (id) => request("/api/admin/adventures", "DELETE"
  * @returns {Promise<{trainer:object, inventory:object}>}
  */
 export const grant = (body) => request("/api/admin/grant", "POST", body);
+
+/** @returns {Promise<{trainers:object[]}>} every account, for the 👥 Trainers tab's roster browser. */
+export const loadTrainers = () => request("/api/admin/trainers", "GET");
+
+/** @returns {Promise<{trainer:object, monsters:object[], unassigned:object[]}>} one
+ *  trainer's full roster, plus every unassigned (ownerless) monster available to attach. */
+export const loadTrainerMonsters = (trainerId) =>
+  request(`/api/admin/monsters?trainerId=${trainerId}`, "GET");
+
+/**
+ * Mint one new monster instance for a trainer from a species master row.
+ * @param {{trainerId:number, speciesId:string}} body
+ * @returns {Promise<{trainer:object, monster:object, monsters:object[], unassigned:object[]}>}
+ */
+export const mintMonsterFor = (body) => request("/api/admin/monsters", "POST", body);
+
+/**
+ * Attach an existing unassigned monster (no owner) to a trainer's account.
+ * @param {{trainerId:number, monsterId:number}} body
+ * @returns {Promise<{trainer:object, monster:object, monsters:object[], unassigned:object[]}>}
+ */
+export const attachMonsterTo = (body) => request("/api/admin/monsters", "POST", body);
+
+/**
+ * Detach a monster from a trainer's account — the relation is removed, the
+ * monster persists unassigned (growth/skills intact); its equipped gear and
+ * socketed runes return to the trainer's bag. 409 while busy or in the
+ * saved PVP defense formation.
+ * @param {{trainerId:number, monsterId:number}} body
+ * @returns {Promise<{trainer:object, monsters:object[], unassigned:object[]}>}
+ */
+export const detachMonsterFrom = (body) => request("/api/admin/monsters", "DELETE", body);

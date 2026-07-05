@@ -112,7 +112,8 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # repair), summon.js (summonHall, summon), adventure.js (state,
 │   │                       # start, move, abandon), admin.js (master +
 │   │                       # classes/skills/species/jobs/items/equipment/runes/summons/
-│   │                       # adventures CRUD + grant)
+│   │                       # adventures CRUD + grant + trainers list/monsters read+mint/
+│   │                       # attach/detach)
 │   ├── db.js               # Neon connection (lazy, from DATABASE_URL)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg) + sendJson()/readJson() + createRouter()
@@ -240,7 +241,18 @@ engine. Writes are validated server-side (`server/services/adminValidate.js`
 — pure, tested in `tests/admin-validate.test.mjs`); deletes 409 while
 instance rows reference the master row. CAVEAT: `npm run db:seed` upserts
 from `src/data/*.js` and overwrites admin edits to rows with the same ids —
-once you edit live, the DB is the source of truth for those rows.
+once you edit live, the DB is the source of truth for those rows. A 👥
+Trainers tab rounds out the console with a roster browser: it lists every
+account, and "Manage" opens one trainer's monster roster with two ways to add
+a monster (a species picker + "Mint monster" mints a fresh instance straight
+from the species master row, same mint the Summon Hall uses; a picker over
+every unassigned monster + "Attach" links one of those instead) and, per
+monster, a "Remove" button that detaches it — the relation is removed but the
+monster persists unassigned with its grown attributes/skills intact, and its
+equipped gear/socketed runes return to the trainer's bag; the server refuses
+the detach with 409 while the monster is busy or still sits in that trainer's
+saved PVP defense formation (`GET /api/admin/trainers`, `GET/POST/DELETE
+/api/admin/monsters`).
 
 PVP (Phase 6): `expertises` + `trainer_skill_defs` (master, seeded from
 `src/data/expertises.js`) → `trainer_skills` (instance; 2 fixed learn slots,
@@ -459,6 +471,15 @@ response for a future replay feature.
   `validateAdventure()`; a new node TYPE (beyond `battle`/`chest`/`gather`)
   needs one more `ADVENTURE_NODE_TYPES` entry AND one more `NODE_RESOLVERS`
   entry in `server/services/adventure.js` — never a branch in `move()`.
+- **Give a monster to an account (live):** admin console (👥 Trainers tab) —
+  two paths. Either pick the trainer, pick a species, Mint (copies base
+  stats/attrs/skill loadout from the species master row, same mint as the
+  Summon Hall), or pick the trainer, pick from the unassigned-monster pool,
+  Attach (links an already-grown, ownerless instance instead of minting a
+  fresh one). Note: a monster's "Remove" button is the inverse — it detaches
+  rather than deletes, so the monster persists unassigned (ready to Attach
+  elsewhere) and is blocked with 409 while busy or in a saved PVP defense
+  formation.
 - **Add a stat:** attrs live in `monster_species`/`monsters` (new migration);
   derived stats in `shared/rules/formulas.js` `deriveStats()`; consumed via
   `toLane()` in `server/services/matches.js` → card markup in `ui/board.js`.

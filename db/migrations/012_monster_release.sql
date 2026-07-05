@@ -1,0 +1,26 @@
+-- 012_monster_release — monster ownership becomes detachable (admin roster
+-- browser: release / re-home a monster instance).
+--
+-- Until now `monsters.trainer_id` was NOT NULL: a monster instance only ever
+-- existed while owned by exactly one trainer, and the only way to remove it
+-- was delete (unmintMonster(), compensation-only). This migration adds a
+-- second, non-destructive lifecycle: an admin can DETACH a monster from an
+-- account, which breaks only the `trainer_id` relation (sets it to NULL) —
+-- the monster row itself, its grown attributes (hp/atk/spd/str/agi/vit/intl/
+-- dex), and its monster_skills all persist untouched as an "unassigned"
+-- (inactive) instance, sitting outside any trainer's roster. An admin can
+-- later ATTACH that same unassigned monster to a (possibly different)
+-- trainer, re-homing it without re-minting or losing anything it grew.
+--
+-- trainer_id IS NULL is therefore a real, queryable state ("unassigned" /
+-- inactive), not a data-integrity gap — every other read that lists a
+-- trainer's monsters (listMonstersByTrainer, getMonsterById, etc.) already
+-- filters `WHERE m.trainer_id = ...`, so an unassigned monster is invisible
+-- to normal play; it only surfaces through the admin roster browser's new
+-- "unassigned" list, until an admin attaches it somewhere.
+--
+-- Same CAUTION as every migration: the runner splits statements on ';'
+-- after stripping full-line comments -- no semicolons inside inline
+-- `--` comments.
+
+ALTER TABLE monsters ALTER COLUMN trainer_id DROP NOT NULL;

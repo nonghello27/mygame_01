@@ -18,4 +18,6 @@ export const route = createRouter({
   "/api/admin/summons": { POST: admin.summons, DELETE: admin.summons },
   "/api/admin/adventures": { POST: admin.adventures, DELETE: admin.adventures },
   "/api/admin/grant": { POST: admin.grant },
+  "/api/admin/trainers": { GET: admin.trainers },
+  "/api/admin/monsters": { GET: admin.monsters, POST: admin.monsters, DELETE: admin.monsters },
 });

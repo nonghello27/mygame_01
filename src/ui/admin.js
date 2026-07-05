@@ -1,6 +1,8 @@
 // Admin console (Phase 5): sub-menu tabs over the master tables — Species,
-// Skills, Classes, Jobs — plus a read-only Sprites gallery. Pure presentation
-// over /api/admin/*: every dropdown is built from the enums the SERVER sent
+// Skills, Classes, Jobs, Items, Equipment, Runes, Summons, Adventures — plus
+// a Trainers roster browser (browse accounts, view/mint into any trainer's
+// monster roster) and a read-only Sprites gallery. Pure presentation over
+// /api/admin/*: every dropdown is built from the enums the SERVER sent
 // (so options can't drift from the engine), every save posts a proposed row
 // and re-renders the fresh masterState the server responds with, and every
 // image (sprite portrait, sheet frame, emoji fallback) is shown as an image.
@@ -16,6 +18,7 @@ import {
   saveSummon, deleteSummon,
   saveAdventure, deleteAdventure,
   grant,
+  loadTrainers, loadTrainerMonsters, mintMonsterFor, attachMonsterTo, detachMonsterFrom,
 } from "../services/admin.js";
 import { SPRITES } from "../data/sprites.js";
 import { chromaKeyed } from "./chroma.js";
@@ -30,6 +33,7 @@ const TABS = [
   ["runes", "🔮 Runes"],
   ["summons", "✨ Summons"],
   ["adventures", "🗺 Adventures"],
+  ["trainers", "👥 Trainers"],
   ["sprites", "🖼 Sprites"],
 ];
 
@@ -38,7 +42,10 @@ const ATTR_LABEL = { str: "STR", agi: "AGI", vit: "VIT", int: "INT", dex: "DEX" 
 let els = null;
 let data = null;    // last masterState from the server
 let tab = "species";
-let editing = null; // row being edited in the current tab (null = list view)
+let editing = null;  // row being edited in the current tab (null = list view)
+let trainers = null; // cached trainers list (👥 tab), null = not loaded yet
+let managing = null; // { trainer, monsters, unassigned } of the trainer being managed, or null
+let pendingRemove = null; // monsterId awaiting a second "Remove" confirm click, or null
 
 export function initAdmin() {
   els = {
@@ -189,6 +196,8 @@ function renderTabs() {
     const b = button(label, "adm-tab" + (id === tab ? " active" : ""), () => {
       tab = id;
       editing = null;
+      managing = null;
+      pendingRemove = null;
       els.msgs.innerHTML = "";
       renderTabs();
       renderBody();
@@ -203,7 +212,8 @@ function renderBody() {
   ({
     species: speciesTab, skills: skillsTab, classes: classesTab, jobs: jobsTab,
     items: itemsTab, equipment: equipmentTab, runes: runesTab,
-    summons: summonsTab, adventures: adventuresTab, sprites: spritesTab,
+    summons: summonsTab, adventures: adventuresTab, trainers: trainersTab,
+    sprites: spritesTab,
   })[tab]();
 }
 
@@ -969,6 +979,175 @@ function adventureForm(ad) {
       });
     }, "Adventure saved"));
   els.body.appendChild(form);
+}
+
+// ---------- trainers (roster browser + monster minting) ----------
+
+function trainersTab() {
+  if (managing) return trainerDetail(managing);
+
+  if (!trainers) {
+    els.body.appendChild(el("p", "adm-hint", "Loading…"));
+    loadTrainers()
+      .then((res) => { trainers = res.trainers; renderBody(); })
+      .catch((e) => pushMsg(`Could not load trainers: ${e.message}`, true));
+    return;
+  }
+
+  for (const t of trainers) {
+    const row = el("div", "adm-row");
+    const id = el("div", "adm-id");
+    const txt = el("span");
+    txt.append(el("b", null, t.name), el("small", null, `${t.email} · #${t.id}`));
+    id.append(txt);
+    const side = el("div", "adm-actions");
+    side.append(badge(`${t.gold} 🪙`), badge(`${t.exp} ⭐`), badge(`${t.monsterCount} monsters`));
+    if (t.isAdmin) side.append(badge("ADMIN"));
+    side.append(button("Manage", "btn ghost adm-small", () => manageTrainer(t.id)));
+    row.append(id, side);
+    els.body.appendChild(row);
+  }
+}
+
+async function manageTrainer(trainerId) {
+  els.msgs.innerHTML = "";
+  pendingRemove = null;
+  try {
+    managing = await loadTrainerMonsters(trainerId);
+    renderBody();
+  } catch (e) {
+    pushMsg(e.message, true);
+  }
+}
+
+function trainerDetail({ trainer, monsters, unassigned }) {
+  const bar = el("div", "adm-toolbar");
+  bar.appendChild(button("← All trainers", "btn ghost adm-small", () => {
+    managing = null;
+    pendingRemove = null;
+    trainers = null; // invalidate the cached list so monster counts refresh
+    renderBody();
+  }));
+  els.body.appendChild(bar);
+
+  const header = el("div", "adm-row");
+  const headId = el("div", "adm-id");
+  headId.append(el("b", null, trainer.name), el("small", null, trainer.email));
+  const headSide = el("div", "adm-actions");
+  headSide.append(badge(`${trainer.gold} 🪙`), badge(`${trainer.exp} ⭐`));
+  header.append(headId, headSide);
+  els.body.appendChild(header);
+
+  // Mint control: pick any species from the master list, mint one instance
+  // for this trainer — the same mintMonster() the Summon Hall's pull uses.
+  els.body.appendChild(el("p", "adm-hint", "Mint new from species"));
+  const speciesSelect = selectInput(
+    data.species.map((s) => [s.id, `${s.emoji} ${s.name} (${s.id})`]),
+    data.species[0]?.id,
+  );
+  const mintBar = el("div", "adm-toolbar");
+  mintBar.append(
+    field("Species", speciesSelect),
+    button("Mint monster", "btn primary adm-small", async () => {
+      pendingRemove = null;
+      els.msgs.innerHTML = "";
+      try {
+        const res = await mintMonsterFor({ trainerId: trainer.id, speciesId: speciesSelect.value });
+        managing = { trainer: res.trainer, monsters: res.monsters, unassigned: res.unassigned };
+        renderBody();
+        pushMsg(`Minted "${res.monster.name}" for ${res.trainer.name}.`);
+      } catch (e) {
+        pushMsg(e.message, true);
+      }
+    }),
+  );
+  els.body.appendChild(mintBar);
+
+  // Attach control: link an already-minted but ownerless monster (detached
+  // from some other account, growth intact) to this one instead of minting
+  // a fresh instance.
+  els.body.appendChild(el("p", "adm-hint", "Attach existing unassigned monster"));
+  if (!unassigned.length) {
+    els.body.appendChild(el("p", "adm-hint",
+      "No unassigned monsters — remove one from an account and it will appear here."));
+  } else {
+    const unassignedSelect = selectInput(
+      unassigned.map((m) => [m.id, `${m.emoji} ${m.name} · ${m.speciesId} · #${m.id}`]),
+      unassigned[0].id,
+    );
+    const attachBar = el("div", "adm-toolbar");
+    attachBar.append(
+      field("Monster", unassignedSelect),
+      button("Attach", "btn primary adm-small", async () => {
+        pendingRemove = null;
+        els.msgs.innerHTML = "";
+        try {
+          const res = await attachMonsterTo({
+            trainerId: trainer.id, monsterId: Number(unassignedSelect.value),
+          });
+          managing = { trainer: res.trainer, monsters: res.monsters, unassigned: res.unassigned };
+          renderBody();
+          pushMsg(`Attached "${res.monster.name}" to ${res.trainer.name}.`);
+        } catch (e) {
+          pushMsg(e.message, true);
+        }
+      }),
+    );
+    els.body.appendChild(attachBar);
+  }
+
+  for (const m of monsters) {
+    const row = el("div", "adm-row");
+    const id = el("div", "adm-id");
+    id.append(spritePreview(m.sprite, m.emoji));
+    const txt = el("span");
+    txt.append(el("b", null, m.name), el("small", null, `${m.speciesId} · #${m.id}`));
+    id.append(txt);
+    const side = el("div", "adm-actions");
+    side.append(
+      badge(`HP ${m.base.hp}`), badge(`ATK ${m.base.atk}`), badge(`SPD ${m.base.spd}`),
+      ...Object.keys(ATTR_LABEL).map((a) => badge(`${ATTR_LABEL[a]} ${m.attrs[a]}`)),
+    );
+    if (m.busyUntil && new Date(m.busyUntil) > new Date()) side.append(badge(`busy: ${m.busyKind}`));
+
+    // Detach ("Remove"): an inline two-step confirm, same idiom as
+    // ui/trainer.js's expertise-switch warning — first click arms it and
+    // warns via pushMsg, second click actually detaches. Anything else that
+    // re-renders (another row's Remove, mint, attach, navigating away)
+    // disarms it since pendingRemove is a single module-level value.
+    side.append(button(
+      pendingRemove === m.id ? "⚠ Confirm remove" : "Remove",
+      "btn ghost adm-small",
+      async () => {
+        if (pendingRemove !== m.id) {
+          pendingRemove = m.id;
+          renderBody();
+          els.msgs.innerHTML = "";
+          pushMsg(
+            `Removing "${m.name}": its training and skills stay on the monster, but it ` +
+            `becomes INACTIVE and unlinked from ${trainer.name}; equipped gear and runes ` +
+            "return to the bag. Click again to confirm.",
+          );
+          return;
+        }
+        els.msgs.innerHTML = "";
+        try {
+          const res = await detachMonsterFrom({ trainerId: trainer.id, monsterId: m.id });
+          pendingRemove = null;
+          managing = { trainer: res.trainer, monsters: res.monsters, unassigned: res.unassigned };
+          renderBody();
+          pushMsg(`Removed "${m.name}" from ${res.trainer.name}.`);
+        } catch (e) {
+          pendingRemove = null;
+          renderBody(); // un-arm the button even though the row itself didn't change
+          pushMsg(e.message, true);
+        }
+      },
+    ));
+
+    row.append(id, side);
+    els.body.appendChild(row);
+  }
 }
 
 // ---------- sprites (read-only gallery) ----------

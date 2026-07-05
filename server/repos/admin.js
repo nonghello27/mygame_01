@@ -296,3 +296,17 @@ export async function adventureUsage(sql, id) {
 }
 
 export const deleteAdventure = (sql, id) => sql`DELETE FROM adventure_defs WHERE id = ${id}`;
+
+// --- trainer accounts (admin roster browser) -------------------------------
+
+export async function listTrainersAdmin(sql) {
+  const rows = await sql`
+    SELECT t.id, t.name, t.email, t.gold, t.exp, t.expertise, t.is_admin, t.created_at,
+      (SELECT count(*)::int FROM monsters m WHERE m.trainer_id = t.id) AS monster_count
+    FROM trainers t ORDER BY t.id`;
+  return rows.map((r) => ({
+    id: Number(r.id), name: r.name, email: r.email, gold: Number(r.gold), exp: Number(r.exp),
+    expertise: r.expertise, isAdmin: r.is_admin === true, createdAt: r.created_at,
+    monsterCount: r.monster_count,
+  }));
+}

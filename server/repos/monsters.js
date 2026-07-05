@@ -47,6 +47,32 @@ export async function listMonstersByTrainer(sql, trainerId) {
 }
 
 /**
+ * Every "unassigned" (trainer_id IS NULL) monster instance — a monster
+ * detached from an account (see 012_monster_release.sql) that still exists,
+ * with its grown attributes and skills intact, but isn't on any roster.
+ * Same SELECT shape as listMonstersByTrainer, just the WHERE flipped.
+ */
+export async function listUnassignedMonsters(sql) {
+  const rows = await sql`
+    SELECT m.id, m.species_id, m.nickname, m.hp, m.atk, m.spd,
+           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind,
+           s.name AS species_name, s.cls, s.emoji, s.sprite,
+           s.element, s.attack_kind, s.attack_style, s.targeting,
+           COALESCE(
+             (SELECT json_agg(json_build_object(
+                       'id', sk.id, 'name', sk.name, 'slot', sk.slot,
+                       'cooldown', sk.cooldown, 'data', sk.data, 'level', ms.level)
+                     ORDER BY ms.slot)
+              FROM monster_skills ms JOIN skills sk ON sk.id = ms.skill_id
+              WHERE ms.monster_id = m.id),
+             '[]'::json) AS skills
+    FROM monsters m JOIN monster_species s ON s.id = m.species_id
+    WHERE m.trainer_id IS NULL
+    ORDER BY m.id`;
+  return rows.map(shape);
+}
+
+/**
  * Mint ONE new monster instance from a species master row: copies the base
  * statline, attributes, AND the species' born-with skill loadout — the exact
  * INSERT + species_skills copy grantStarters() has always done per species,
@@ -137,4 +163,72 @@ export async function claimMonsterForJob(sql, trainerId, monsterId, durationS, k
       AND (busy_until IS NULL OR busy_until <= now())
     RETURNING busy_until`;
   return rows[0]?.busy_until ?? null;
+}
+
+/**
+ * Detach one owned monster from a trainer's account — sets trainer_id to
+ * NULL, leaving the row (and its grown attributes/skills) intact as an
+ * "unassigned" instance (012_monster_release.sql). ONE guarded UPDATE, same
+ * claim shape as claimMonsterForJob: right owner, AND both of these hold —
+ *   - not currently busy (a stale busy_until/busy_kind on a detached monster
+ *     would be meaningless — nothing could ever clear it once it leaves the
+ *     roster that started the job)
+ *   - not a member of ANY formation_slots row (silently pulling a monster
+ *     out of a trainer's saved PVP defense would leave that formation
+ *     fighting with a hole in it while the trainer is offline)
+ * Returns true when the claim won, false otherwise (busy, in a formation,
+ * wrong owner, or unknown id — the service re-reads to tell those apart for
+ * the error message).
+ */
+export async function detachMonster(sql, trainerId, monsterId) {
+  const rows = await sql`
+    UPDATE monsters
+    SET trainer_id = NULL, busy_until = NULL, busy_kind = NULL
+    WHERE id = ${monsterId} AND trainer_id = ${trainerId}
+      AND (busy_until IS NULL OR busy_until <= now())
+      AND NOT EXISTS (SELECT 1 FROM formation_slots fs WHERE fs.monster_id = monsters.id)
+    RETURNING id`;
+  return rows.length > 0;
+}
+
+/**
+ * After a WON detach claim: return this monster's equipped gear/socketed
+ * runes to its (former) trainer's bag. Gear rows keep their OWN trainer_id —
+ * equipment/runes belong to the trainer who owns them, not the monster they
+ * happen to be seated on — so detaching a monster never sends its gear out
+ * of the account with it; it just falls back into the bag alongside every
+ * other unequipped piece.
+ */
+export async function returnMonsterGearToBag(sql, monsterId) {
+  await sql`UPDATE monster_equipment SET monster_id = NULL WHERE monster_id = ${monsterId}`;
+  await sql`UPDATE runes SET monster_id = NULL WHERE monster_id = ${monsterId}`;
+}
+
+/**
+ * Attach an unassigned (trainer_id IS NULL) monster to a trainer's account.
+ * ONE guarded UPDATE — the WHERE's `trainer_id IS NULL` is the whole claim,
+ * so two admins racing to attach the same orphan can't both win. Returns
+ * true when the claim won, false otherwise (already owned, or unknown id).
+ */
+export async function attachMonster(sql, trainerId, monsterId) {
+  const rows = await sql`
+    UPDATE monsters SET trainer_id = ${trainerId}
+    WHERE id = ${monsterId} AND trainer_id IS NULL
+    RETURNING id`;
+  return rows.length > 0;
+}
+
+/**
+ * Diagnostics only — never a gate. detachMonster()'s guarded UPDATE is the
+ * one true claim; when it loses, the service re-reads this to turn "the
+ * claim failed" into a helpful 409 (busy / in a formation / wrong owner /
+ * unknown id), same spirit as equipment.js's claim-first-then-pay services
+ * distinguishing gold-short from material-short after a lost claim.
+ */
+export async function getMonsterDetachDiagnostic(sql, monsterId) {
+  const rows = await sql`
+    SELECT m.trainer_id, m.busy_until, m.busy_kind,
+           EXISTS (SELECT 1 FROM formation_slots fs WHERE fs.monster_id = m.id) AS in_formation
+    FROM monsters m WHERE m.id = ${monsterId}`;
+  return rows[0] || null;
 }

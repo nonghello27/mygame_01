@@ -67,9 +67,32 @@
 //   The only acquisition source until Phase 7.4 (marketplace/summons):
 //   grants an item/equipment/rune to a trainer (defaults to the calling
 //   admin). Responds with the inventory the grant landed in. Admin only.
+//
+// GET /api/admin/trainers -> { trainers }
+//   Every trainer account (id, name, email, gold, exp, expertise, isAdmin,
+//   createdAt, monsterCount). Admin only.
+//
+// GET  /api/admin/monsters?trainerId=<id> -> { trainer, monsters, unassigned }
+//   One trainer's full monster roster, plus every UNASSIGNED monster
+//   (trainer_id IS NULL — detached from an account but not deleted; see
+//   012_monster_release.sql) available to attach elsewhere. Admin only.
+// POST /api/admin/monsters { trainerId, speciesId } -> { trainer, monster, monsters, unassigned }
+//   Mints one new monster instance for that trainer from a species master
+//   row (base stats/attrs/skills copied straight from the species, same as
+//   grantStarters()/the Summon Hall's mint). Admin only.
+// POST /api/admin/monsters { trainerId, monsterId } -> { trainer, monster, monsters, unassigned }
+//   Attaches an existing UNASSIGNED monster (trainer_id IS NULL) to that
+//   trainer instead of minting a fresh one — send exactly one of speciesId
+//   (mint) or monsterId (attach), never both/neither. Admin only.
+// DELETE /api/admin/monsters { trainerId, monsterId } -> { trainer, monsters, unassigned }
+//   Detaches one monster from that trainer's account: trainer_id -> NULL,
+//   the row/attributes/skills persist as unassigned rather than being
+//   deleted. Its equipped gear/socketed runes return to the trainer's bag.
+//   409 while busy or while a member of the trainer's saved PVP defense
+//   formation (remove it there first). Admin only.
 
 import { db } from "../db.js";
-import { sendJson, readJson } from "../http.js";
+import { sendJson, readJson, httpError } from "../http.js";
 import { trainerIdFromRequest } from "../auth.js";
 import {
   requireAdmin,
@@ -93,6 +116,11 @@ import {
   saveAdventure,
   removeAdventure,
   grantToTrainer,
+  listTrainers,
+  trainerMonsters,
+  mintMonsterForTrainer,
+  attachMonsterToTrainer,
+  detachMonsterFromTrainer,
 } from "../services/admin.js";
 import { getInventory } from "../services/inventory.js";
 
@@ -140,4 +168,41 @@ export async function grant(req, res) {
   const trainer = await grantToTrainer(sql, admin.id, body);
 
   sendJson(res, 200, { trainer, inventory: await getInventory(sql, trainer.id) });
+}
+
+export async function trainers(req, res) {
+  const sql = db();
+  await requireAdmin(sql, trainerIdFromRequest(req));
+  sendJson(res, 200, { trainers: await listTrainers(sql) });
+}
+
+export async function monsters(req, res) {
+  const sql = db();
+  await requireAdmin(sql, trainerIdFromRequest(req));
+
+  if (req.method === "GET") {
+    // createRouter strips the query string for ROUTING only — req.url still
+    // carries it here.
+    const trainerId = new URL(req.url, "http://localhost").searchParams.get("trainerId");
+    sendJson(res, 200, await trainerMonsters(sql, Number(trainerId)));
+    return;
+  }
+
+  const body = await readJson(req);
+
+  if (req.method === "DELETE") {
+    sendJson(res, 200, await detachMonsterFromTrainer(sql, body));
+    return;
+  }
+
+  // POST: exactly one of speciesId (mint a fresh instance) or monsterId
+  // (attach an existing unassigned one) — the branch on which field is
+  // present lives here; the actual logic lives in services/admin.js.
+  const { speciesId, monsterId } = body ?? {};
+  if ((speciesId === undefined) === (monsterId === undefined)) {
+    throw httpError(400, "send speciesId (mint) or monsterId (attach)");
+  }
+  sendJson(res, 200, monsterId !== undefined
+    ? await attachMonsterToTrainer(sql, body)
+    : await mintMonsterForTrainer(sql, body));
 }
