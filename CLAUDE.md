@@ -27,11 +27,13 @@ The vision and plans live in `docs/` — treat them as part of this file:
   (Firebase auth; owned monsters; tamper-proof matches; battle engine v2;
   work & training economy; admin console for master data; PVP ladder &
   trainer progression); Phase 7 (acquisition & itemization) is staged as
-  sub-phases 7.1–7.5 in the roadmap — 7.1 (item schema & inventory), 7.2
+  sub-phases 7.1–7.4 in the roadmap — 7.1 (item schema & inventory), 7.2
   (equipment: equip, enhance, engine integration), 7.3 (runes: socket,
   consume, break, repair), and 7.4 (acquisition: Summon Hall + Adventure,
-  both with a live panel now) are all code complete; next up is 7.5
-  (marketplace).
+  both with a live panel now) are all code complete. Later phases were
+  renumbered 2026-07-04: the marketplace (formerly sub-phase 7.5) is now
+  **Phase 8 — next up**; guilds, GVG & tournaments are Phase 9; chat,
+  notifications & the photo quest are Phase 10.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -505,13 +507,13 @@ response for a future replay feature.
   the one direct exception: it can mint a caught monster (`catchPct` roll) on
   top of the run's loot. Monsters have no level/exp of their own — training
   raises attributes directly. Gold has its first sink now (the Summon Hall)
-  but still nothing else to buy until Phase 7.5's marketplace. Acquisition is
+  but still nothing else to buy until Phase 8's marketplace. Acquisition is
   no longer admin-grant-only — it now has TWO player-facing paths: the ✨
   Summon Hall mints a monster per pull (gold/item cost), and the 🗺 Adventure
   panel sends a 3-monster party down a route for loot items and a chance at a
   caught monster per run; the admin-gated `POST /api/admin/grant` remains for
   items/equipment/runes (and for seeding summon scrolls / adventure loot)
-  until the marketplace (7.5) widens that path too.
+  until the marketplace (Phase 8) widens that path too.
 - Opponents in a `mode:"pvp"` match ARE real trainers' saved defense
   formations now (matched by rating proximity); free matches (default mode)
   are still random species teams. No sound.

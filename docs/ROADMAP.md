@@ -225,15 +225,17 @@ formations, attack each other, and watch the ladder move.
 **Done when:** two real accounts can attack each other's defense teams and
 climb a visible ladder.
 
-## Phase 7 — Acquisition & itemization
+## Phase 7 — Acquisition & itemization ✅ CODE COMPLETE (2026-07-04)
 
-Too big for one shot — executed as five sub-phases, each independently
+Too big for one shot — executed as four sub-phases, each independently
 shippable. Order rationale: schema + inventory first (everything else
 references it), equipment into the engine next (smallest engine touch), runes
-after (adds post-battle durability settlement), then the acquisition loops,
-and trading — the one place that needs real transactional care — last.
+after (adds post-battle durability settlement), then the acquisition loops.
+(The marketplace was originally staged here as sub-phase 7.5; it's a full
+phase's worth of transactional care and unblocks nothing else in Phase 7, so
+it was promoted to its own **Phase 8** below — 2026-07-04 renumbering.)
 
-Cross-cutting rules for all five sub-phases:
+Cross-cutting rules for all sub-phases:
 
 - **No player-facing acquisition exists until 7.4**, so 7.1's grant service
   must be admin-exposed — that's how 7.1–7.3 get tested live, and where 7.2's
@@ -628,32 +630,141 @@ replayable seed; a full adventure run yields loot in the inventory (and any
 catch in the roster) and the party unlocks correctly, including on abandon —
 both loops playable end to end from the UI, no direct API calls required.
 
-### Phase 7.5 — Marketplace
+## Phase 8 — Marketplace ← NEXT UP
 
-- `marketplace_listings` (seller, kind `item|equipment|rune|monster`, ref id,
-  qty, price, status `open|sold|cancelled`). Listing **escrows** the good —
-  removed from usable inventory at list time; cancel returns it.
+The first player-to-player economy: gold finally circulates between trainers
+instead of flowing only faucet → sink. Promoted from its original slot as
+sub-phase 7.5 (2026-07-04 renumbering): it is the one place that needs real
+transactional care, and it depends on all of Phase 7 being live (goods worth
+selling now exist via Summon Hall and Adventure), so it stands alone.
+
+- `012_marketplace.sql`: `marketplace_listings` (seller, kind
+  `item|equipment|rune|monster`, ref id, qty, price, status
+  `open|sold|cancelled`, created/closed timestamps, buyer on sale). Listing
+  **escrows** the good — removed from usable inventory at list time (items:
+  qty split off the stack; equipment: must be unequipped; runes: must be
+  unsocketed; monsters: busy-style lock so they can't fight/work/adventure
+  while listed); cancel returns it. Escrow means a sold good can never have
+  been used or mutated between list and buy.
 - Monsters are listable only when free of obligations: not busy, not in the
-  defense formation, equipment and runes stripped first.
-- `POST /api/market/list` / `buy` / `cancel`; `GET /api/market` with
-  search/filter.
+  defense formation, equipment and runes stripped first — validated
+  server-side, 409 naming what blocks it (same guarded-delete spirit as
+  admin CRUD).
+- New `api/market/[...route].js` domain + `server/routers/market.js` (the
+  7th serverless function — the one sanctioned reason to add a top-level
+  `api/` entry, CLAUDE.md §5): `GET /api/market` (search/filter: kind, text,
+  price range, paging), `POST /api/market/list` / `buy` / `cancel`. Handlers
+  stay thin over `server/services/market.js` + `server/repos/market.js`.
 - Concurrency: prefer the codebase's one-statement claim CTE (mark sold +
   debit buyer + credit seller + transfer ownership, guarded by
   `status = 'open'` and `gold >= price`) — it's the same exactly-once shape
-  as activity settlement. Caveat: the Neon **HTTP driver can't run
-  interactive transactions**; if a flow truly needs multi-statement
-  `SELECT FOR UPDATE`, that endpoint must use the websocket `Pool` client.
-- UI: catalog screen with search/filter + a "my listings" management view.
+  as activity settlement; a losing leg after a won claim gets a compensating
+  revert, same as enhance/repair/summon. Caveat: the Neon **HTTP driver
+  can't run interactive transactions**; if a flow truly needs
+  multi-statement `SELECT FOR UPDATE`, that endpoint must use the websocket
+  `Pool` client.
+- Self-purchase is rejected; price bounds validated server-side (positive
+  integer, sane cap). Consider a small listing fee or sale tax as a gold
+  sink — balance data, not code.
+- UI: a 🏪 Marketplace panel (same shell as Inventory/Summon/Adventure:
+  msgs + body, refresh-on-open) — catalog with search/filter + a "my
+  listings" management view (cancel buttons, sold history). All I/O through
+  `src/services/content.js` helpers, never direct fetch from `ui/`.
 
 **Done when:** with two real accounts, list → buy transfers gold and goods
 exactly once; a concurrent second buy answers 409; cancel restores the
-escrowed good.
+escrowed good; a listed monster can't be sent to work, battle, or adventure
+while escrowed.
 
-## Phase 8 — Social & events (later)
+## Phase 9 — Guilds & GVG
 
-Guilds + GVG, tournaments (server-resolved brackets), messages/notifications,
-and — last, once there's an audience and moderation plan — the **photo quest**
-(image-scored summon quest, GAME_DESIGN §6.5 ⚠).
+The first multi-trainer social structure, and the battle modes that need it.
+Tournaments ride in this phase too: they share the bracket/scheduling
+machinery GVG needs, and both are server-resolved from frozen snapshots (no
+realtime, no websockets — CLAUDE.md §1.5's lazy-time rule extends to war
+resolution).
+
+Dependencies: Phase 6 (PVP defense formations are the unit of guild-war
+lineups; seasons/Elo are the precedent for war scoring) and Phase 8 (gold has
+real circulation, so guild creation can be a meaningful sink).
+
+- `013_guilds.sql`: `guilds` (unique name, description/emblem, leader id,
+  created_at), `guild_members` (guild, trainer UNIQUE — one guild per
+  trainer, role `leader|officer|member`, joined_at), `guild_applications`
+  (or invite rows — pick one flow and keep it thin). Guilds are
+  player-created instance data, not admin master data; creation costs gold.
+- New `api/guild/[...route].js` domain + `server/routers/guild.js` (8th
+  function): create / apply / accept / leave / kick / promote / transfer
+  leadership, plus guild profile + member list + guild ladder reads. Every
+  write re-validates role server-side (officer-only kicks, leader-only
+  transfer) — never trust a role from the request body.
+- GVG (GAME_DESIGN §6.4 — "guild leader picks member teams; guild vs
+  guild"): a `guild_wars` table pairs two guilds over a scheduled window;
+  each side's lineup is a set of member **defense formations** picked by
+  leader/officers before the window locks (frozen snapshots, exactly like
+  `matches` freezes lanes). Resolution is lazy on read after `ends_at` —
+  same read-then-claim shape as `ensureSeason`/`settleActivities`, each
+  pairing resolved once by `resolveBattle()` with a stored seed
+  (replayable/auditable, CLAUDE.md §1.6). War score = pairing wins; rewards
+  (gold, later guild currency) paid idempotently on the claimed close.
+- Tournaments (GAME_DESIGN §6.4): `tournaments` + `tournament_entries` —
+  entry criteria validated server-side (rating floor, entry fee), bracket
+  generated from the seeded PRNG, rounds auto-resolved lazily the same way
+  wars are. A tournament is individual (defense formation vs defense
+  formation); GVG is the guild-level composition of the same primitive.
+- UI: a 🏰 Guild panel (roster, applications, war lineup editor for
+  leaders/officers, war results) + a tournament bracket view. Pure display
+  over the guild-domain reads, same as every other panel.
+
+**Done when:** two guilds of real accounts schedule a war, lock lineups, and
+after `ends_at` a plain read resolves every pairing exactly once and shows
+the same winner to both guilds; a tournament bracket fills, resolves round by
+round with replayable seeds, and pays its winner exactly once.
+
+## Phase 10 — Chat, notifications & photo quest (later)
+
+Communication layers first (they're low-risk and every earlier system wants
+to emit events into them), then the one deliberately-parked high-risk
+feature. Everything here stays on lazy polling — no websockets until a
+feature proves the need (CLAUDE.md §1.5); ARCHITECTURE §394 already flags
+live chat as the first legitimate websocket trigger *if* polling feels bad in
+practice.
+
+- Notifications first: `014_social.sql` starts with a `notifications` table
+  (trainer, kind, payload JSONB, created_at, read_at). Existing services
+  write rows at their event points — season payout (`payoutSeason`), listing
+  sold (Phase 8), guild application/acceptance/war result (Phase 9), summon
+  banner events — one insert next to the already-atomic claim, never a new
+  delivery mechanism. Delivered by piggybacking a small unread count on
+  existing authenticated reads (`/api/trainer/me`), fetched in full on
+  demand; a 🔔 header badge + dropdown panel marks-read on view.
+- Messages/chat: player-to-player mail and guild chat as plain rows
+  (`messages`: sender, recipient-or-guild, body, created_at, read_at),
+  polling on panel open / a modest interval while the panel is visible.
+  Server-side length + rate limits, a block list, and a report flag from day
+  one — moderation basics before moderation problems.
+- Photo quest last (GAME_DESIGN §6.5 ⚠ high risk — image-scored summon
+  quest): daily/weekly hint published as master data (`quest_defs`, admin
+  CRUD per the Phase 5 workflow); players upload a photo; a **pluggable
+  scorer** grades match quality server-side; rewards by percentile (<1%,
+  1–20%, 20–50%, 50–100%) settle when the quest window closes — lazily, on
+  read, like seasons. The scorer is a registry interface (same closed-set
+  philosophy as `NODE_RESOLVERS`/`REQUIREMENT_CHECKERS`): the first
+  implementation can be an image-embedding similarity call behind an env
+  key, swappable without touching quest logic. Needs image storage (object
+  store, not the DB), content moderation + abuse handling (pre-score NSFW
+  filter, report/ban hooks into Phase 10's moderation basics), and
+  rate/size limits on upload. Ship behind an `enabled` flag on the quest
+  def — the retirement lever precedent from `summon_defs`. Percentile
+  rewards mean scoring is relative: settle rewards only at window close,
+  one idempotent claimed payout per entrant, never on upload.
+
+**Done when:** a sold listing / accepted application / season payout each
+produce exactly one notification and the badge clears on read; two accounts
+exchange mail and guild chat with rate limits enforced; a photo-quest window
+accepts uploads, scores them through the pluggable scorer, and pays
+percentile rewards exactly once at close — with the scorer swappable in
+config without code changes to the quest flow.
 
 ## Standing rules while executing
 
