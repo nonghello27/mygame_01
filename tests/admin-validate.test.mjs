@@ -127,9 +127,14 @@ test("validateItem accepts a happy-path row and rejects bad shapes", () => {
   const ok = validateItem({ id: "it_potion_small", kind: "consumable", name: "Small Potion" });
   assert.equal(ok.id, "it_potion_small");
   assert.equal(ok.description, null, "description defaults to null");
+  assert.equal(ok.sellGold, 0, "sellGold defaults to 0 when absent");
   assert.equal(
     validateItem({ id: "it_x", kind: "material", name: "X", description: "  a thing  " }).description,
     "a thing"
+  );
+  assert.equal(
+    validateItem({ id: "it_x", kind: "material", name: "X", sellGold: 15 }).sellGold, 15,
+    "sellGold round-trips when given"
   );
 
   rejects(() => validateItem({ id: "itbad", kind: "material", name: "X" }), "id must be it_*");
@@ -137,6 +142,8 @@ test("validateItem accepts a happy-path row and rejects bad shapes", () => {
   rejects(() => validateItem({ id: "it_x", kind: "material", name: "" }), "name required");
   rejects(() => validateItem({ id: "it_x", kind: "material", name: "X", description: "y".repeat(201) }),
     "description too long");
+  rejects(() => validateItem({ id: "it_x", kind: "material", name: "X", sellGold: -1 }),
+    "sellGold must be >= 0");
 });
 
 test("validateEquipment enforces domain/slot pairing, effects grammar, enhance bounds", () => {
@@ -147,12 +154,15 @@ test("validateEquipment enforces domain/slot pairing, effects grammar, enhance b
   });
   assert.equal(ok.id, "eq_iron_sword");
   assert.equal(ok.effects[0].perLevel, 2, "equipment effects allow perLevel");
+  assert.equal(ok.sellGold, 0, "sellGold defaults to 0 when absent");
 
   const noEnhance = validateEquipment({
     id: "eq_charm", domain: "trainer", slot: "charm", name: "Charm",
     effects: [{ when: "battle_start", op: "perm_stat", stat: "crit", flat: 5 }],
+    sellGold: 60,
   });
   assert.equal(noEnhance.enhance, null, "enhance defaults to null when omitted");
+  assert.equal(noEnhance.sellGold, 60, "sellGold round-trips when given");
 
   rejects(() => validateEquipment({
     id: "badid", domain: "monster", slot: "weapon", name: "X",
@@ -188,6 +198,11 @@ test("validateEquipment enforces domain/slot pairing, effects grammar, enhance b
     effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
     enhance: { maxLevel: 5, goldPerLevel: 0 },
   }), "enhance.goldPerLevel too low");
+  rejects(() => validateEquipment({
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+    sellGold: -1,
+  }), "sellGold must be >= 0");
 });
 
 test("validateEquipment's enhance.material is optional and round-trips (Phase 7.2 step B)", () => {
@@ -245,6 +260,14 @@ test("validateRune enforces the effects grammar (with perLevel) and charge/gold 
   });
   assert.equal(ok.id, "rn_swift");
   assert.equal(ok.effects[0].perLevel, 1);
+  assert.equal(ok.sellGold, 0, "sellGold defaults to 0 when absent");
+
+  const withSell = validateRune({
+    id: "rn_swift", name: "Swift Rune",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 3, perLevel: 1 }],
+    maxCharges: 5, repairGold: 30, sellGold: 35,
+  });
+  assert.equal(withSell.sellGold, 35, "sellGold round-trips when given");
 
   rejects(() => validateRune({
     id: "rnbad", name: "X",
@@ -269,6 +292,11 @@ test("validateRune enforces the effects grammar (with perLevel) and charge/gold 
     effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 1 }],
     maxCharges: 5, repairGold: -1,
   }), "repairGold must be >= 0");
+  rejects(() => validateRune({
+    id: "rn_x", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 1 }],
+    maxCharges: 5, repairGold: 0, sellGold: -1,
+  }), "sellGold must be >= 0");
 });
 
 test("validateRune accepts the target_select/override_targeting shape and rejects bad/mixed shapes", () => {

@@ -127,32 +127,36 @@ async function main() {
   // 7. Items, equipment, runes (master data; upsert so balance edits land).
   for (const it of ITEMS) {
     await pool.query(
-      `INSERT INTO item_defs (id, kind, name, description)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO item_defs (id, kind, name, description, sell_gold)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (id) DO UPDATE SET
-         kind = EXCLUDED.kind, name = EXCLUDED.name, description = EXCLUDED.description`,
-      [it.id, it.kind, it.name, it.description ?? null]
+         kind = EXCLUDED.kind, name = EXCLUDED.name, description = EXCLUDED.description,
+         sell_gold = EXCLUDED.sell_gold`,
+      [it.id, it.kind, it.name, it.description ?? null, it.sellGold ?? 0]
     );
   }
   for (const eq of EQUIPMENT) {
     await pool.query(
-      `INSERT INTO equipment_defs (id, domain, slot, name, description, effects, enhance)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+      `INSERT INTO equipment_defs (id, domain, slot, name, description, effects, enhance, sell_gold)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
        ON CONFLICT (id) DO UPDATE SET
          domain = EXCLUDED.domain, slot = EXCLUDED.slot, name = EXCLUDED.name,
-         description = EXCLUDED.description, effects = EXCLUDED.effects, enhance = EXCLUDED.enhance`,
+         description = EXCLUDED.description, effects = EXCLUDED.effects, enhance = EXCLUDED.enhance,
+         sell_gold = EXCLUDED.sell_gold`,
       [eq.id, eq.domain, eq.slot, eq.name, eq.description ?? null,
-       JSON.stringify(eq.effects), eq.enhance ? JSON.stringify(eq.enhance) : null]
+       JSON.stringify(eq.effects), eq.enhance ? JSON.stringify(eq.enhance) : null, eq.sellGold ?? 0]
     );
   }
   for (const rn of RUNES) {
     await pool.query(
-      `INSERT INTO rune_defs (id, name, description, effects, max_charges, repair_gold)
-       VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+      `INSERT INTO rune_defs (id, name, description, effects, max_charges, repair_gold, sell_gold)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name, description = EXCLUDED.description, effects = EXCLUDED.effects,
-         max_charges = EXCLUDED.max_charges, repair_gold = EXCLUDED.repair_gold`,
-      [rn.id, rn.name, rn.description ?? null, JSON.stringify(rn.effects), rn.maxCharges, rn.repairGold]
+         max_charges = EXCLUDED.max_charges, repair_gold = EXCLUDED.repair_gold,
+         sell_gold = EXCLUDED.sell_gold`,
+      [rn.id, rn.name, rn.description ?? null, JSON.stringify(rn.effects), rn.maxCharges, rn.repairGold,
+       rn.sellGold ?? 0]
     );
   }
 

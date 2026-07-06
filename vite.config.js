@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from "vite";
 
 // Dev-only: serve the API through Vite's middleware so `npm run dev` behaves
-// like production (where Vercel runs 6 domain-grouped serverless functions,
+// like production (where Vercel runs 7 domain-grouped serverless functions,
 // one per api/<domain>/[...route].js — Hobby plan caps a deployment at 12).
 // Every request to /api/* is dispatched to the matching server/routers/
 // module by prefix, mirroring how Vercel's file-based routing resolves the
@@ -24,6 +24,7 @@ function apiDevServer(env) {
           : pathname.startsWith("/api/trainer/") ? "/server/routers/trainer.js"
           : pathname.startsWith("/api/admin/") ? "/server/routers/admin.js"
           : pathname.startsWith("/api/adventure/") ? "/server/routers/adventure.js"
+          : pathname.startsWith("/api/market/") ? "/server/routers/market.js"
           : null;
         if (!routerPath) {
           res.statusCode = 404;

@@ -11,7 +11,7 @@
 import {
   fetchInventory, loadFarm,
   equipMonsterEquipment, equipTrainerEquipment, enhanceEquipment,
-  socketRune, repairRune,
+  socketRune, repairRune, sellToSystem,
 } from "../services/content.js";
 import { fetchMe } from "../services/auth.js";
 import { showProfile } from "./auth.js";
@@ -147,9 +147,39 @@ function itemsTab() {
     id.append(txt);
     const side = el("div", "inv-actions");
     side.append(badge(KIND_LABEL[it.kind] ?? it.kind), el("span", "inv-qty", `×${it.qty}`));
+    side.append(...itemSellControls(it));
     row.append(id, side);
     els.body.appendChild(row);
   }
+}
+
+/**
+ * Sell-to-system control for one item stack (Phase 8): a qty picker (only
+ * when the stack is more than 1) + a price-labeled Sell button, or nothing
+ * when the def's `sellGold` is 0 (not sellable to the system). Confirmed via
+ * a native confirm dialog, same precedent as the Adventure panel's Abandon
+ * button.
+ */
+function itemSellControls(it) {
+  if (!it.sellGold) return [];
+  let qtyInput = null;
+  if (it.qty > 1) {
+    qtyInput = el("input", "inv-select inv-qty-input");
+    qtyInput.type = "number";
+    qtyInput.min = "1";
+    qtyInput.max = String(it.qty);
+    qtyInput.value = "1";
+  }
+  const sellBtn = button(`Sell (${it.sellGold}🪙${it.qty > 1 ? " ea" : ""})`, "btn ghost inv-small", async () => {
+    const qty = qtyInput ? Math.max(1, Math.min(it.qty, Number(qtyInput.value) || 1)) : 1;
+    if (!window.confirm(`Sell ${qty}× ${it.name} for ${it.sellGold * qty} 🪙?`)) return;
+    await runSell(
+      sellBtn,
+      () => sellToSystem({ kind: "item", defId: it.defId, qty }),
+      `Sold ${qty}× ${it.name} for ${it.sellGold * qty} 🪙`,
+    );
+  });
+  return qtyInput ? [qtyInput, sellBtn] : [sellBtn];
 }
 
 // ---------- equipment tab ----------
@@ -188,9 +218,28 @@ function equipmentRow(e) {
   side.append(...equipControls(e));
   const enhanceCtl = enhanceControl(e);
   if (enhanceCtl) side.append(enhanceCtl);
+  const sellCtl = equipmentSellControl(e);
+  if (sellCtl) side.append(sellCtl);
 
   row.append(id, side);
   return row;
+}
+
+/**
+ * Sell-to-system control for one equipment instance (Phase 8): only shown
+ * when the piece is in the bag (unequipped) and its def's `sellGold` is
+ * nonzero — an equipped piece must be unequipped first, same guard the
+ * server enforces. Confirmed via a native confirm dialog.
+ */
+function equipmentSellControl(e) {
+  if (!e.sellGold) return null;
+  const equipped = e.domain === "trainer" ? e.equippedSlot != null : e.monsterId != null;
+  if (equipped) return null;
+  const btn = button(`Sell (${e.sellGold}🪙)`, "btn ghost inv-small", async () => {
+    if (!window.confirm(`Sell ${e.name} for ${e.sellGold} 🪙?`)) return;
+    await runSell(btn, () => sellToSystem({ kind: "equipment", id: e.id }), `Sold ${e.name} for ${e.sellGold} 🪙`);
+  });
+  return btn;
 }
 
 /** Equip/unequip controls: a monster picker + Equip/Unequip for monster-domain
@@ -273,6 +322,26 @@ async function runAction(btn, action, appliedInside = false) {
   }
 }
 
+/**
+ * Run a sell-to-system action ({gold, inventory} response, same shape as
+ * enhance()/repair()): apply the refreshed inventory, refresh the header's
+ * gold chip, and surface the given success message — or the server's error,
+ * same pattern as runAction().
+ */
+async function runSell(btn, action, successMsg) {
+  btn.disabled = true;
+  els.msgs.innerHTML = "";
+  try {
+    const { inventory } = await action();
+    applyInventory(inventory);
+    refreshProfile(); // fire-and-forget, mirrors gold shown by farm.js's showProfile()
+    pushMsg(successMsg);
+  } catch (e) {
+    pushMsg(e.message, true);
+    btn.disabled = false;
+  }
+}
+
 // ---------- runes tab ----------
 
 function runesTab() {
@@ -302,9 +371,27 @@ function runeRow(r) {
   side.append(...socketControls(r));
   const repairCtl = repairControl(r);
   if (repairCtl) side.append(repairCtl);
+  const sellCtl = runeSellControl(r);
+  if (sellCtl) side.append(sellCtl);
 
   row.append(id, side);
   return row;
+}
+
+/**
+ * Sell-to-system control for one rune instance (Phase 8): only shown when
+ * unsocketed and its def's `sellGold` is nonzero — broken runes ARE
+ * sellable (same allowance as the marketplace's rune escrow), only "still
+ * socketed" hides the button. Confirmed via a native confirm dialog.
+ */
+function runeSellControl(r) {
+  if (!r.sellGold) return null;
+  if (r.monsterId != null) return null;
+  const btn = button(`Sell (${r.sellGold}🪙)`, "btn ghost inv-small", async () => {
+    if (!window.confirm(`Sell ${r.name} for ${r.sellGold} 🪙?`)) return;
+    await runSell(btn, () => sellToSystem({ kind: "rune", id: r.id }), `Sold ${r.name} for ${r.sellGold} 🪙`);
+  });
+  return btn;
 }
 
 /** Socket/unsocket controls: a monster picker + Socket button (hidden while

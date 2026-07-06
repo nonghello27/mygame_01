@@ -50,7 +50,11 @@ export async function listMonstersByTrainer(sql, trainerId) {
  * Every "unassigned" (trainer_id IS NULL) monster instance — a monster
  * detached from an account (see 012_monster_release.sql) that still exists,
  * with its grown attributes and skills intact, but isn't on any roster.
- * Same SELECT shape as listMonstersByTrainer, just the WHERE flipped.
+ * Same SELECT shape as listMonstersByTrainer, just the WHERE flipped. Excludes
+ * monsters escrowed in an OPEN marketplace listing (013_marketplace.sql,
+ * Phase 8): a listed monster is also `trainer_id IS NULL` while it's for
+ * sale, and must never surface here for an admin to Attach out from under
+ * the listing — see isMonsterEscrowed()'s use in attachMonsterToTrainer.
  */
 export async function listUnassignedMonsters(sql) {
   const rows = await sql`
@@ -68,6 +72,10 @@ export async function listUnassignedMonsters(sql) {
              '[]'::json) AS skills
     FROM monsters m JOIN monster_species s ON s.id = m.species_id
     WHERE m.trainer_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM marketplace_listings ml
+        WHERE ml.kind = 'monster' AND ml.ref_id = m.id AND ml.status = 'open'
+      )
     ORDER BY m.id`;
   return rows.map(shape);
 }
@@ -207,13 +215,21 @@ export async function returnMonsterGearToBag(sql, monsterId) {
 /**
  * Attach an unassigned (trainer_id IS NULL) monster to a trainer's account.
  * ONE guarded UPDATE — the WHERE's `trainer_id IS NULL` is the whole claim,
- * so two admins racing to attach the same orphan can't both win. Returns
- * true when the claim won, false otherwise (already owned, or unknown id).
+ * so two admins racing to attach the same orphan can't both win. Also
+ * excludes a monster escrowed in an OPEN marketplace listing (Phase 8): that
+ * monster is `trainer_id IS NULL` too while listed, but attaching it would
+ * hijack a live listing out from under its seller. Returns true when the
+ * claim won, false otherwise (already owned, escrowed, or unknown id — the
+ * service tells those apart via isMonsterEscrowed for the 409 message).
  */
 export async function attachMonster(sql, trainerId, monsterId) {
   const rows = await sql`
     UPDATE monsters SET trainer_id = ${trainerId}
     WHERE id = ${monsterId} AND trainer_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM marketplace_listings ml
+        WHERE ml.kind = 'monster' AND ml.ref_id = monsters.id AND ml.status = 'open'
+      )
     RETURNING id`;
   return rows.length > 0;
 }
@@ -231,4 +247,18 @@ export async function getMonsterDetachDiagnostic(sql, monsterId) {
            EXISTS (SELECT 1 FROM formation_slots fs WHERE fs.monster_id = m.id) AS in_formation
     FROM monsters m WHERE m.id = ${monsterId}`;
   return rows[0] || null;
+}
+
+/**
+ * Is this unassigned monster currently escrowed in an OPEN marketplace
+ * listing (Phase 8, 013_marketplace.sql)? Diagnostics only — attachMonster()'s
+ * guarded UPDATE is the real gate (it already excludes escrowed monsters);
+ * this is what turns a lost attach claim into a specific 409 instead of the
+ * generic "already owned or does not exist".
+ */
+export async function isMonsterEscrowed(sql, monsterId) {
+  const rows = await sql`
+    SELECT 1 FROM marketplace_listings ml
+    WHERE ml.kind = 'monster' AND ml.ref_id = ${monsterId} AND ml.status = 'open'`;
+  return rows.length > 0;
 }

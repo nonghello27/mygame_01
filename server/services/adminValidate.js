@@ -343,19 +343,24 @@ function optStr(v, label, { max = 200 } = {}) {
   return str(v, label, { max });
 }
 
-/** @returns {{id:string, kind:string, name:string, description:(string|null)}} */
+/** @returns {{id:string, kind:string, name:string, description:(string|null),
+ *   sellGold:number}} */
 export function validateItem(input) {
   return {
     id: str(input.id, "item id", { pattern: /^it_[a-z0-9_]+$/ }),
     kind: oneOf(input.kind, ITEM_KINDS, "kind"),
     name: str(input.name, "item name"),
     description: optStr(input.description, "description"),
+    // Phase 8 — per-unit instant sell-to-system price; 0 (the default when
+    // absent) means "not sellable to the system", the marketplace-only floor.
+    sellGold: int(input.sellGold ?? 0, "sell gold", { min: 0, max: 1_000_000 }),
   };
 }
 
 /**
  * @returns {{id:string, domain:string, slot:string, name:string,
- *   description:(string|null), effects:object[], enhance:(object|null)}}
+ *   description:(string|null), effects:object[], enhance:(object|null),
+ *   sellGold:number}}
  */
 export function validateEquipment(input) {
   const domain = oneOf(input.domain, EQUIP_DOMAINS, "domain");
@@ -368,6 +373,9 @@ export function validateEquipment(input) {
     description: optStr(input.description, "description"),
     effects: validateBattleStartEffects(input.effects, "effects", true),
     enhance: null,
+    // Phase 8 — per-unit instant sell-to-system price; 0 (the default when
+    // absent) means "not sellable to the system", the marketplace-only floor.
+    sellGold: int(input.sellGold ?? 0, "sell gold", { min: 0, max: 1_000_000 }),
   };
   if (input.enhance !== undefined && input.enhance !== null) {
     onlyKeys(input.enhance, ["maxLevel", "goldPerLevel", "material"], "enhance");
@@ -395,7 +403,7 @@ export function validateEquipment(input) {
 
 /**
  * @returns {{id:string, name:string, description:(string|null), effects:object[],
- *   maxCharges:number, repairGold:number}}
+ *   maxCharges:number, repairGold:number, sellGold:number}}
  */
 export function validateRune(input) {
   return {
@@ -405,6 +413,9 @@ export function validateRune(input) {
     effects: validateRuneEffects(input.effects, "effects"),
     maxCharges: int(input.maxCharges, "max charges", { min: 1, max: 100 }),
     repairGold: int(input.repairGold, "repair gold", { min: 0, max: 1_000_000 }),
+    // Phase 8 — per-unit instant sell-to-system price; 0 (the default when
+    // absent) means "not sellable to the system", the marketplace-only floor.
+    sellGold: int(input.sellGold ?? 0, "sell gold", { min: 0, max: 1_000_000 }),
   };
 }
 

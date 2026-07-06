@@ -52,3 +52,6 @@
 
 /* Phase 7.3: socket/repair controls + a broken-rune badge tint. */
 .inv-broken{color:var(--hp-low);border-color:var(--hp-low)}
+
+/* Phase 8: sell-to-system controls (a qty picker for item stacks). */
+.inv-qty-input{width:56px;padding:6px 7px;font-size:12px}

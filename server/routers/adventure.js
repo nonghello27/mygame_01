@@ -1,4 +1,4 @@
-// The 6th of now-6 domain-grouped Vercel serverless functions (Hobby plan
+// The 6th of now-7 domain-grouped Vercel serverless functions (Hobby plan
 // caps a deployment at 12 — this is the "genuinely new domain" case from
 // CLAUDE.md §5, anticipated by docs/ARCHITECTURE.md's "not yet built" list:
 // `POST /api/adventure/*`). Owns every /api/adventure/* URL — session

@@ -552,7 +552,21 @@ POST /api/adventure/abandon   {} → give up the active run early (guarded
                               404 if no active session
 
 # not yet built (future domains, still under the 12-function cap)
-GET  /api/market  POST /api/market/*    listings / buy / sell
+GET  /api/market/browse       search/filter listings (kind, text, price
+                              range, paging) — not the bare /api/market: a
+                              Vercel catch-all [...route].js can't match its
+                              own bare prefix (api/activities.js precedent)
+POST /api/market/list         { kind, refId, qty?, price } → escrow the
+                              good, create a listing
+POST /api/market/buy          { listingId } → transfer gold + good exactly
+                              once, guarded by status='open' and balance
+POST /api/market/cancel       { listingId } → close an open listing, return
+                              the escrowed good to the seller
+POST /api/trainer/inventory/sell  { kind:'item'|'equipment'|'rune',
+                              defId?/id?, qty? } → instant-sell straight to
+                              the system at the def's fixed `sell_gold`
+                              price (grouped under the trainer domain, not
+                              a new function); returns { gold, inventory }
 ```
 
 Handler contract: authenticate → load DB state → validate the client's

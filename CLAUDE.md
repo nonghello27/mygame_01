@@ -31,8 +31,8 @@ The vision and plans live in `docs/` — treat them as part of this file:
   (equipment: equip, enhance, engine integration), 7.3 (runes: socket,
   consume, break, repair), and 7.4 (acquisition: Summon Hall + Adventure,
   both with a live panel now) are all code complete. Later phases were
-  renumbered 2026-07-04: the marketplace (formerly sub-phase 7.5) is now
-  **Phase 8 — next up**; guilds, GVG & tournaments are Phase 9; chat,
+  renumbered 2026-07-04: Phase 8 (marketplace + sell-to-system) is code
+  complete; guilds, GVG & tournaments (Phase 9) are next up; chat,
   notifications & the photo quest are Phase 10.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
@@ -64,13 +64,13 @@ is the layout that is real today.
 
 - **Vanilla JavaScript, ES modules.** No framework — intentional; keep
   dependencies minimal and the codebase approachable.
-- **Vite** for dev server + build; deploys as a static site + **6 Vercel
+- **Vite** for dev server + build; deploys as a static site + **7 Vercel
   serverless functions, grouped by domain** (`api/auth/`, `api/battle/`,
-  `api/trainer/`, `api/activities.js`, `api/admin/`, `api/adventure/` —
-  Hobby plan caps deployments at 12 functions; each domain internally routes
-  multiple endpoints via a table in `server/routers/`, so growth inside a
-  domain never costs a new function; the Vite dev middleware calls the
-  matching `server/routers/<domain>.js` directly).
+  `api/trainer/`, `api/activities.js`, `api/admin/`, `api/adventure/`,
+  `api/market/` — Hobby plan caps deployments at 12 functions; each domain
+  internally routes multiple endpoints via a table in `server/routers/`, so
+  growth inside a domain never costs a new function; the Vite dev middleware
+  calls the matching `server/routers/<domain>.js` directly).
 - **Neon Postgres** via `@neondatabase/serverless` (connection in `server/db.js`).
 - **CSS + inline SVG + PNG sprite sheets** for art; motion is CSS keyframes.
 
@@ -94,23 +94,26 @@ per roadmap phase, don't big-bang rename.)
 ```
 ├── index.html              # static shell + DOM the app mounts into
 ├── vite.config.js          # base:'./'; routes /api/<domain>/* to server/routers/<domain>.js in dev
-├── api/                    # 6 serverless functions (Vercel Hobby caps at 12), one per domain:
+├── api/                    # 7 serverless functions (Vercel Hobby caps at 12), one per domain:
 │   ├── auth/[...route].js      # /api/auth/*      -> server/routers/auth.js
 │   ├── battle/[...route].js    # /api/battle/*     -> server/routers/battle.js
 │   ├── trainer/[...route].js   # /api/trainer/*    -> server/routers/trainer.js
 │   ├── activities.js           # /api/activities   -> server/routers/activities.js (plain file: one route)
 │   ├── admin/[...route].js     # /api/admin/*      -> server/routers/admin.js
-│   └── adventure/[...route].js # /api/adventure/*  -> server/routers/adventure.js
+│   ├── adventure/[...route].js # /api/adventure/*  -> server/routers/adventure.js
+│   └── market/[...route].js    # /api/market/*     -> server/routers/market.js
 ├── server/                 # server-only logic (imported by api/, never by src/)
 │   ├── routers/            # one file per domain: createRouter({...}) table (pathname→
 │   │                       # {METHOD:handler}) + export route(); auth, battle, trainer,
-│   │                       # activities, admin, adventure — matches the api/ entries 1:1
+│   │                       # activities, admin, adventure, market — matches the api/
+│   │                       # entries 1:1
 │   ├── routes/             # one handler per endpoint (happy path + httpError throws):
 │   │                       # auth.js (login/logout), me, classes, activities, match,
 │   │                       # battle, progression, trainerSkills, formation, ladder,
-│   │                       # inventory, equipment.js (equip, enhance), runes.js (socket,
-│   │                       # repair), summon.js (summonHall, summon), adventure.js (state,
-│   │                       # start, move, abandon), admin.js (master +
+│   │                       # inventory (+ its sell), equipment.js (equip, enhance),
+│   │                       # runes.js (socket, repair), summon.js (summonHall, summon),
+│   │                       # adventure.js (state, start, move, abandon), market.js
+│   │                       # (browse, mine, list, buy, cancel), admin.js (master +
 │   │                       # classes/skills/species/jobs/items/equipment/runes/summons/
 │   │                       # adventures CRUD + grant + trainers list/monsters read+mint/
 │   │                       # attach/detach)
@@ -120,16 +123,19 @@ per roadmap phase, don't big-bang rename.)
 │   ├── repos/              # SQL: trainers, species, monsters, matches, activities, admin,
 │   │                       # progression (expertises/trainer_skill_defs/trainer_skills),
 │   │                       # pvp (formations, seasons, rank_entries, matchmaking),
-│   │                       # inventory (items/equipment/runes: grant + atomic consume),
-│   │                       # equipment (equip/unequip both domains, claim-first-then-pay
-│   │                       # enhance + compensating revert/refund, equipped-gear reads),
-│   │                       # runes (socket/unsocket guarded UPDATE, claim-first-then-pay
+│   │                       # inventory (items/equipment/runes: grant + atomic consume,
+│   │                       # plus sell-to-system's guarded consume/DELETE), equipment
+│   │                       # (equip/unequip both domains, claim-first-then-pay enhance +
+│   │                       # compensating revert/refund, equipped-gear reads), runes
+│   │                       # (socket/unsocket guarded UPDATE, claim-first-then-pay
 │   │                       # repair + revert, listSocketedRunes/applyRuneWear for battle
 │   │                       # snapshots + post-battle durability), summons.js (enabled-
 │   │                       # banner list, one banner's full detail incl. enabled, audit
 │   │                       # insertSummon), adventures.js (enabled-route list, one route's
 │   │                       # full detail incl. enabled, one-active-session read, claim
-│   │                       # advance/abandon, loot-log append, party busy-lock claim/release)
+│   │                       # advance/abandon, loot-log append, party busy-lock claim/
+│   │                       # release), market.js (listing CRUD + guarded escrow/assign
+│   │                       # per kind, browse/mine enrichment)
 │   └── services/           # matches.js (applyOrder gate + PVP Elo on resolve, gathers
 │                           # equipped monster gear + socketed runes into toLane()'s
 │                           # snapshot, settles rune durability from the engine's runeUse
@@ -138,19 +144,23 @@ per roadmap phase, don't big-bang rename.)
 │                           # adminValidate.js (pure grammar), progression.js (expertise/
 │                           # learn-slot use-cases), pvp.js (defense formation, lazy season
 │                           # rollover, matchmaking), inventory.js (grant/consume as atomic
-│                           # claim-style statements for items/equipment/runes), equipment.js
-│                           # (equip/unequip use-cases + enhance's claim-first-then-pay flow),
-│                           # runes.js (socket/unsocket + repair use-cases, same shape),
-│                           # summon.js (performSummon: pluggable REQUIREMENT_CHECKERS
-│                           # pay/refund per cost leg, seeded rollSummon() + mint +
-│                           # audit insert, compensating refund/unmint on failure),
-│                           # adventure.js (getState/start/move/abandon: lazy session expiry,
-│                           # party busy-claim with compensating release, closed
-│                           # NODE_RESOLVERS registry dispatching chest/gather/battle — battle
-│                           # calls resolveBattle() directly, no matches row)
+│                           # claim-style statements for items/equipment/runes, plus
+│                           # sellToSystem's claim-first-then-pay consume/DELETE + credit
+│                           # with compensating restore), equipment.js (equip/unequip
+│                           # use-cases + enhance's claim-first-then-pay flow), runes.js
+│                           # (socket/unsocket + repair use-cases, same shape), summon.js
+│                           # (performSummon: pluggable REQUIREMENT_CHECKERS pay/refund per
+│                           # cost leg, seeded rollSummon() + mint + audit insert,
+│                           # compensating refund/unmint on failure), adventure.js
+│                           # (getState/start/move/abandon: lazy session expiry, party
+│                           # busy-claim with compensating release, closed NODE_RESOLVERS
+│                           # registry dispatching chest/gather/battle — battle calls
+│                           # resolveBattle() directly, no matches row), market.js
+│                           # (list/buy/cancel claim-first-then-pay with LIFO
+│                           # compensations after a won claim)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
-│   │                       # up to 011_adventures.sql as of Phase 7.4)
+│   │                       # up to 013_marketplace.sql as of Phase 8)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
@@ -169,7 +179,7 @@ per roadmap phase, don't big-bang rename.)
     ├── main.js             # ENTRY: imports CSS, inits modules, wires buttons
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm | admin
-    │                       # | pvp | trainer | inventory | summon | adventure
+    │                       # | pvp | trainer | inventory | summon | adventure | market
     ├── data/               # seed content: classes, sprites, units, skills, jobs, expertises,
     │                       # items, equipment, runes, summons, adventures
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js, admin.js
@@ -181,7 +191,8 @@ per roadmap phase, don't big-bang rename.)
     │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
     │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),
     │                       # summon (✨ Summon Hall panel: banner cards + pull), adventure
-    │                       # (🗺 panel: route list + party picker, step options, run log)
+    │                       # (🗺 panel: route list + party picker, step options, run log),
+    │                       # marketplace (🏪 panel: browse + my listings + list-a-good picker)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -430,6 +441,52 @@ node's outcome is a text summary (win/loss, an optional fall count read
 straight off `t:"fall"` events) — the event log itself only rides the
 response for a future replay feature.
 
+Marketplace (Phase 8): `marketplace_listings` is an instance table
+referencing another owned instance (an item stack, an equipment piece, a
+rune, or a monster) rather than a master def — a listing escrows a real
+good, it doesn't mint one. Listing removes the good from usable inventory
+the moment it lists: items split `qty` off the stack (item stacks have no
+instance row to detach); equipment/runes detach to `trainer_id = NULL`
+(013 drops `NOT NULL` on `trainer_equipment`/`monster_equipment`/`runes`'
+`trainer_id`, extending `012_monster_release.sql`'s "unassigned instance"
+precedent for monsters to the other instance tables); monsters detach to
+that same unassigned state, with every obligation (busy, in the defense
+formation, still-equipped gear, still-socketed runes) folded into ONE
+guarded UPDATE (`escrowMonster` in `server/repos/market.js`) rather than a
+precheck-then-act race. `buy` is a claim (`open → sold`, `seller_id <>
+buyer` folded into the claim's own WHERE so a self-purchase can never win
+it) → a guarded gold debit on the buyer → an unconditional gold credit on
+the seller → ownership transfer to the buyer, with LIFO compensations
+(undo the seller credit, refund the buyer's debit, revert the claim back
+to open) if anything after the won claim fails. `cancel` is the mirror:
+claim (`open → cancelled`, guarded on `seller_id = caller`) → return the
+good to the seller → a compensating revert of the claim if the return
+fails. `GET /api/market/browse` (search/filter by kind/text/price range,
+paged) deliberately lives one path segment below the bare `/api/market`
+prefix — a Vercel catch-all `[...route].js` never matches its own bare
+prefix, the same reason `api/activities.js` stays a plain top-level file
+for its one bare route; `GET /api/market/mine` returns every listing the
+caller has ever made, any status. The admin Trainers tab's
+unassigned-monster pool and its Attach action both exclude monsters
+escrowed in an open listing (`server/repos/monsters.js`), so an admin
+can't pull a live listing's monster out from under its seller. A second,
+unrelated sell path rides the existing `trainer` inventory domain instead
+of the new market one: `POST /api/trainer/inventory/sell {kind:'item'|
+'equipment'|'rune', defId?/id?, qty?}` is the instant, fixed-price
+sell-to-system — a guarded consume (items: a `qty`-guarded stack
+decrement; equipment/runes: a guarded DELETE requiring the piece be
+unequipped/unsocketed) followed by a gold credit at that def's
+`sell_gold` (0 = not system-sellable — the natural price floor every
+marketplace listing for that def should sit above), with a compensating
+restore of the removed good if the credit leg loses a race; monsters have
+no `sell_gold` column and are never sellable this way — the marketplace is
+their only sale path. The 🏪 Marketplace panel (`src/ui/marketplace.js`)
+is two tabs — Browse (search/filter + Buy) and My Listings (Cancel, a
+sold/cancelled history, and a "Sell something" picker over the trainer's
+own bag/roster that calls `list`) — and the 🎒 Inventory panel's three
+tabs each grow a price-labeled Sell button wherever a def's `sellGold` is
+nonzero and the piece is currently unequipped/unsocketed.
+
 ## 4. Recipes for TODAY's code
 
 - **Add a species / skill / class / job (live):** admin console (⚙ button)
@@ -456,7 +513,12 @@ response for a future replay feature.
   row in `src/data/items.js` / `equipment.js` / `runes.js` + `npm run
   db:seed` for content meant to ship with the repo. Equipment/rune `effects`
   must stay within the `battle_start`/`perm_stat` grammar (`perLevel`
-  allowed) until a later phase widens the op set.
+  allowed) until a later phase widens the op set. Every def also carries a
+  `sellGold` (Phase 8, admin-editable live like every other field in the
+  same tab): the flat per-unit price `POST /api/trainer/inventory/sell`
+  credits when a player instant-sells one to the system; 0 (the default)
+  means not system-sellable at all — the marketplace remains the only way
+  to turn it into gold.
 - **Add a summon banner (live):** admin console (✨ Summons tab) — validated
   writes straight to `summon_defs`, no redeploy. Or a row in
   `src/data/summons.js` + `npm run db:seed` for content meant to ship with
@@ -498,7 +560,7 @@ response for a future replay feature.
   `api/<domain>/[...route].js` + `server/routers/<domain>.js` — the only
   time to add a file under `api/` (Vercel deploys each top-level `api/`
   entry as another serverless function, and the Hobby plan caps a
-  deployment at 12; today's 6 domains leave room for ~3 more).
+  deployment at 12; today's 7 domains leave room for ~2 more).
 - Faction colors are synced in two places: CSS vars `--a`/`--b` in
   `styles/base.css` and `COLORS` in `src/config.js`. Update both.
 - Cutscene keyframes are authored against a **2.1s timeline, impact ~66%**;
@@ -527,14 +589,20 @@ response for a future replay feature.
   payouts are the one lazy/passive exception. An Adventure battle-node win is
   the one direct exception: it can mint a caught monster (`catchPct` roll) on
   top of the run's loot. Monsters have no level/exp of their own — training
-  raises attributes directly. Gold has its first sink now (the Summon Hall)
-  but still nothing else to buy until Phase 8's marketplace. Acquisition is
-  no longer admin-grant-only — it now has TWO player-facing paths: the ✨
-  Summon Hall mints a monster per pull (gold/item cost), and the 🗺 Adventure
-  panel sends a 3-monster party down a route for loot items and a chance at a
-  caught monster per run; the admin-gated `POST /api/admin/grant` remains for
-  items/equipment/runes (and for seeding summon scrolls / adventure loot)
-  until the marketplace (Phase 8) widens that path too.
+  raises attributes directly. Gold now circulates player-to-player, not just
+  faucet → sink: the 🏪 Marketplace (Phase 8) lets a trainer buy any listed
+  item/equipment/rune/monster from another trainer at their own asking
+  price, and the 🎒 Inventory panel's instant sell-to-system path turns
+  unwanted items/equipment/runes straight back into gold at a fixed per-def
+  floor price (`sellGold`, 0 = not sellable that way) — monsters are
+  marketplace-only, never system-sellable. Acquisition still has its two
+  Phase 7.4 player-facing paths (the ✨ Summon Hall mints a monster per pull;
+  the 🗺 Adventure panel sends a 3-monster party down a route for loot and a
+  chance at a caught monster), and the marketplace is now a third way to
+  acquire — but the admin-gated `POST /api/admin/grant` remains the only
+  FAUCET putting items/equipment/runes into the economy in the first place
+  (besides Adventure loot); the marketplace and sell-to-system only move
+  gold/goods that already exist, they never mint new ones.
 - Opponents in a `mode:"pvp"` match ARE real trainers' saved defense
   formations now (matched by rating proximity); free matches (default mode)
   are still random species teams. No sound.

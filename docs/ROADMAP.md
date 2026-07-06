@@ -630,7 +630,7 @@ replayable seed; a full adventure run yields loot in the inventory (and any
 catch in the roster) and the party unlocks correctly, including on abandon —
 both loops playable end to end from the UI, no direct API calls required.
 
-## Phase 8 — Marketplace ← NEXT UP
+## Phase 8 — Marketplace ✅ CODE COMPLETE (2026-07-06)
 
 The first player-to-player economy: gold finally circulates between trainers
 instead of flowing only faucet → sink. Promoted from its original slot as
@@ -638,45 +638,96 @@ sub-phase 7.5 (2026-07-04 renumbering): it is the one place that needs real
 transactional care, and it depends on all of Phase 7 being live (goods worth
 selling now exist via Summon Hall and Adventure), so it stands alone.
 
-- `012_marketplace.sql`: `marketplace_listings` (seller, kind
+There are now TWO ways to sell. The **marketplace** (below) is
+player-to-player: a trainer picks their own price and waits for a buyer.
+**Sell-to-system** is the new instant path, riding the existing 🎒 Inventory
+panel/trainer domain rather than the new market domain: a trainer sells an
+item stack (qty picked), an unequipped equipment piece, or an unsocketed
+rune straight to the system for a fixed default price set per master def —
+deliberately the low floor, not a place to shop for a good deal. Every
+sellable def's system price is the natural price floor a marketplace listing
+sits above; nobody would list below it. Monsters have no system price — they
+are marketplace-only.
+
+- ✅ `013_marketplace.sql`: `marketplace_listings` (seller, kind
   `item|equipment|rune|monster`, ref id, qty, price, status
   `open|sold|cancelled`, created/closed timestamps, buyer on sale). Listing
   **escrows** the good — removed from usable inventory at list time (items:
   qty split off the stack; equipment: must be unequipped; runes: must be
-  unsocketed; monsters: busy-style lock so they can't fight/work/adventure
-  while listed); cancel returns it. Escrow means a sold good can never have
-  been used or mutated between list and buy.
-- Monsters are listable only when free of obligations: not busy, not in the
-  defense formation, equipment and runes stripped first — validated
+  unsocketed; monsters: detached to the unassigned state, see below);
+  cancel returns it. Escrow means a sold good can never have
+  been used or mutated between list and buy. The same migration adds
+  `sell_gold INT NOT NULL DEFAULT 0` to `item_defs`, `equipment_defs`, and
+  `rune_defs` (0 = not sellable to the system; otherwise the per-unit
+  instant-sale price — balance data, seeded from `src/data/*.js` and
+  editable in the admin console), and drops NOT NULL on
+  `trainer_equipment.trainer_id`, `monster_equipment.trainer_id`, and
+  `runes.trainer_id` so a listed instance can be escrowed as ownerless
+  (`trainer_id = NULL`), the same "unassigned" precedent
+  `012_monster_release.sql` set for monsters. Monster escrow reuses
+  that unassigned state too (no busy-lock needed): listing detaches
+  (`trainer_id = NULL`), cancel re-attaches to the seller, buy attaches to
+  the buyer; the admin Trainers tab's unassigned pool must exclude monsters
+  referenced by open listings.
+- ✅ Monsters are listable only when free of obligations: not busy, not in
+  the defense formation, equipment and runes stripped first — validated
   server-side, 409 naming what blocks it (same guarded-delete spirit as
   admin CRUD).
-- New `api/market/[...route].js` domain + `server/routers/market.js` (the
+- ✅ New `api/market/[...route].js` domain + `server/routers/market.js` (the
   7th serverless function — the one sanctioned reason to add a top-level
-  `api/` entry, CLAUDE.md §5): `GET /api/market` (search/filter: kind, text,
-  price range, paging), `POST /api/market/list` / `buy` / `cancel`. Handlers
-  stay thin over `server/services/market.js` + `server/repos/market.js`.
-- Concurrency: prefer the codebase's one-statement claim CTE (mark sold +
-  debit buyer + credit seller + transfer ownership, guarded by
-  `status = 'open'` and `gold >= price`) — it's the same exactly-once shape
+  `api/` entry, CLAUDE.md §5): `GET /api/market/browse` (search/filter: kind,
+  text, price range, paging — not the bare `/api/market`: a Vercel catch-all
+  `[...route].js` never matches its own bare prefix, the same reason
+  `api/activities.js` stays a plain top-level file for its one bare route, so
+  browse lives one path segment down), `POST /api/market/list` / `buy` /
+  `cancel`. Handlers stay thin over `server/services/market.js` +
+  `server/repos/market.js`.
+- ✅ Sell-to-system endpoint: `POST /api/trainer/inventory/sell {kind:'item'|
+  'equipment'|'rune', defId?/id?, qty?}` — grouped under the existing
+  trainer domain (one more row in `server/routers/trainer.js`, not a new
+  serverless function, CLAUDE.md §5). Same claim-first shape as the rest of
+  inventory: items decrement the owned stack guarded by `qty >= amount`;
+  equipment/runes are a guarded DELETE requiring the piece be unequipped/
+  unsocketed; either way, a won claim is followed by a gold credit, with a
+  compensating restore of the removed good if the credit leg loses a race.
+  Returns the refreshed inventory + gold. Monsters are not sellable to the
+  system — marketplace only.
+- ✅ Concurrency: the codebase's one-statement claim CTE shape throughout
+  (mark sold + debit buyer + credit seller + transfer ownership, guarded by
+  `status = 'open'` and `seller_id <> buyer`) — the same exactly-once shape
   as activity settlement; a losing leg after a won claim gets a compensating
-  revert, same as enhance/repair/summon. Caveat: the Neon **HTTP driver
-  can't run interactive transactions**; if a flow truly needs
-  multi-statement `SELECT FOR UPDATE`, that endpoint must use the websocket
-  `Pool` client.
-- Self-purchase is rejected; price bounds validated server-side (positive
-  integer, sane cap). Consider a small listing fee or sale tax as a gold
-  sink — balance data, not code.
-- UI: a 🏪 Marketplace panel (same shell as Inventory/Summon/Adventure:
+  revert, same as enhance/repair/summon.
+- ✅ Self-purchase is rejected; price bounds validated server-side (positive
+  integer, sane cap).
+- ✅ UI: a 🏪 Marketplace panel (same shell as Inventory/Summon/Adventure:
   msgs + body, refresh-on-open) — catalog with search/filter + a "my
-  listings" management view (cancel buttons, sold history). All I/O through
-  `src/services/content.js` helpers, never direct fetch from `ui/`.
+  listings" management view (cancel buttons, sold history, and a
+  "Sell something" picker over the trainer's own bag/roster). All I/O
+  through `src/services/content.js` helpers, never direct fetch from `ui/`.
+  The 🎒 Inventory panel's three tabs (Items/Equipment/Runes) each grow a
+  price-labeled "Sell" control (a qty picker for item stacks), hidden when a
+  def's `sell_gold` is 0 or the piece is currently equipped/socketed — the
+  marketplace's "list an item" flow is the other sell path, reached from its
+  own panel.
+
+**Remaining (operator step):** run `npm run db:migrate` (013) and `npm run
+db:seed` (loads the seeded `sell_gold` values); then verify in a browser
+with two real accounts — list an item, an equipment piece, a rune, and a
+monster, and confirm each leaves the seller's usable inventory (bag/roster)
+the moment it's listed; buy each from the second account and confirm gold
+and the good transfer exactly once; cancel a listing and confirm the good
+returns to the seller; confirm a listed monster is blocked from work,
+battle, and adventure, and is hidden from the admin console's unassigned
+pool; sell an item to the system from the 🎒 panel and confirm gold credits
+exactly `sell_gold × qty`.
 
 **Done when:** with two real accounts, list → buy transfers gold and goods
 exactly once; a concurrent second buy answers 409; cancel restores the
 escrowed good; a listed monster can't be sent to work, battle, or adventure
-while escrowed.
+while escrowed; selling to the system credits exactly `sell_gold × qty`
+exactly once and the good is gone from the inventory.
 
-## Phase 9 — Guilds & GVG
+## Phase 9 — Guilds & GVG ← NEXT UP
 
 The first multi-trainer social structure, and the battle modes that need it.
 Tournaments ride in this phase too: they share the bracket/scheduling
@@ -688,7 +739,7 @@ Dependencies: Phase 6 (PVP defense formations are the unit of guild-war
 lineups; seasons/Elo are the precedent for war scoring) and Phase 8 (gold has
 real circulation, so guild creation can be a meaningful sink).
 
-- `013_guilds.sql`: `guilds` (unique name, description/emblem, leader id,
+- `014_guilds.sql`: `guilds` (unique name, description/emblem, leader id,
   created_at), `guild_members` (guild, trainer UNIQUE — one guild per
   trainer, role `leader|officer|member`, joined_at), `guild_applications`
   (or invite rows — pick one flow and keep it thin). Guilds are

@@ -14,6 +14,7 @@ import "./styles/trainer.css";
 import "./styles/inventory.css";
 import "./styles/summon.css";
 import "./styles/adventure.css";
+import "./styles/market.css";
 
 import { state, resetState, initContent, newMatch } from "./core/state.js";
 import { runBattle } from "./core/battle.js";
@@ -28,6 +29,7 @@ import { initTrainer } from "./ui/trainer.js";
 import { initInventory } from "./ui/inventory.js";
 import { initSummon } from "./ui/summon.js";
 import { initAdventure } from "./ui/adventure.js";
+import { initMarketplace } from "./ui/marketplace.js";
 
 const startBtn = document.getElementById("startBtn");
 const resetBtn = document.getElementById("resetBtn");
@@ -133,6 +135,7 @@ initTrainer();
 initInventory();
 initSummon();
 initAdventure();
+initMarketplace();
 // The landing/login screen owns the start: once the session is confirmed it
 // calls startSession(), which loads content and opens the first match.
 initAuth(startSession);

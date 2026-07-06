@@ -1,4 +1,4 @@
-// One of 6 domain routers behind the 6 Vercel serverless functions
+// One of 7 domain routers behind the 7 Vercel serverless functions
 // (Hobby plan caps a deployment at 12; grouping by domain keeps room to
 // grow). This table owns the `trainer` domain's URLs;
 // api/trainer/[...route].js (prod) and vite.config.js's dev middleware
@@ -28,13 +28,18 @@
 // GET lists the enabled Summon Hall banners, POST pulls one — the first real
 // acquisition path (before this, only the admin-gated POST /api/admin/grant
 // could put anything in a trainer's inventory or roster).
+//
+// /api/trainer/inventory/sell (Phase 8) is the sell-to-system half of the
+// marketplace phase — one more row here rather than a new domain, riding the
+// existing inventory endpoint's precedent; the OTHER half (player-to-player
+// listings) is the new market domain (server/routers/market.js).
 
 import { createRouter } from "../http.js";
 import { me } from "../routes/me.js";
 import { classes } from "../routes/classes.js";
 import { progression } from "../routes/progression.js";
 import { trainerSkills } from "../routes/trainerSkills.js";
-import { inventory } from "../routes/inventory.js";
+import { inventory, sell } from "../routes/inventory.js";
 import { equip, enhance } from "../routes/equipment.js";
 import { socket, repair } from "../routes/runes.js";
 import { summonHall, summon } from "../routes/summon.js";
@@ -45,6 +50,7 @@ export const route = createRouter({
   "/api/trainer/progression": { GET: progression, POST: progression },
   "/api/trainer/skills": { POST: trainerSkills },
   "/api/trainer/inventory": { GET: inventory },
+  "/api/trainer/inventory/sell": { POST: sell },
   "/api/trainer/equipment/equip": { POST: equip },
   "/api/trainer/equipment/enhance": { POST: enhance },
   "/api/trainer/runes/socket": { POST: socket },

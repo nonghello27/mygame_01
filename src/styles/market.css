@@ -1,0 +1,80 @@
+/* Marketplace panel (src/ui/marketplace.js) — Phase 8. Same chrome family as
+   the inventory/arena panels: header, tab strip, msgs, body. */
+
+.market{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.market h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+}
+
+.mkt-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line)}
+.mkt-tab{
+  background:var(--bg-2);color:var(--muted);border:1px solid var(--line);
+  border-radius:9px;padding:7px 13px;font-size:12.5px;cursor:pointer;
+}
+.mkt-tab.active{color:var(--text);border-color:var(--line-strong);background:var(--panel-2)}
+
+.mkt-msgs{padding:0 14px}
+.mkt-msgs p{margin:9px 0 0;font-size:13px;color:var(--hp-good)}
+.mkt-msgs p.err{color:var(--hp-low)}
+
+.mkt-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:12px}
+.mkt-hint{margin:0;font-size:12.5px;color:var(--muted)}
+.mkt-subhead{
+  margin:4px 0 -2px;font-family:Rajdhani,sans-serif;font-weight:600;
+  letter-spacing:0.1em;text-transform:uppercase;font-size:11.5px;color:var(--muted);
+}
+
+/* filter bar */
+.mkt-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mkt-select{
+  background:var(--bg-2);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:7px 9px;font-size:12.5px;
+}
+.mkt-input{
+  background:var(--bg-2);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:7px 9px;font-size:12.5px;
+}
+.mkt-input-num{width:90px}
+
+.mkt-small{padding:8px 16px;font-size:12.5px;border-radius:9px}
+.mkt-small:disabled{opacity:0.5;cursor:default}
+
+/* listing cards */
+.mkt-list{display:flex;flex-direction:column;gap:10px}
+.mkt-card{
+  background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+}
+.mkt-card.mkt-history{opacity:0.85}
+.mkt-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mkt-price{
+  font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;color:var(--clash);
+  white-space:nowrap;
+}
+.mkt-good b{font-size:14px}
+.mkt-desc{margin:0;font-size:12.5px;color:var(--muted)}
+.mkt-mon-head{display:flex;align-items:center;gap:10px}
+.mkt-mon-emoji{font-size:24px;line-height:1}
+.mkt-mon-head small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+
+.mkt-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.mkt-seller{font-size:12px;color:var(--muted)}
+
+.mkt-badge{
+  font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:3px 9px;
+}
+.mkt-yours{color:var(--a-deep);border-color:var(--a-deep)}
+.mkt-broken{color:var(--hp-low);border-color:var(--hp-low)}
+
+/* sell-something picker */
+.mkt-sell{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.mkt-sell-form{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--bg-2);
+  border:1px solid var(--line);border-radius:11px;padding:10px 12px;width:100%;
+}

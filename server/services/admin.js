@@ -10,7 +10,7 @@ import { getTrainerById } from "../repos/trainers.js";
 import {
   listMonstersByTrainer, mintMonster, getMonsterById,
   listUnassignedMonsters, detachMonster, returnMonsterGearToBag, attachMonster,
-  getMonsterDetachDiagnostic,
+  getMonsterDetachDiagnostic, isMonsterEscrowed,
 } from "../repos/monsters.js";
 import { getSpeciesById } from "../repos/species.js";
 import {
@@ -301,7 +301,10 @@ export async function mintMonsterForTrainer(sql, { trainerId, speciesId }) {
  * nonexistent monsterId are indistinguishable by design (both just mean
  * "there is no unassigned monster with that id right now"), so this
  * deliberately does NOT pre-read to tell them apart — same 409-covers-both
- * shape as equipment's enhance()/runes' repair() claim failures.
+ * shape as equipment's enhance()/runes' repair() claim failures. The ONE
+ * exception (Phase 8): a monster escrowed in an open marketplace listing IS
+ * distinguishable and worth naming specifically, since silently refusing to
+ * say why would look like a bug rather than "someone is selling this".
  */
 export async function attachMonsterToTrainer(sql, { trainerId, monsterId }) {
   const id = Number(trainerId);
@@ -313,7 +316,12 @@ export async function attachMonsterToTrainer(sql, { trainerId, monsterId }) {
   if (!Number.isInteger(mId) || mId <= 0) throw httpError(400, "monsterId must be a monster's id");
 
   const claimed = await attachMonster(sql, id, mId);
-  if (!claimed) throw httpError(409, "monster is already owned or does not exist");
+  if (!claimed) {
+    if (await isMonsterEscrowed(sql, mId)) {
+      throw httpError(409, "monster is escrowed in a marketplace listing");
+    }
+    throw httpError(409, "monster is already owned or does not exist");
+  }
 
   return {
     trainer,

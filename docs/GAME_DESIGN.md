@@ -114,7 +114,11 @@ the player next looks (no live timers server-side — ARCHITECTURE §time).
    (<1%, 1–20%, 20–50%, 50–100%). This needs image-AI scoring, content
    moderation, and abuse handling. Parked at the end of the roadmap; design
    the quest system so the *scorer* is pluggable.
-6. **Marketplace** — list monsters/items for sale, buy from others (gold).
+6. **Marketplace** — two ways to sell: list a monster/item/equipment/rune at
+   your own price for another trainer to buy, or instant-sell an item,
+   equipment piece, or rune straight to the system from the inventory at a
+   fixed, low default price (monsters have no system price — marketplace
+   only).
 7. **Messages & notifications** — player-to-player and system messages.
 
 ## 7. Battle system (revised flow — the reference)

@@ -253,3 +253,59 @@ export async function moveAdventure(choice) {
 export async function abandonAdventure() {
   return postJson("/api/adventure/abandon", {});
 }
+
+/**
+ * Browse open marketplace listings (Phase 8): search/filter + paging, all
+ * server-side. Undefined/empty params are simply omitted from the querystring
+ * (the server fills in its own defaults).
+ * @param {{kind?:string, q?:string, minPrice?:number, maxPrice?:number,
+ *   limit?:number, offset?:number}} [params]
+ * @returns {Promise<{listings:object[]}>}
+ */
+export async function fetchMarket(params = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+  }
+  const query = qs.toString();
+  return getJson(query ? `/api/market/browse?${query}` : "/api/market/browse");
+}
+
+/** Every listing the caller has ever created, any status, newest first. */
+export async function fetchMyListings() {
+  return getJson("/api/market/mine");
+}
+
+/**
+ * List one owned good for sale. The good is escrowed immediately (removed
+ * from usable inventory/roster) — cancel returns it.
+ * @param {{kind:'item'|'equipment'|'rune'|'monster', refId?:number,
+ *   defId?:string, qty?:number, price:number}} body
+ * @returns {Promise<{listing:object, listings:object[]}>} the created listing
+ *   + the caller's refreshed listing list
+ */
+export async function createListing(body) {
+  return postJson("/api/market/list", body);
+}
+
+/** Buy one open listing — debits the buyer, credits the seller, transfers
+ *  the good, exactly once. Self-purchase and races both 409. */
+export async function buyListing(listingId) {
+  return postJson("/api/market/buy", { listingId });
+}
+
+/** Cancel one of the caller's own open listings, returning the escrowed good. */
+export async function cancelListing(listingId) {
+  return postJson("/api/market/cancel", { listingId });
+}
+
+/**
+ * Sell straight to the system for a fixed per-def price (`sellGold` on each
+ * inventory row) — the instant, no-buyer-needed alternative to a marketplace
+ * listing. Monsters are never sellable this way.
+ * @param {{kind:'item'|'equipment'|'rune', defId?:string, id?:number, qty?:number}} body
+ * @returns {Promise<{gold:number, inventory:object}>}
+ */
+export async function sellToSystem(body) {
+  return postJson("/api/trainer/inventory/sell", body);
+}

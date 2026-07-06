@@ -579,7 +579,7 @@ function itemsTab() {
   if (editing) return itemForm(editing);
   els.body.appendChild(toolbar("＋ New item", () => ({
     id: "", kind: data.enums.itemKinds[0] ?? "material", name: "", description: "",
-    ownedCount: 0, isNew: true,
+    sellGold: 0, ownedCount: 0, isNew: true,
   })));
 
   for (const it of data.itemDefs) {
@@ -590,6 +590,7 @@ function itemsTab() {
     id.append(txt);
     const side = el("div", "adm-actions");
     side.append(badge(it.kind));
+    side.append(badge(it.sellGold > 0 ? `sells for ${it.sellGold} 🪙` : "not sellable"));
     if (it.ownedCount > 0) side.append(badge(`${it.ownedCount} owned`));
     side.append(
       grantControl("item", it.id, it.name, true),
@@ -611,16 +612,19 @@ function itemForm(it) {
     kind: selectInput(data.enums.itemKinds, it.kind),
     name: textInput(it.name),
     description: textInput(it.description ?? "", "optional"),
+    sellGold: numInput(it.sellGold ?? 0, 0, 1_000_000),
   };
   f.id.disabled = !it.isNew;
 
   const grid = el("div", "adm-grid");
   grid.append(field("Id (permanent)", f.id), field("Kind", f.kind),
-    field("Name", f.name), field("Description", f.description));
+    field("Name", f.name), field("Description", f.description),
+    field("Sell gold (0 = not sellable)", f.sellGold));
 
   form.append(grid, formButtons(() => saveItem({
     id: f.id.value.trim(), kind: f.kind.value,
     name: f.name.value.trim(), description: f.description.value.trim() || null,
+    sellGold: +f.sellGold.value,
   }), "Item saved"));
   els.body.appendChild(form);
 }
@@ -634,7 +638,7 @@ function equipmentTab() {
       name: "", description: "",
       effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 10, perLevel: 2 }],
       enhance: { maxLevel: 5, goldPerLevel: 50 },
-      trainerOwned: 0, monsterOwned: 0, isNew: true,
+      sellGold: 0, trainerOwned: 0, monsterOwned: 0, isNew: true,
     };
   }));
 
@@ -647,6 +651,7 @@ function equipmentTab() {
     const side = el("div", "adm-actions");
     side.append(badge(`${eq.domain} · ${eq.slot}`));
     if (eq.enhance) side.append(badge(`up to +${eq.enhance.maxLevel}`));
+    side.append(badge(eq.sellGold > 0 ? `sells for ${eq.sellGold} 🪙` : "not sellable"));
     if (eq.trainerOwned > 0) side.append(badge(`${eq.trainerOwned} trainer-owned`));
     if (eq.monsterOwned > 0) side.append(badge(`${eq.monsterOwned} monster-owned`));
     side.append(
@@ -675,6 +680,7 @@ function equipmentForm(eq) {
     enhanced: el("input"),
     maxLevel: numInput(eq.enhance?.maxLevel ?? 5, 1, 20),
     goldPerLevel: numInput(eq.enhance?.goldPerLevel ?? 50, 1, 1_000_000),
+    sellGold: numInput(eq.sellGold ?? 0, 0, 1_000_000),
   };
   f.id.disabled = !eq.isNew;
   f.effects.rows = 6;
@@ -693,7 +699,8 @@ function equipmentForm(eq) {
 
   const grid = el("div", "adm-grid");
   grid.append(field("Id (permanent)", f.id), field("Domain", f.domain), field("Slot", f.slot),
-    field("Name", f.name), field("Description", f.description));
+    field("Name", f.name), field("Description", f.description),
+    field("Sell gold (0 = not sellable)", f.sellGold));
 
   const effectsField = field("Effects (JSON)", f.effects);
   effectsField.classList.add("adm-wide");
@@ -722,6 +729,7 @@ function equipmentForm(eq) {
         enhance: f.enhanced.checked
           ? { maxLevel: +f.maxLevel.value, goldPerLevel: +f.goldPerLevel.value }
           : null,
+        sellGold: +f.sellGold.value,
       });
     }, "Equipment saved"));
   els.body.appendChild(form);
@@ -732,7 +740,7 @@ function runesTab() {
   els.body.appendChild(toolbar("＋ New rune", () => ({
     id: "", name: "", description: "",
     effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 2, perLevel: 1 }],
-    maxCharges: 5, repairGold: 30, ownedCount: 0, isNew: true,
+    maxCharges: 5, repairGold: 30, sellGold: 0, ownedCount: 0, isNew: true,
   })));
 
   for (const rn of data.runeDefs) {
@@ -743,6 +751,7 @@ function runesTab() {
     id.append(txt);
     const side = el("div", "adm-actions");
     side.append(badge(`${rn.maxCharges} charges`), badge(`repair ${rn.repairGold} 🪙`));
+    side.append(badge(rn.sellGold > 0 ? `sells for ${rn.sellGold} 🪙` : "not sellable"));
     if (rn.ownedCount > 0) side.append(badge(`${rn.ownedCount} owned`));
     side.append(
       grantControl("rune", rn.id, rn.name, false),
@@ -766,6 +775,7 @@ function runeForm(rn) {
     effects: el("textarea"),
     maxCharges: numInput(rn.maxCharges, 1, 100),
     repairGold: numInput(rn.repairGold, 0, 1_000_000),
+    sellGold: numInput(rn.sellGold ?? 0, 0, 1_000_000),
   };
   f.id.disabled = !rn.isNew;
   f.effects.rows = 6;
@@ -774,7 +784,8 @@ function runeForm(rn) {
 
   const grid = el("div", "adm-grid");
   grid.append(field("Id (permanent)", f.id), field("Name", f.name), field("Description", f.description),
-    field("Max charges", f.maxCharges), field("Repair gold", f.repairGold));
+    field("Max charges", f.maxCharges), field("Repair gold", f.repairGold),
+    field("Sell gold (0 = not sellable)", f.sellGold));
 
   const effectsField = field("Effects (JSON)", f.effects);
   effectsField.classList.add("adm-wide");
@@ -791,6 +802,7 @@ function runeForm(rn) {
         id: f.id.value.trim(), name: f.name.value.trim(),
         description: f.description.value.trim() || null,
         effects, maxCharges: +f.maxCharges.value, repairGold: +f.repairGold.value,
+        sellGold: +f.sellGold.value,
       });
     }, "Rune saved"));
   els.body.appendChild(form);
