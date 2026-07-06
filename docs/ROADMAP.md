@@ -727,50 +727,290 @@ escrowed good; a listed monster can't be sent to work, battle, or adventure
 while escrowed; selling to the system credits exactly `sell_gold × qty`
 exactly once and the good is gone from the inventory.
 
-## Phase 9 — Guilds & GVG ← NEXT UP
+## Phase 9 — Tournaments, Guilds & GVG ← NEXT UP
 
-The first multi-trainer social structure, and the battle modes that need it.
-Tournaments ride in this phase too: they share the bracket/scheduling
-machinery GVG needs, and both are server-resolved from frozen snapshots (no
-realtime, no websockets — CLAUDE.md §1.5's lazy-time rule extends to war
-resolution).
+Too big for one shot — staged as seven sub-phases (9.1–9.7, 2026-07-06
+re-plan of this section's original draft), each independently shippable.
+Order rationale: pure rules first (bracket + reward math everything else
+consumes); **tournaments before guilds** — a tournament needs no guild and
+exercises the entire admin-scheduled-event lifecycle (registration window →
+lock → lazy bracket resolution → position + percentile rewards → cancel →
+results history) on the simplest unit, one trainer's team, so every
+transactional pattern is proven before GVG composes it at guild level;
+guilds standalone next; then GVG setup, which reuses the tournament's event
+grammar verbatim; the one engine change (carry-over battle state) isolated
+in its own sub-phase; GVG resolution last, consuming all of the above.
 
-Dependencies: Phase 6 (PVP defense formations are the unit of guild-war
-lineups; seasons/Elo are the precedent for war scoring) and Phase 8 (gold has
-real circulation, so guild creation can be a meaningful sink).
+Dependencies: Phase 6 (team snapshots, seasons' lazy claim shapes, Elo
+precedent), Phase 7 (reward grammar grants items/equipment/monsters via the
+existing inventory/mint paths), Phase 8 (gold circulates, so guild creation
+and entry fees are meaningful sinks).
 
-- `014_guilds.sql`: `guilds` (unique name, description/emblem, leader id,
+Cross-cutting rules for all sub-phases:
+
+- **No cron, ever** (CLAUDE.md §1.5). "The tournament begins automatically"
+  means: state advances lazily on the next read after a deadline passes —
+  `settleTournaments()`/`settleGvg()` run at the top of their own domain's
+  reads/writes AND piggyback on the same authenticated reads
+  `settleActivities` rides, behind a near-free indexed "anything due?"
+  probe. Every advance is a claimed, exactly-once step (the
+  `ensureSeason`/`claimResolve` shape), so racing reads can't double-run a
+  round or double-pay a reward.
+- **Freeze at registration** (CLAUDE.md §1.1/1.6). A registered team's
+  lanes are snapshotted via `toLane()` (gear + socketed runes included, the
+  `adventure_sessions.party` precedent) the moment the entry is accepted,
+  and every battle resolves from frozen snapshots + a stored seed — fully
+  replayable, and nothing a player does after registering can change it.
+- **Locks are busy locks.** Registered monsters take `busy_kind =
+  'tournament'`/`'gvg'` through the same atomic claim `claimPartyForAdventure`
+  uses, and are released exactly once by settlement, withdrawal, or cancel —
+  compensating release on any failure after a won claim.
+- **No `matches` rows.** Event battles have no interactive attacker — they
+  call `resolveBattle()` directly and store seed + result on their own
+  match tables (the Adventure precedent), never the PVP `matches` table.
+- **One reward grammar, one payout path** for tournaments AND GVG: fixed
+  rewards for positions 1/2/3 plus percentile tiers for everyone else,
+  granted through a pluggable registry (the `REQUIREMENT_CHECKERS`
+  precedent) — a new reward type is a registry entry, never a branch.
+
+### Phase 9.1 — Shared event rules (pure, no DB, no UI)
+
+The `shared/rules/` + validator layer everything later consumes. Zero
+schema, zero endpoints — lowest-risk slice, fully unit-testable.
+
+- `shared/rules/bracket.js`: pure, seeded single-elimination math —
+  `generateBracket(entrantIds, seed)` (seeded shuffle, pad to the next power
+  of two with byes, byes auto-advance), `nextRound(results)`, plus a
+  3rd-place decider between the two semifinal losers (positions 1/2/3 must
+  be exact, per the reward spec). `placements(bracket)` assigns every
+  entrant a final rank: elimination depth, ties within a round broken by a
+  seeded deterministic draw so percentile assignment is exact and
+  replayable. Same determinism contract as `rollSummon`/`generateMap`.
+- `shared/rules/rewards.js`: the reward grammar + resolution.
+  `positionRewards`: `{1: [...], 2: [...], 3: [...]}`; `percentileRewards`:
+  ordered `{fromPct, toPct, rewards}` tiers validated to cover 1–100 with no
+  overlap (the GAME_DESIGN §6.5 percentile precedent). A reward is
+  `{type:'gold',amount} | {type:'item',itemId,qty} |
+  {type:'equipment',equipmentDefId} | {type:'rune',runeDefId} |
+  {type:'monster',speciesId}`. `resolveRewards(placements, config)` → flat
+  `[{trainerId, rewards}]` — pure math; granting is the caller's job.
+- `server/services/adminValidate.js`: `validateEventSchedule()`
+  (registration `starts_at < ends_at`, both in the future at creation) +
+  `validateEventRewards()` (grammar above, every itemId/speciesId/defId
+  names a real master row — checked at the service layer like summon
+  pools). Written once here, shared verbatim by tournaments (9.2) and GVG
+  events (9.5).
+- Tests: bracket determinism (same entrants + seed ⇒ same pairings), bye
+  math at non-power-of-two sizes (2, 3, 5, 8, 100 entrants), placement/
+  percentile edge cases (tiny fields where tiers collapse), reward-grammar
+  round-trips + rejects.
+
+**Done when:** `npm test` covers bracket + placement + reward math with
+golden-style determinism cases; no runtime surface changed.
+
+### Phase 9.2 — Tournaments: schema, admin lifecycle, registration
+
+- `014_tournaments.sql`: `tournaments` (admin-created instance rows, not
+  master data: name/description, `reg_starts_at`, `reg_ends_at`, `seed`
+  (minted at creation), rewards JSONB (9.1 grammar), optional `entry_fee`
+  gold, status `scheduled → registration → running → completed |
+  cancelled`, standings JSONB when done), `tournament_entries` (tournament,
+  trainer UNIQUE per tournament, frozen 3-monster team snapshot, locked
+  monster ids, entered_at), `tournament_matches` (tournament, round,
+  position-in-round, both entry ids, seed, winner, result JSONB — one row
+  per resolved pairing, replayable forever).
+- Routes ride the EXISTING `battle` domain (`/api/battle/tournaments` list +
+  detail, `/api/battle/tournament/register|withdraw` — new rows in
+  `server/routers/battle.js`, NOT a new serverless function: the guild
+  domain (9.4) takes one of the two remaining Hobby-cap slots, and Phase 10
+  may want the last, CLAUDE.md §5). Admin create/cancel/list rides
+  `api/admin/` like every other admin write.
+- Registration (`server/services/tournament.js`): validated against the
+  window and DB state only — exactly 3 owned, free monsters; optional
+  entry-fee debit claim-first-then-pay; the party busy-claim
+  (`busy_kind='tournament'`) and the `toLane()` snapshot freeze happen with
+  compensating release/refund on any later failure (the `performSummon`
+  shape). Withdraw is allowed only while registration is open: guarded
+  entry delete + lock release + fee refund.
+- Admin: 🏆 Tournaments tab in the admin console — create (name, window,
+  rewards JSON textarea per the Summons/Adventures precedent, entry fee),
+  a live entrant count, and a Cancel button at ANY status: cancel is a
+  claimed status flip that releases every entrant's locks and refunds
+  entry fees (compensating, idempotent), pays nothing, and keeps the row
+  visible in history.
+- UI: 🏆 Tournament panel (same shell as Summon/Adventure: msgs + body,
+  refresh-on-open) — upcoming/open tournaments with a register flow
+  (3-monster party picker borrowed from Adventure's), my entry + withdraw
+  while open, and a list of past tournaments (detail view lands in 9.3).
+
+**Done when:** an admin-created tournament appears in the panel at its
+window; a player registers exactly 3 free monsters and they show busy
+everywhere (farm, match creation, adventure, marketplace listing);
+double-registration and post-window registration 409; withdraw and admin
+cancel both release locks and refund fees exactly once.
+
+### Phase 9.3 — Tournaments: lazy resolution, rewards, results
+
+- `settleTournaments()` (`server/services/tournament.js`): on read, any
+  `registration` tournament past `reg_ends_at` advances — fewer than 2
+  entries ⇒ auto-cancel (release + refund, same path as admin cancel);
+  otherwise a claimed flip to `running` generates the bracket
+  (`generateBracket` off the stored seed) exactly once. Then ONE ROUND per
+  claimed settlement pass (bounded work per serverless invocation — a
+  128-entry bracket resolves over a few reads, not one giant one): each
+  pairing resolves via `resolveBattle()` with a seed derived from the
+  tournament seed + round + position (the `deriveNodeSeed` precedent),
+  persisted to `tournament_matches`. After the final + 3rd-place decider:
+  `placements()` → standings JSONB, reward payout via the pluggable grant
+  registry (gold credit / `grantItem` / mint per type) — each entrant's
+  payout one idempotent claimed statement (the `payoutSeason` `reward IS
+  NULL` precedent) — and every lock released. Admin cancel mid-`running`
+  still works: stop, release, no rewards.
+- Results: tournament detail read returns the bracket, per-round results,
+  standings, and each match's seed; any past match is replayable from its
+  stored seed + frozen snapshots (a future replay feature — the event log
+  is never persisted, CLAUDE.md §1.6). The 🏆 panel's history list gains a
+  detail view: bracket view, final standings with reward lines, cancelled
+  tournaments marked as such.
+- Tests: settlement state machine against a fake repo layer where feasible;
+  otherwise the service follows the untested-DB-service precedent
+  (`matches.js`/`pvp.js`) and the pure math stays covered by 9.1.
+
+**Done when:** after `reg_ends_at`, a plain read advances the tournament
+round by round and two racing reads never double-resolve a round; positions
+1/2/3 receive their configured rewards and everyone else their percentile
+tier, each exactly once; all locks release; the bracket + standings are
+browsable later and every match's seed reproduces its result.
+
+### Phase 9.4 — Guilds: creation, membership, roles
+
+Unchanged in substance from this section's original draft.
+
+- `015_guilds.sql`: `guilds` (unique name, description/emblem, leader id,
   created_at), `guild_members` (guild, trainer UNIQUE — one guild per
   trainer, role `leader|officer|member`, joined_at), `guild_applications`
-  (or invite rows — pick one flow and keep it thin). Guilds are
-  player-created instance data, not admin master data; creation costs gold.
-- New `api/guild/[...route].js` domain + `server/routers/guild.js` (8th
-  function): create / apply / accept / leave / kick / promote / transfer
-  leadership, plus guild profile + member list + guild ladder reads. Every
-  write re-validates role server-side (officer-only kicks, leader-only
-  transfer) — never trust a role from the request body.
-- GVG (GAME_DESIGN §6.4 — "guild leader picks member teams; guild vs
-  guild"): a `guild_wars` table pairs two guilds over a scheduled window;
-  each side's lineup is a set of member **defense formations** picked by
-  leader/officers before the window locks (frozen snapshots, exactly like
-  `matches` freezes lanes). Resolution is lazy on read after `ends_at` —
-  same read-then-claim shape as `ensureSeason`/`settleActivities`, each
-  pairing resolved once by `resolveBattle()` with a stored seed
-  (replayable/auditable, CLAUDE.md §1.6). War score = pairing wins; rewards
-  (gold, later guild currency) paid idempotently on the claimed close.
-- Tournaments (GAME_DESIGN §6.4): `tournaments` + `tournament_entries` —
-  entry criteria validated server-side (rating floor, entry fee), bracket
-  generated from the seeded PRNG, rounds auto-resolved lazily the same way
-  wars are. A tournament is individual (defense formation vs defense
-  formation); GVG is the guild-level composition of the same primitive.
-- UI: a 🏰 Guild panel (roster, applications, war lineup editor for
-  leaders/officers, war results) + a tournament bracket view. Pure display
-  over the guild-domain reads, same as every other panel.
+  (application flow, not invites — the user-described flow: player applies,
+  leader accepts/rejects; keep it thin). Guilds are player-created instance
+  data, not admin master data; creation costs gold (claim-first-then-pay).
+- New `api/guild/[...route].js` domain + `server/routers/guild.js` (the 8th
+  serverless function — the sanctioned reason to add one, CLAUDE.md §5):
+  create / apply / accept / reject / leave / kick / promote / transfer
+  leadership, plus guild profile + member list reads. Every write
+  re-validates the caller's role from the DB (leader-only accept/kick/
+  transfer; a leader can't leave without transferring first) — never trust
+  a role from the request body.
+- UI: 🏰 Guild panel — guildless view (browse/create/apply), member view
+  (roster, my application status), leader view (pending applications with
+  accept/reject, kick/promote/transfer). Pure display over the guild reads.
 
-**Done when:** two guilds of real accounts schedule a war, lock lineups, and
-after `ends_at` a plain read resolves every pairing exactly once and shows
-the same winner to both guilds; a tournament bracket fills, resolves round by
-round with replayable seeds, and pays its winner exactly once.
+**Done when:** two real accounts form a guild (one creates and pays the
+gold cost, the other applies and is accepted); role checks hold (a member
+cannot accept applications or kick — 403); one-guild-per-trainer enforced;
+leaving/kicking updates both sides' views.
+
+### Phase 9.5 — GVG events: schedule, team submission, lineup
+
+The tournament event lifecycle, re-instantiated at guild level. No battle
+resolution yet — this sub-phase is entirely setup-side, so it can ship and
+be verified before the engine work lands.
+
+- `016_gvg.sql`: `gvg_events` (admin-created, same schedule + rewards
+  grammar as tournaments — 9.1's validators verbatim, plus GVG knobs:
+  min/max teams per guild, fixed at 1–10 per the design), `gvg_teams`
+  (event, guild, submitting trainer, frozen 3-monster snapshot, locked
+  monster ids, leader-assigned `battle_order` when selected — NULL means
+  submitted-but-not-picked), `gvg_registrations` (event, guild UNIQUE per
+  event, registered by leader), `gvg_wars` (the per-pairing rows 9.7
+  resolves into: event, round, both guilds, seed, winner, per-battle
+  results JSONB).
+- Flow (all under the guild domain — `/api/guild/gvg/*`, no new function):
+  during the event's registration window any guild MEMBER submits a team
+  (same 3-free-monster validation + busy claim + snapshot freeze as
+  tournament registration, `busy_kind='gvg'`; one submission per trainer
+  per event; withdraw-own-team while unpicked); the LEADER (only) selects
+  1–10 submitted teams and sets their battle order (a guarded write
+  re-validating role + event window + team count); the LEADER (only)
+  registers the guild — 409 unless a valid ordered lineup exists. At window
+  close, settlement releases every submitted-but-unselected team's locks
+  (and all locks, if the guild never completed registration) — nobody stays
+  locked for a lineup that never fought.
+- Admin: ⚔ GVG tab mirroring the 🏆 tab — create (window, rewards, team
+  bounds), entrant-guild count, cancel-anytime with full release.
+- UI: the 🏰 Guild panel grows a GVG section — members see open events + a
+  "submit my team" picker; the leader additionally sees submitted teams
+  with pick/order controls (order IS the relay order, first to last) and
+  the register button.
+
+**Done when:** members of a real guild submit teams (monsters lock);
+the leader picks and orders a lineup and registers; a non-leader attempting
+selection or registration gets 403; window close releases unpicked teams'
+monsters; admin cancel releases everything.
+
+### Phase 9.6 — Engine: carry-over battle state (pure, isolated)
+
+The one engine change in Phase 9, landed alone so its blast radius is a
+single reviewable diff with golden coverage — everything before it ships
+without touching `shared/engine/`.
+
+- `resolveBattle()` lane snapshots accept optional `startHp` and
+  `startStatuses` (`liveUnit()` reads `hp: d.startHp ?? d.maxHp ?? d.hp`,
+  seeds `statuses` from `startStatuses` instead of `[]`; a unit entering at
+  `startHp <= 0` is born fallen). Readiness gauges and cooldowns still
+  reset per battle — the design carries LIFE AND STATUS between relay
+  battles, nothing else.
+- The result envelope gains `finalState: {a: [{idx, hp, statuses}], b:
+  [...]}` — the surviving state 9.7 feeds into the next chained battle.
+  Like 7.3's `runeUse`, this is additive: no fixture carries `startHp`, so
+  every existing event array must be byte-identical — golden logs
+  regenerated in the same commit for the envelope field only, verified not
+  assumed.
+- Tests: a chained-battle case in a new `tests/relay-engine.test.mjs` —
+  battle 1's `finalState` fed as battle 2's `startHp`/`startStatuses`
+  reproduces deterministically; absent-vs-empty carry fields produce
+  identical logs (the 7.2/7.3 back-compat precedent); a DOT status carried
+  in ticks on the carried unit's first turn.
+
+**Done when:** golden logs diff only by the additive envelope field; the
+relay test chain is deterministic; a free/PVP/adventure battle's behavior
+is provably unchanged.
+
+### Phase 9.7 — GVG: war resolution, rewards, results
+
+- Relay resolution (`server/services/gvg.js`): a war between two ordered
+  lineups is a chain of `resolveBattle()` calls — each side fields its
+  current team; the LOSING side's next team (by `battle_order`) steps in
+  while the winner's survivors carry their exact `finalState` hp/statuses
+  forward (the user-specified rule: life and status are NOT reset, the
+  standing team fights until its last unit falls). Every battle in the
+  chain is seeded off the war seed + battle index (`deriveNodeSeed`
+  precedent) and appended to `gvg_wars.results` — the whole war replayable
+  from one stored seed. A drawn battle (turn cap) eliminates BOTH current
+  teams — the design decision to lock here, mirroring how a drawn
+  tournament battle needs a deterministic winner rule (seeded coin flip
+  recorded in the result) so brackets always advance.
+- `settleGvg()`: same lazy shape as 9.3 — registration close with < 2
+  registered guilds auto-cancels; the guild bracket generates off the event
+  seed via 9.1's `generateBracket`; one round of wars per claimed pass;
+  placements + 3rd-place decider identical to tournaments.
+- Rewards: 9.1's position + percentile resolution over GUILD placements,
+  paid to the trainers whose teams were in the guild's registered lineup
+  (participants, not the whole roster — the locked design decision: rewards
+  follow contribution), each payout an idempotent claimed statement. All
+  `busy_kind='gvg'` locks release on the guild's elimination, not the
+  event's end — a knocked-out guild's monsters go home early.
+- UI: the 🏰 panel's GVG section gains live event state (bracket, my
+  guild's current war, per-battle summaries — text summaries, no cutscene
+  replay, the Adventure precedent) and a results history (standings,
+  rewards, past wars browsable per event).
+- Docs: GAME_DESIGN §6.4 and ARCHITECTURE's data-model section updated to
+  the shipped shapes in the same change (standing rule below).
+
+**Done when:** two real guilds register lineups; after the window a plain
+read resolves wars round by round exactly once (racing reads safe); the
+relay carry-over is visible in results (a weakened survivor starts the next
+battle at its carried HP); positions and percentile tiers pay guild
+participants exactly once; eliminated guilds' monsters free immediately;
+the full event is browsable afterward and replayable from stored seeds.
 
 ## Phase 10 — Chat, notifications & photo quest (later)
 

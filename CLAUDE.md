@@ -32,8 +32,10 @@ The vision and plans live in `docs/` — treat them as part of this file:
   consume, break, repair), and 7.4 (acquisition: Summon Hall + Adventure,
   both with a live panel now) are all code complete. Later phases were
   renumbered 2026-07-04: Phase 8 (marketplace + sell-to-system) is code
-  complete; guilds, GVG & tournaments (Phase 9) are next up; chat,
-  notifications & the photo quest are Phase 10.
+  complete; tournaments, guilds & GVG (Phase 9) are next up, staged
+  2026-07-06 as sub-phases 9.1–9.7 in the roadmap (shared event rules →
+  tournaments ×2 → guilds → GVG setup → engine carry-over → GVG
+  resolution); chat, notifications & the photo quest are Phase 10.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
