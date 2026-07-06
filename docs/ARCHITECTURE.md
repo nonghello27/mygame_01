@@ -497,6 +497,23 @@ POST /api/battle/formation    { monsterIds } → save (upsert) the defense
                               formation as exactly 3 owned monster ids
 GET  /api/battle/ladder       { season, top, me } → lazily rolls the season
                               (close+payout / open) before reading it
+GET  /api/battle/tournaments  { tournaments } → every tournament (any status),
+                              each with a live entrant count and the CALLER's
+                              own entry summary ({enteredAt, monsterIds,
+                              feePaid}) or null (Phase 9.2)
+POST /api/battle/tournament/register  { tournamentId, monsterIds:number[3] } →
+                              { entry } register exactly 3 owned, free
+                              monsters while the registration window is open:
+                              claim-first-then-pay entry fee, party busy-claim
+                              (busy_kind='tournament'), toLane() team freeze,
+                              LIFO compensation on any failure; 409 "not
+                              enough gold for the entry fee" / "a monster is
+                              busy or not yours" / "already registered for
+                              this tournament" / "registration is not open"
+POST /api/battle/tournament/withdraw  { tournamentId } → { withdrawn:true }
+                              give up a registration while still open:
+                              guarded entry delete + lock release + fee
+                              refund
 
 # activities domain — api/activities.js (plain file: one route today)
 GET  /api/activities          the farm: jobs + monsters + running assignments
@@ -521,6 +538,15 @@ POST   /api/admin/grant       { trainerId?, kind, defId, qty? } → grant an
                               test data — the Summon Hall
                               (`/api/trainer/summon`, Phase 7.4 step A) is
                               now the player-facing acquisition path
+GET  /api/admin/tournaments   { tournaments } → every tournament (any status)
+                              with a live entrant count (Phase 9.2)
+POST /api/admin/tournaments   { name, description?, entryFee?, regStartsAt,
+                              regEndsAt, rewards } → { tournament } create
+                              one; status always starts 'scheduled'
+POST /api/admin/tournaments/cancel  { id } → { tournament } cancel at any
+                              non-completed status: releases every entrant's
+                              locks and refunds entry fees (idempotent,
+                              compensating), keeps the row visible in history
 
 # adventure domain — api/adventure/[...route].js (Phase 7.4 step B; the 6th
 # domain, anticipated by the "not yet built" note this section used to carry)

@@ -32,10 +32,13 @@ The vision and plans live in `docs/` — treat them as part of this file:
   consume, break, repair), and 7.4 (acquisition: Summon Hall + Adventure,
   both with a live panel now) are all code complete. Later phases were
   renumbered 2026-07-04: Phase 8 (marketplace + sell-to-system) is code
-  complete; tournaments, guilds & GVG (Phase 9) are next up, staged
-  2026-07-06 as sub-phases 9.1–9.7 in the roadmap (shared event rules →
-  tournaments ×2 → guilds → GVG setup → engine carry-over → GVG
-  resolution); chat, notifications & the photo quest are Phase 10.
+  complete; tournaments, guilds & GVG (Phase 9) are staged 2026-07-06 as
+  sub-phases 9.1–9.7 in the roadmap (shared event rules → tournaments ×2 →
+  guilds → GVG setup → engine carry-over → GVG resolution) — 9.1 (bracket +
+  reward math) and 9.2 (tournament schema, admin lifecycle, registration,
+  with a live 🏆 Tournament panel + admin tab) are code complete; 9.3
+  (tournaments' lazy resolution, rewards, results) is next up; chat,
+  notifications & the photo quest are Phase 10.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -115,10 +118,12 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # inventory (+ its sell), equipment.js (equip, enhance),
 │   │                       # runes.js (socket, repair), summon.js (summonHall, summon),
 │   │                       # adventure.js (state, start, move, abandon), market.js
-│   │                       # (browse, mine, list, buy, cancel), admin.js (master +
-│   │                       # classes/skills/species/jobs/items/equipment/runes/summons/
-│   │                       # adventures CRUD + grant + trainers list/monsters read+mint/
-│   │                       # attach/detach)
+│   │                       # (browse, mine, list, buy, cancel), tournament.js
+│   │                       # (tournaments list, register, withdraw — rides the battle
+│   │                       # domain), admin.js (master + classes/skills/species/jobs/
+│   │                       # items/equipment/runes/summons/adventures CRUD + grant +
+│   │                       # trainers list/monsters read+mint/attach/detach +
+│   │                       # tournaments create/cancel/list)
 │   ├── db.js               # Neon connection (lazy, from DATABASE_URL)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg) + sendJson()/readJson() + createRouter()
@@ -137,7 +142,10 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # full detail incl. enabled, one-active-session read, claim
 │   │                       # advance/abandon, loot-log append, party busy-lock claim/
 │   │                       # release), market.js (listing CRUD + guarded escrow/assign
-│   │                       # per kind, browse/mine enrichment)
+│   │                       # per kind, browse/mine enrichment), tournaments.js (create,
+│   │                       # list-with-counts, guarded cancel-status-flip, entry CRUD +
+│   │                       # idempotent per-entry refund claim, guarded withdraw DELETE,
+│   │                       # the tournament party busy-lock claim/release pair)
 │   └── services/           # matches.js (applyOrder gate + PVP Elo on resolve, gathers
 │                           # equipped monster gear + socketed runes into toLane()'s
 │                           # snapshot, settles rune durability from the engine's runeUse
@@ -159,10 +167,14 @@ per roadmap phase, don't big-bang rename.)
 │                           # registry dispatching chest/gather/battle — battle calls
 │                           # resolveBattle() directly, no matches row), market.js
 │                           # (list/buy/cancel claim-first-then-pay with LIFO
-│                           # compensations after a won claim)
+│                           # compensations after a won claim), tournament.js (list/
+│                           # register/withdraw claim-first-then-pay with LIFO
+│                           # compensations, same performSummon shape; adminCreate/
+│                           # adminCancel/adminList — cancel's idempotent per-entry
+│                           # refund loop is safe to re-run after a crash)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
-│   │                       # up to 013_marketplace.sql as of Phase 8)
+│   │                       # up to 014_tournaments.sql as of Phase 9.2)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
@@ -174,14 +186,18 @@ per roadmap phase, don't big-bang rename.)
 │                           # pvp (Elo delta, season-end reward tiers), summon.js
 │                           # (rollSummon: pure seeded weighted roll over a pool),
 │                           # adventure.js (generateMap/deriveNodeSeed/rollLoot/rollEncounter:
-│                           # pure seeded map generation + node rolls)
+│                           # pure seeded map generation + node rolls), bracket.js
+│                           # (generateBracket/nextRound/placements: seeded single-
+│                           # elimination bracket + rank math, Phase 9.1), rewards.js
+│                           # (the tournament/GVG reward grammar + resolveRewards()
+│                           # position/percentile payout math, Phase 9.1)
 ├── tests/                  # node --test; fixtures.mjs + golden/ (regen.mjs)
 ├── public/sprites/         # uNN.png sheets + TEMPLATE.md (art spec)
 └── src/
     ├── main.js             # ENTRY: imports CSS, inits modules, wires buttons
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm | admin
-    │                       # | pvp | trainer | inventory | summon | adventure | market
+    │                       # | pvp | trainer | inventory | summon | adventure | market | tournament
     ├── data/               # seed content: classes, sprites, units, skills, jobs, expertises,
     │                       # items, equipment, runes, summons, adventures
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js, admin.js
@@ -194,7 +210,9 @@ per roadmap phase, don't big-bang rename.)
     │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),
     │                       # summon (✨ Summon Hall panel: banner cards + pull), adventure
     │                       # (🗺 panel: route list + party picker, step options, run log),
-    │                       # marketplace (🏪 panel: browse + my listings + list-a-good picker)
+    │                       # marketplace (🏪 panel: browse + my listings + list-a-good picker),
+    │                       # tournament (🏆 panel: open/upcoming cards with a register flow +
+    │                       # party picker, my-entry + withdraw, a past-tournaments history list)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -488,6 +506,42 @@ sold/cancelled history, and a "Sell something" picker over the trainer's
 own bag/roster that calls `list`) — and the 🎒 Inventory panel's three
 tabs each grow a price-labeled Sell button wherever a def's `sellGold` is
 nonzero and the piece is currently unequipped/unsocketed.
+
+Tournaments (Phase 9.2): `tournaments` is admin-created INSTANCE data (a
+one-off scheduled event, name/description/window/rewards/entry fee), not
+master content — it has no `src/data/*.js` seed file and no `npm run
+db:seed` path, only the admin console's 🏆 Tournaments tab
+(`POST/GET /api/admin/tournaments`, `POST /api/admin/tournaments/cancel`).
+Registration is gated purely by the `[reg_starts_at, reg_ends_at]` time
+window, never by `status` alone (`scheduled`/`registration` are both
+registerable while the window is open — this phase never advances status
+past `scheduled` on its own; that lazy walk is Phase 9.3). `POST
+/api/battle/tournament/register {tournamentId, monsterIds}` follows the
+exact claim-first-then-pay + LIFO-compensation shape `performSummon` set:
+debit the optional entry fee → claim the 3-monster party's busy lock
+(`busy_kind='tournament'`) → freeze the team via the same `toLane()` +
+`groupByMonster()` snapshot `adventure_sessions.party` uses (gear and
+socketed runes included) → insert the `tournament_entries` row (`UNIQUE
+(tournament_id, trainer_id)` blocks double-registration); any failure from
+a given step onward undoes every earlier step in reverse. `POST
+/api/battle/tournament/withdraw {tournamentId}` is a guarded entry DELETE
+(the claim itself) followed by a lock release and a fee refund, allowed
+only while the window is still open. Both routes ride the existing
+`battle` domain rather than a new serverless function
+(`server/routes/tournament.js`, wired into `server/routers/battle.js`).
+Admin cancel (`server/services/tournament.js`'s `adminCancel`) flips any
+non-`completed` status to `cancelled` and then walks every entry through
+an idempotent per-entry refund claim (`refunded` flips false→true,
+guarded), so re-running a cancel after a crash never double-refunds or
+double-releases a lock. The 🏆 Tournament panel (`src/ui/tournament.js`) is
+the same msgs+body, refresh-on-open shell as Summon/Adventure: open/
+upcoming tournaments show the window, entry fee, entrant count, and a
+plain-text rewards summary, with either a register flow (the 3-monster
+party picker borrowed straight from Adventure's) or, once registered, a
+"Registered" line and a Withdraw button (hidden once the window closes);
+a compact history list covers anything past its window or already
+running/completed/cancelled — the bracket/standings detail view is
+Phase 9.3.
 
 ## 4. Recipes for TODAY's code
 

@@ -9,6 +9,7 @@
 import { ELEMENTS } from "../../shared/rules/elements.js";
 import { TARGETING } from "../../shared/rules/targeting.js";
 import { STATUSES } from "../../shared/rules/statuses.js";
+import { EVENT_REWARD_TYPES, validatePercentileCoverage } from "../../shared/rules/rewards.js";
 import { httpError } from "../http.js";
 
 export const SKILL_SLOTS = ["passive", "normal", "ultimate"];
@@ -39,6 +40,11 @@ export const SUMMON_COST_TYPES = ["gold", "item"];
 // more resolver entry in the step-B session service — never a branch in
 // validateAdventure or generateMap.
 export const ADVENTURE_NODE_TYPES = ["battle", "chest", "gather"];
+// Phase 9.1 — the closed reward-type list tournaments (9.2) and GVG events
+// (9.5) both validate against; re-exported here (rather than re-declared)
+// so the admin UI's dropdown and the engine's actual grammar can never
+// drift — same "one source of truth" reasoning as the enums above.
+export { EVENT_REWARD_TYPES };
 
 /** Everything the admin UI needs to render its dropdowns. */
 export function enums() {
@@ -58,6 +64,7 @@ export function enums() {
     equipSlots: EQUIP_SLOTS,
     summonCostTypes: SUMMON_COST_TYPES,
     adventureNodeTypes: ADVENTURE_NODE_TYPES,
+    eventRewardTypes: EVENT_REWARD_TYPES,
   };
 }
 
@@ -594,5 +601,180 @@ export function validateAdventure(input) {
       ? "" : str(input.description, "description", { max: 500 }),
     config: validateAdventureConfig(input.config),
     enabled,
+  };
+}
+
+// --- events: shared schedule + reward grammar (Phase 9.1) -------------------
+//
+// Written once here, shared VERBATIM by tournaments (9.2) and GVG events
+// (9.5) — neither sub-phase should re-derive registration-window or reward
+// validation, only supply the id-lookup sets validateEventRewards needs.
+
+/**
+ * A registration window: `regStartsAt < regEndsAt`, and BOTH must be in the
+ * future at creation time (an event can't be scheduled to have already
+ * started or already closed registration). Accepts ISO date strings (or
+ * anything `new Date()` parses); returns the normalized pair as ISO
+ * strings so the caller can persist them as-is.
+ * @param {{regStartsAt:string, regEndsAt:string}} input
+ * @returns {{regStartsAt:string, regEndsAt:string}}
+ */
+export function validateEventSchedule(input) {
+  const regStartsAt = parseFutureDate(input?.regStartsAt, "regStartsAt");
+  const regEndsAt = parseFutureDate(input?.regEndsAt, "regEndsAt");
+  if (regStartsAt.getTime() >= regEndsAt.getTime()) throw bad("regStartsAt must be before regEndsAt");
+  return { regStartsAt: regStartsAt.toISOString(), regEndsAt: regEndsAt.toISOString() };
+}
+
+function parseFutureDate(v, label) {
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) throw bad(`${label} must be a valid date`);
+  if (d.getTime() <= Date.now()) throw bad(`${label} must be in the future`);
+  return d;
+}
+
+/**
+ * One reward entry — `{type, ...}`, `type` one of EVENT_REWARD_TYPES
+ * (shared/rules/rewards.js). Every referenced itemId/equipmentDefId/
+ * runeDefId/speciesId must name a real master row — `lookups` carries
+ * those id sets from the service layer, same split as validateSpecies's
+ * `{classNames, skillsById}` / validateSummon's pool check: this validator
+ * stays pure (no DB), the CALLER fetches what a check needs.
+ * @param {object} r
+ * @param {string} label
+ * @param {{itemIds:Set<string>, equipmentDefIds:Set<string>,
+ *   runeDefIds:Set<string>, speciesIds:Set<string>}} lookups
+ */
+function validateReward(r, label, lookups) {
+  if (typeof r !== "object" || r === null || Array.isArray(r)) throw bad(`${label} must be an object`);
+  const type = oneOf(r.type, EVENT_REWARD_TYPES, `${label}.type`);
+
+  if (type === "gold") {
+    onlyKeys(r, ["type", "amount"], label);
+    return { type: "gold", amount: int(r.amount, `${label}.amount`, { min: 1, max: 1_000_000 }) };
+  }
+  if (type === "item") {
+    onlyKeys(r, ["type", "itemId", "qty"], label);
+    const itemId = str(r.itemId, `${label}.itemId`, { pattern: /^it_[a-z0-9_]+$/ });
+    if (!lookups.itemIds.has(itemId)) throw bad(`${label}.itemId "${itemId}" is not a known item`);
+    return { type: "item", itemId, qty: int(r.qty, `${label}.qty`, { min: 1, max: 1000 }) };
+  }
+  if (type === "equipment") {
+    onlyKeys(r, ["type", "equipmentDefId"], label);
+    const equipmentDefId = str(r.equipmentDefId, `${label}.equipmentDefId`, { pattern: /^eq_[a-z0-9_]+$/ });
+    if (!lookups.equipmentDefIds.has(equipmentDefId)) {
+      throw bad(`${label}.equipmentDefId "${equipmentDefId}" is not a known equipment def`);
+    }
+    return { type: "equipment", equipmentDefId };
+  }
+  if (type === "rune") {
+    onlyKeys(r, ["type", "runeDefId"], label);
+    const runeDefId = str(r.runeDefId, `${label}.runeDefId`, { pattern: /^rn_[a-z0-9_]+$/ });
+    if (!lookups.runeDefIds.has(runeDefId)) throw bad(`${label}.runeDefId "${runeDefId}" is not a known rune def`);
+    return { type: "rune", runeDefId };
+  }
+  // type === "monster"
+  onlyKeys(r, ["type", "speciesId"], label);
+  const speciesId = str(r.speciesId, `${label}.speciesId`, { pattern: /^sp_[a-z0-9_]+$/ });
+  if (!lookups.speciesIds.has(speciesId)) throw bad(`${label}.speciesId "${speciesId}" is not a known species`);
+  return { type: "monster", speciesId };
+}
+
+/** A non-empty list of validated rewards (one position tier, or one percentile tier). */
+function validateRewardList(list, label, lookups) {
+  if (!Array.isArray(list) || list.length === 0) throw bad(`${label} must be a non-empty array`);
+  return list.map((r, i) => validateReward(r, `${label}[${i}]`, lookups));
+}
+
+/** `positionRewards`: an object keyed "1"/"2"/"3", every key optional. */
+function validatePositionRewards(input, lookups) {
+  if (input === undefined || input === null) return {};
+  if (typeof input !== "object" || Array.isArray(input)) throw bad("positionRewards must be an object keyed 1/2/3");
+  onlyKeys(input, ["1", "2", "3"], "positionRewards");
+  const out = {};
+  for (const key of ["1", "2", "3"]) {
+    if (input[key] === undefined) continue;
+    out[key] = validateRewardList(input[key], `positionRewards[${key}]`, lookups);
+  }
+  return out;
+}
+
+/**
+ * `percentileRewards`: a non-empty ordered tier list, each tier's `rewards`
+ * validated like any other reward list. The tier-COVERAGE math (contiguous,
+ * 1-100, no gap/overlap) is NOT re-derived here — it's delegated to
+ * shared/rules/rewards.js's validatePercentileCoverage(), the one source of
+ * truth 9.3's payout math also reads (CLAUDE.md §1.3/1.4).
+ */
+function validatePercentileRewards(input, lookups) {
+  if (!Array.isArray(input) || input.length === 0) throw bad("percentileRewards must be a non-empty array");
+  const tiers = input.map((tier, i) => {
+    const label = `percentileRewards[${i}]`;
+    if (typeof tier !== "object" || tier === null || Array.isArray(tier)) throw bad(`${label} must be an object`);
+    onlyKeys(tier, ["fromPct", "toPct", "rewards"], label);
+    return {
+      fromPct: int(tier.fromPct, `${label}.fromPct`, { min: 1, max: 100 }),
+      toPct: int(tier.toPct, `${label}.toPct`, { min: 1, max: 100 }),
+      rewards: validateRewardList(tier.rewards, `${label}.rewards`, lookups),
+    };
+  });
+  try {
+    validatePercentileCoverage(tiers);
+  } catch (e) {
+    throw bad(e.message);
+  }
+  return tiers;
+}
+
+/**
+ * An event's full rewards config: `{positionRewards, percentileRewards}` —
+ * see shared/rules/rewards.js's header for the grammar and the percentile
+ * formula 9.3's payout reads off it verbatim.
+ * @param {{positionRewards?:object, percentileRewards:object[]}} input
+ * @param {{itemIds:Set<string>, equipmentDefIds:Set<string>,
+ *   runeDefIds:Set<string>, speciesIds:Set<string>}} lookups
+ * @returns {{positionRewards:object, percentileRewards:object[]}}
+ */
+export function validateEventRewards(input, lookups) {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw bad("rewards config must be a JSON object");
+  }
+  onlyKeys(input, ["positionRewards", "percentileRewards"], "rewards");
+  return {
+    positionRewards: validatePositionRewards(input.positionRewards, lookups),
+    percentileRewards: validatePercentileRewards(input.percentileRewards, lookups),
+  };
+}
+
+// --- tournaments (Phase 9.2) -------------------------------------------------
+//
+// A tournament's create-grammar composes the two 9.1 validators above
+// (schedule + rewards) with its own few fields (name/description/entryFee) —
+// written once here rather than in server/services/tournament.js so a later
+// GVG event (9.5) can reuse this exact composition style, same "share the
+// validator, not just the pieces" precedent as validateSummon/
+// validateAdventure each composing their own grammar inline.
+
+/**
+ * @param {object} input raw body: {name, description?, entryFee?,
+ *   regStartsAt, regEndsAt, rewards}
+ * @param {{itemIds:Set<string>, equipmentDefIds:Set<string>,
+ *   runeDefIds:Set<string>, speciesIds:Set<string>}} lookups fetched by the
+ *   service (fresh DB state), same split as validateEventRewards's own
+ *   `lookups` param — this validator stays pure (no DB).
+ * @returns {{name:string, description:string, entryFee:number,
+ *   regStartsAt:string, regEndsAt:string, rewards:object}}
+ */
+export function validateTournament(input, lookups) {
+  const schedule = validateEventSchedule(input);
+  const rewards = validateEventRewards(input?.rewards, lookups);
+  return {
+    name: str(input?.name, "tournament name", { max: 120 }),
+    description: input?.description === undefined || input?.description === null || input?.description === ""
+      ? "" : str(input.description, "description", { max: 500 }),
+    entryFee: int(input?.entryFee ?? 0, "entry fee", { min: 0, max: 1_000_000 }),
+    regStartsAt: schedule.regStartsAt,
+    regEndsAt: schedule.regEndsAt,
+    rewards,
   };
 }

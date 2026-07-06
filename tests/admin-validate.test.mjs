@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import {
   validateClass, validateSkill, validateSpecies, validateJob, enums,
   validateItem, validateEquipment, validateRune, validateSummon, validateAdventure,
+  validateEventSchedule, validateEventRewards, validateTournament,
 } from "../server/services/adminValidate.js";
 import { SKILLS } from "../src/data/skills.js";
 import { JOBS } from "../src/data/jobs.js";
@@ -523,4 +524,179 @@ test("validateAdventure rejects malformed config shapes", () => {
 
 test("enums include adventureNodeTypes", () => {
   assert.deepEqual(enums().adventureNodeTypes, ["battle", "chest", "gather"]);
+});
+
+// --- events: shared schedule + reward grammar (Phase 9.1) --------------------
+
+test("enums include eventRewardTypes", () => {
+  assert.deepEqual(enums().eventRewardTypes, ["gold", "item", "equipment", "rune", "monster"]);
+});
+
+test("validateEventSchedule accepts a future starts<ends pair and round-trips as ISO strings", () => {
+  const starts = new Date(Date.now() + 60_000).toISOString();
+  const ends = new Date(Date.now() + 120_000).toISOString();
+  const v = validateEventSchedule({ regStartsAt: starts, regEndsAt: ends });
+  assert.equal(new Date(v.regStartsAt).toISOString(), starts);
+  assert.equal(new Date(v.regEndsAt).toISOString(), ends);
+});
+
+test("validateEventSchedule rejects starts>=ends, a past date, and an invalid date", () => {
+  const future = (ms) => new Date(Date.now() + ms).toISOString();
+  rejects(() => validateEventSchedule({ regStartsAt: future(120_000), regEndsAt: future(60_000) }),
+    "starts after ends");
+  rejects(() => validateEventSchedule({ regStartsAt: future(60_000), regEndsAt: future(60_000) }),
+    "starts equal to ends");
+  rejects(() => validateEventSchedule({ regStartsAt: new Date(Date.now() - 60_000).toISOString(), regEndsAt: future(60_000) }),
+    "starts in the past");
+  rejects(() => validateEventSchedule({ regStartsAt: future(60_000), regEndsAt: new Date(Date.now() - 60_000).toISOString() }),
+    "ends in the past");
+  rejects(() => validateEventSchedule({ regStartsAt: "not-a-date", regEndsAt: future(60_000) }),
+    "invalid start date");
+});
+
+const EVENT_LOOKUPS = {
+  itemIds: new Set(["it_potion_small"]),
+  equipmentDefIds: new Set(["eq_iron_sword"]),
+  runeDefIds: new Set(["rn_swift"]),
+  speciesIds: new Set(["sp_vorth"]),
+};
+
+test("validateEventRewards accepts a full grammar round-trip: every reward type, position + percentile tiers", () => {
+  const config = {
+    positionRewards: {
+      1: [{ type: "gold", amount: 500 }, { type: "monster", speciesId: "sp_vorth" }],
+      2: [{ type: "equipment", equipmentDefId: "eq_iron_sword" }],
+      3: [{ type: "rune", runeDefId: "rn_swift" }],
+    },
+    percentileRewards: [
+      { fromPct: 1, toPct: 50, rewards: [{ type: "item", itemId: "it_potion_small", qty: 3 }] },
+      { fromPct: 51, toPct: 100, rewards: [{ type: "gold", amount: 10 }] },
+    ],
+  };
+  const v = validateEventRewards(config, EVENT_LOOKUPS);
+  assert.deepEqual(v, config);
+});
+
+test("validateEventRewards: positionRewards is optional and defaults to {}", () => {
+  const v = validateEventRewards({
+    percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "gold", amount: 1 }] }],
+  }, EVENT_LOOKUPS);
+  assert.deepEqual(v.positionRewards, {});
+});
+
+test("validateEventRewards rejects a bad reward type and a missing qty on an item reward", () => {
+  const base = { positionRewards: {}, percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [] }] };
+  rejects(() => validateEventRewards({
+    ...base, percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "diamond", amount: 1 }] }],
+  }, EVENT_LOOKUPS), "unknown reward type");
+  rejects(() => validateEventRewards({
+    ...base, percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "item", itemId: "it_potion_small" }] }],
+  }, EVENT_LOOKUPS), "item reward missing qty");
+});
+
+test("validateEventRewards rejects a tier gap, a tier overlap, a bad start, and a bad end", () => {
+  const reward = [{ type: "gold", amount: 1 }];
+  rejects(() => validateEventRewards({
+    percentileRewards: [
+      { fromPct: 1, toPct: 40, rewards: reward },
+      { fromPct: 50, toPct: 100, rewards: reward },
+    ],
+  }, EVENT_LOOKUPS), "gap between tiers");
+  rejects(() => validateEventRewards({
+    percentileRewards: [
+      { fromPct: 1, toPct: 60, rewards: reward },
+      { fromPct: 50, toPct: 100, rewards: reward },
+    ],
+  }, EVENT_LOOKUPS), "overlapping tiers");
+  rejects(() => validateEventRewards({
+    percentileRewards: [{ fromPct: 2, toPct: 100, rewards: reward }],
+  }, EVENT_LOOKUPS), "first tier must start at 1");
+  rejects(() => validateEventRewards({
+    percentileRewards: [{ fromPct: 1, toPct: 99, rewards: reward }],
+  }, EVENT_LOOKUPS), "last tier must end at 100");
+});
+
+test("validateEventRewards rejects an unknown itemId/equipmentDefId/runeDefId/speciesId via the lookups", () => {
+  const wrap = (reward) => ({ percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [reward] }] });
+  rejects(() => validateEventRewards(wrap({ type: "item", itemId: "it_nope", qty: 1 }), EVENT_LOOKUPS),
+    "unknown itemId");
+  rejects(() => validateEventRewards(wrap({ type: "equipment", equipmentDefId: "eq_nope" }), EVENT_LOOKUPS),
+    "unknown equipmentDefId");
+  rejects(() => validateEventRewards(wrap({ type: "rune", runeDefId: "rn_nope" }), EVENT_LOOKUPS),
+    "unknown runeDefId");
+  rejects(() => validateEventRewards(wrap({ type: "monster", speciesId: "sp_nope" }), EVENT_LOOKUPS),
+    "unknown speciesId");
+});
+
+// --- tournaments (Phase 9.2) --------------------------------------------------
+
+function futureIso(ms) {
+  return new Date(Date.now() + ms).toISOString();
+}
+
+function baseTournamentInput(overrides = {}) {
+  return {
+    name: "Spring Cup",
+    regStartsAt: futureIso(60_000),
+    regEndsAt: futureIso(120_000),
+    rewards: {
+      percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "gold", amount: 10 }] }],
+    },
+    ...overrides,
+  };
+}
+
+test("validateTournament accepts a happy-path row, defaults description/entryFee, and composes schedule+rewards", () => {
+  const input = baseTournamentInput({
+    description: "A friendly seasonal bracket",
+    entryFee: 100,
+    rewards: {
+      positionRewards: { 1: [{ type: "gold", amount: 500 }] },
+      percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "gold", amount: 10 }] }],
+    },
+  });
+  const v = validateTournament(input, EVENT_LOOKUPS);
+  assert.equal(v.name, "Spring Cup");
+  assert.equal(v.description, "A friendly seasonal bracket");
+  assert.equal(v.entryFee, 100);
+  assert.equal(new Date(v.regStartsAt).toISOString(), input.regStartsAt);
+  assert.equal(new Date(v.regEndsAt).toISOString(), input.regEndsAt);
+  assert.deepEqual(v.rewards, input.rewards);
+});
+
+test("validateTournament defaults description to '' and entryFee to 0 when absent", () => {
+  const v = validateTournament(baseTournamentInput(), EVENT_LOOKUPS);
+  assert.equal(v.description, "");
+  assert.equal(v.entryFee, 0);
+});
+
+test("validateTournament rejects a missing/blank name", () => {
+  rejects(() => validateTournament(baseTournamentInput({ name: "" }), EVENT_LOOKUPS), "blank name");
+  rejects(() => validateTournament({ ...baseTournamentInput(), name: undefined }, EVENT_LOOKUPS), "missing name");
+});
+
+test("validateTournament rejects a negative entryFee", () => {
+  rejects(() => validateTournament(baseTournamentInput({ entryFee: -1 }), EVENT_LOOKUPS), "negative entry fee");
+});
+
+test("validateTournament rejects a bad registration window (delegates to validateEventSchedule)", () => {
+  rejects(() => validateTournament(
+    baseTournamentInput({ regStartsAt: futureIso(120_000), regEndsAt: futureIso(60_000) }), EVENT_LOOKUPS
+  ), "starts after ends");
+  rejects(() => validateTournament(
+    baseTournamentInput({ regStartsAt: new Date(Date.now() - 60_000).toISOString() }), EVENT_LOOKUPS
+  ), "start in the past");
+});
+
+test("validateTournament rejects malformed/unknown-id rewards (delegates to validateEventRewards)", () => {
+  rejects(() => validateTournament(
+    baseTournamentInput({ rewards: { percentileRewards: [{ fromPct: 1, toPct: 50, rewards: [{ type: "gold", amount: 1 }] }] } }),
+    EVENT_LOOKUPS
+  ), "percentile tiers must cover 1-100");
+  rejects(() => validateTournament(
+    baseTournamentInput({
+      rewards: { percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "item", itemId: "it_nope", qty: 1 }] }] },
+    }),
+    EVENT_LOOKUPS
+  ), "unknown itemId via lookups");
 });

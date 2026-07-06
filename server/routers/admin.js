@@ -20,4 +20,7 @@ export const route = createRouter({
   "/api/admin/grant": { POST: admin.grant },
   "/api/admin/trainers": { GET: admin.trainers },
   "/api/admin/monsters": { GET: admin.monsters, POST: admin.monsters, DELETE: admin.monsters },
+  // Phase 9.2 — tournaments: admin create/cancel/list.
+  "/api/admin/tournaments": { GET: admin.tournaments, POST: admin.tournaments },
+  "/api/admin/tournaments/cancel": { POST: admin.tournamentCancel },
 });

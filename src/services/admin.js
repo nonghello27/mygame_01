@@ -89,3 +89,27 @@ export const attachMonsterTo = (body) => request("/api/admin/monsters", "POST", 
  * @returns {Promise<{trainer:object, monsters:object[], unassigned:object[]}>}
  */
 export const detachMonsterFrom = (body) => request("/api/admin/monsters", "DELETE", body);
+
+// --- tournaments (Phase 9.2) -------------------------------------------------
+// Unlike the master-table CRUD above, this reads its OWN endpoint rather than
+// folding into loadMaster()'s masterState — tournaments are admin-created
+// INSTANCE data (one-off scheduled events), not reusable master content.
+
+/** @returns {Promise<{tournaments:object[]}>} every tournament (any status), with a live entrant count. */
+export const loadTournaments = () => request("/api/admin/tournaments", "GET");
+
+/**
+ * Create a tournament. Status always starts 'scheduled' server-side.
+ * @param {{name:string, description?:string, entryFee?:number,
+ *   regStartsAt:string, regEndsAt:string, rewards:object}} row
+ * @returns {Promise<{tournament:object}>}
+ */
+export const createTournament = (row) => request("/api/admin/tournaments", "POST", row);
+
+/**
+ * Cancel at any non-completed status: releases every entrant's locks and
+ * refunds every entry's fee, keeping the row visible in history.
+ * @param {number} id
+ * @returns {Promise<{tournament:object}>}
+ */
+export const cancelTournament = (id) => request("/api/admin/tournaments/cancel", "POST", { id });

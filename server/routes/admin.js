@@ -63,6 +63,19 @@
 //
 // Every mutation above responds with a fresh masterState. Admin only.
 //
+// GET  /api/admin/tournaments  -> { tournaments }  (Phase 9.2) every
+//   tournament (any status) with a live entrant count — the admin tab's list.
+// POST /api/admin/tournaments  { name, description?, entryFee?, regStartsAt,
+//   regEndsAt, rewards }  -> { tournament }  create one; status always starts
+//   'scheduled' (9.3's settleTournaments() is what later advances it).
+//   rewards is the Phase 9.1 grammar (positionRewards for ranks 1-3,
+//   percentileRewards tiers covering everyone else) — every itemId/
+//   equipmentDefId/runeDefId/speciesId it names must be a real master row.
+// POST /api/admin/tournaments/cancel  { id }  -> { tournament }  cancel at
+//   any non-completed status: refunds every entrant's fee and releases their
+//   busy locks (idempotent — safe to click twice), pays nothing else, and
+//   keeps the row visible in history. 409 while already 'completed'.
+//
 // POST /api/admin/grant { trainerId?, kind, defId, qty? }
 //   The only acquisition source until Phase 7.4 (marketplace/summons):
 //   grants an item/equipment/rune to a trainer (defaults to the calling
@@ -123,6 +136,7 @@ import {
   detachMonsterFromTrainer,
 } from "../services/admin.js";
 import { getInventory } from "../services/inventory.js";
+import { adminCreate as createTournament, adminCancel as cancelTournament, adminList as listTournamentsAdmin } from "../services/tournament.js";
 
 export async function master(req, res) {
   const sql = db();
@@ -205,4 +219,32 @@ export async function monsters(req, res) {
   sendJson(res, 200, monsterId !== undefined
     ? await attachMonsterToTrainer(sql, body)
     : await mintMonsterForTrainer(sql, body));
+}
+
+// --- tournaments (Phase 9.2) --------------------------------------------------
+//
+// Unlike the master-table crudHandler()s above, these respond with just the
+// tournament(s) touched — not a full masterState — since tournaments are
+// admin-created INSTANCE data (CLAUDE.md §1.3), not master content the
+// console's other tabs read via GET /api/admin/master.
+
+export async function tournaments(req, res) {
+  const sql = db();
+  await requireAdmin(sql, trainerIdFromRequest(req));
+
+  if (req.method === "GET") {
+    sendJson(res, 200, await listTournamentsAdmin(sql));
+    return;
+  }
+
+  const body = await readJson(req);
+  sendJson(res, 200, { tournament: await createTournament(sql, body) });
+}
+
+export async function tournamentCancel(req, res) {
+  const sql = db();
+  await requireAdmin(sql, trainerIdFromRequest(req));
+
+  const body = await readJson(req);
+  sendJson(res, 200, { tournament: await cancelTournament(sql, body?.id) });
 }

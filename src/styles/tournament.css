@@ -1,0 +1,70 @@
+/* Tournament panel (src/ui/tournament.js) — Phase 9.2. Same chrome family as
+   the Summon Hall / Adventure panels (header, msgs, body); the party picker
+   reuses Adventure's row shape (renamed .tour-*). */
+
+.tournament{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.tournament h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+}
+
+.tour-msgs{padding:0 14px}
+.tour-msgs p{margin:9px 0 0;font-size:13px;color:var(--hp-good)}
+.tour-msgs p.err{color:var(--hp-low)}
+
+.tour-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:12px}
+.tour-hint{margin:0;font-size:12.5px;color:var(--muted)}
+.tour-subhead{
+  margin:4px 0 -2px;font-family:Rajdhani,sans-serif;font-weight:600;
+  letter-spacing:0.1em;text-transform:uppercase;font-size:11.5px;color:var(--muted);
+}
+
+.tour-card{
+  background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+}
+.tour-card.tour-history{opacity:0.85}
+.tour-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.tour-head b{font-size:14.5px}
+.tour-desc{margin:0;font-size:12.5px;color:var(--muted)}
+.tour-window{margin:0;font-size:12px;color:var(--muted)}
+.tour-registered{margin:0;font-size:12.5px;color:var(--hp-good)}
+
+.tour-rewards{display:flex;flex-direction:column;gap:2px}
+.tour-reward-line{margin:0;font-size:12.5px;color:var(--text)}
+
+.tour-badge{
+  font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:3px 9px;
+  white-space:nowrap;
+}
+.tour-badge.tour-fee{color:var(--clash);border-color:var(--clash)}
+.tour-badge.tour-cancelled{color:var(--hp-low);border-color:var(--hp-low)}
+
+button.btn.tour-small{align-self:flex-start;padding:8px 16px;font-size:12.5px;border-radius:9px}
+button.btn.tour-small:disabled{opacity:0.5;cursor:default}
+button.btn.tour-danger{color:var(--hp-low);border-color:var(--hp-low)}
+
+.tour-toolbar{display:flex;gap:8px;flex-wrap:wrap}
+
+/* register: party picker */
+.tour-register{display:flex;flex-direction:column;gap:8px}
+.tour-mon-list{display:flex;flex-direction:column;gap:8px}
+.tour-mon{
+  display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);
+  border-radius:11px;padding:9px 12px;cursor:pointer;
+}
+.tour-mon:hover{border-color:var(--line-strong)}
+.tour-mon.picked{border-color:var(--a-deep);background:var(--a-soft)}
+.tour-mon.busy{opacity:0.6;cursor:default}
+.tour-mon-emoji{font-size:22px}
+.tour-mon-name{font-size:13px;font-weight:600;flex:1}
+.tour-mon-busy-tag{font-size:11px;color:var(--clash)}
+.tour-pick-badge{
+  display:flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:var(--a-deep);color:#06150f;font-weight:700;font-size:12px;flex:none;
+}

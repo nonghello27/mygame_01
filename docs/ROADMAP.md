@@ -727,7 +727,7 @@ escrowed good; a listed monster can't be sent to work, battle, or adventure
 while escrowed; selling to the system credits exactly `sell_gold × qty`
 exactly once and the good is gone from the inventory.
 
-## Phase 9 — Tournaments, Guilds & GVG ← NEXT UP
+## Phase 9 — Tournaments, Guilds & GVG
 
 Too big for one shot — staged as seven sub-phases (9.1–9.7, 2026-07-06
 re-plan of this section's original draft), each independently shippable.
@@ -773,12 +773,12 @@ Cross-cutting rules for all sub-phases:
   granted through a pluggable registry (the `REQUIREMENT_CHECKERS`
   precedent) — a new reward type is a registry entry, never a branch.
 
-### Phase 9.1 — Shared event rules (pure, no DB, no UI)
+### Phase 9.1 — Shared event rules (pure, no DB, no UI) ✅ CODE COMPLETE (2026-07-06)
 
 The `shared/rules/` + validator layer everything later consumes. Zero
 schema, zero endpoints — lowest-risk slice, fully unit-testable.
 
-- `shared/rules/bracket.js`: pure, seeded single-elimination math —
+- ✅ `shared/rules/bracket.js`: pure, seeded single-elimination math —
   `generateBracket(entrantIds, seed)` (seeded shuffle, pad to the next power
   of two with byes, byes auto-advance), `nextRound(results)`, plus a
   3rd-place decider between the two semifinal losers (positions 1/2/3 must
@@ -786,7 +786,7 @@ schema, zero endpoints — lowest-risk slice, fully unit-testable.
   entrant a final rank: elimination depth, ties within a round broken by a
   seeded deterministic draw so percentile assignment is exact and
   replayable. Same determinism contract as `rollSummon`/`generateMap`.
-- `shared/rules/rewards.js`: the reward grammar + resolution.
+- ✅ `shared/rules/rewards.js`: the reward grammar + resolution.
   `positionRewards`: `{1: [...], 2: [...], 3: [...]}`; `percentileRewards`:
   ordered `{fromPct, toPct, rewards}` tiers validated to cover 1–100 with no
   overlap (the GAME_DESIGN §6.5 percentile precedent). A reward is
@@ -794,13 +794,13 @@ schema, zero endpoints — lowest-risk slice, fully unit-testable.
   {type:'equipment',equipmentDefId} | {type:'rune',runeDefId} |
   {type:'monster',speciesId}`. `resolveRewards(placements, config)` → flat
   `[{trainerId, rewards}]` — pure math; granting is the caller's job.
-- `server/services/adminValidate.js`: `validateEventSchedule()`
+- ✅ `server/services/adminValidate.js`: `validateEventSchedule()`
   (registration `starts_at < ends_at`, both in the future at creation) +
   `validateEventRewards()` (grammar above, every itemId/speciesId/defId
   names a real master row — checked at the service layer like summon
   pools). Written once here, shared verbatim by tournaments (9.2) and GVG
   events (9.5).
-- Tests: bracket determinism (same entrants + seed ⇒ same pairings), bye
+- ✅ Tests: bracket determinism (same entrants + seed ⇒ same pairings), bye
   math at non-power-of-two sizes (2, 3, 5, 8, 100 entrants), placement/
   percentile edge cases (tiny fields where tiers collapse), reward-grammar
   round-trips + rejects.
@@ -808,9 +808,9 @@ schema, zero endpoints — lowest-risk slice, fully unit-testable.
 **Done when:** `npm test` covers bracket + placement + reward math with
 golden-style determinism cases; no runtime surface changed.
 
-### Phase 9.2 — Tournaments: schema, admin lifecycle, registration
+### Phase 9.2 — Tournaments: schema, admin lifecycle, registration ✅ CODE COMPLETE (2026-07-06)
 
-- `014_tournaments.sql`: `tournaments` (admin-created instance rows, not
+- ✅ `014_tournaments.sql`: `tournaments` (admin-created instance rows, not
   master data: name/description, `reg_starts_at`, `reg_ends_at`, `seed`
   (minted at creation), rewards JSONB (9.1 grammar), optional `entry_fee`
   gold, status `scheduled → registration → running → completed |
@@ -819,29 +819,41 @@ golden-style determinism cases; no runtime surface changed.
   monster ids, entered_at), `tournament_matches` (tournament, round,
   position-in-round, both entry ids, seed, winner, result JSONB — one row
   per resolved pairing, replayable forever).
-- Routes ride the EXISTING `battle` domain (`/api/battle/tournaments` list +
+- ✅ Routes ride the EXISTING `battle` domain (`/api/battle/tournaments` list +
   detail, `/api/battle/tournament/register|withdraw` — new rows in
   `server/routers/battle.js`, NOT a new serverless function: the guild
   domain (9.4) takes one of the two remaining Hobby-cap slots, and Phase 10
   may want the last, CLAUDE.md §5). Admin create/cancel/list rides
   `api/admin/` like every other admin write.
-- Registration (`server/services/tournament.js`): validated against the
+- ✅ Registration (`server/services/tournament.js`): validated against the
   window and DB state only — exactly 3 owned, free monsters; optional
   entry-fee debit claim-first-then-pay; the party busy-claim
   (`busy_kind='tournament'`) and the `toLane()` snapshot freeze happen with
   compensating release/refund on any later failure (the `performSummon`
   shape). Withdraw is allowed only while registration is open: guarded
   entry delete + lock release + fee refund.
-- Admin: 🏆 Tournaments tab in the admin console — create (name, window,
+- ✅ Admin: 🏆 Tournaments tab in the admin console — create (name, window,
   rewards JSON textarea per the Summons/Adventures precedent, entry fee),
   a live entrant count, and a Cancel button at ANY status: cancel is a
   claimed status flip that releases every entrant's locks and refunds
   entry fees (compensating, idempotent), pays nothing, and keeps the row
   visible in history.
-- UI: 🏆 Tournament panel (same shell as Summon/Adventure: msgs + body,
+- ✅ UI: 🏆 Tournament panel (same shell as Summon/Adventure: msgs + body,
   refresh-on-open) — upcoming/open tournaments with a register flow
   (3-monster party picker borrowed from Adventure's), my entry + withdraw
   while open, and a list of past tournaments (detail view lands in 9.3).
+
+**Remaining (operator step):** run `npm run db:migrate` (014); then verify
+in a browser with two real accounts — create a tournament (with and without
+an entry fee) from the 🏆 Tournaments admin tab and confirm it appears in the
+🏆 Tournament panel at its registration window; register exactly 3 free
+monsters from one account and confirm they show busy everywhere (farm, match
+creation, adventure, marketplace listing) and the entry fee (if any) is
+debited exactly once; confirm a 4th pick, a busy monster, double-registration,
+and a post-window registration all 409 with the server's message; withdraw
+and confirm the fee refunds and the party frees up; register again, then
+admin-cancel the tournament and confirm the entry's locks release and its
+fee refunds exactly once, and the row stays visible as "Cancelled" history.
 
 **Done when:** an admin-created tournament appears in the panel at its
 window; a player registers exactly 3 free monsters and they show busy
@@ -849,7 +861,7 @@ everywhere (farm, match creation, adventure, marketplace listing);
 double-registration and post-window registration 409; withdraw and admin
 cancel both release locks and refund fees exactly once.
 
-### Phase 9.3 — Tournaments: lazy resolution, rewards, results
+### Phase 9.3 — Tournaments: lazy resolution, rewards, results ← NEXT UP
 
 - `settleTournaments()` (`server/services/tournament.js`): on read, any
   `registration` tournament past `reg_ends_at` advances — fewer than 2

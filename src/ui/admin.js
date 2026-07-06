@@ -19,6 +19,7 @@ import {
   saveAdventure, deleteAdventure,
   grant,
   loadTrainers, loadTrainerMonsters, mintMonsterFor, attachMonsterTo, detachMonsterFrom,
+  loadTournaments, createTournament, cancelTournament,
 } from "../services/admin.js";
 import { SPRITES } from "../data/sprites.js";
 import { chromaKeyed } from "./chroma.js";
@@ -33,6 +34,7 @@ const TABS = [
   ["runes", "🔮 Runes"],
   ["summons", "✨ Summons"],
   ["adventures", "🗺 Adventures"],
+  ["tournaments", "🏆 Tournaments"],
   ["trainers", "👥 Trainers"],
   ["sprites", "🖼 Sprites"],
 ];
@@ -46,6 +48,8 @@ let editing = null;  // row being edited in the current tab (null = list view)
 let trainers = null; // cached trainers list (👥 tab), null = not loaded yet
 let managing = null; // { trainer, monsters, unassigned } of the trainer being managed, or null
 let pendingRemove = null; // monsterId awaiting a second "Remove" confirm click, or null
+let tournamentsData = null; // cached admin tournaments list (🏆 tab), null = not loaded yet
+let creatingTournament = false; // true while the 🏆 tab's create form is shown
 
 export function initAdmin() {
   els = {
@@ -198,6 +202,7 @@ function renderTabs() {
       editing = null;
       managing = null;
       pendingRemove = null;
+      creatingTournament = false;
       els.msgs.innerHTML = "";
       renderTabs();
       renderBody();
@@ -212,8 +217,8 @@ function renderBody() {
   ({
     species: speciesTab, skills: skillsTab, classes: classesTab, jobs: jobsTab,
     items: itemsTab, equipment: equipmentTab, runes: runesTab,
-    summons: summonsTab, adventures: adventuresTab, trainers: trainersTab,
-    sprites: spritesTab,
+    summons: summonsTab, adventures: adventuresTab, tournaments: tournamentsTab,
+    trainers: trainersTab, sprites: spritesTab,
   })[tab]();
 }
 
@@ -993,6 +998,159 @@ function adventureForm(ad) {
   els.body.appendChild(form);
 }
 
+// ---------- tournaments (Phase 9.2) ----------
+//
+// Unlike every other tab above, this one reads its OWN endpoint
+// (GET /api/admin/tournaments) rather than folding into `data`'s
+// masterState — tournaments are admin-created INSTANCE data (one-off
+// scheduled events), not reusable master content the rest of the console
+// edits. Its own `tournamentsData`/`creatingTournament` state stays separate
+// from `data`/`editing` so a tournament mutation can never clobber the
+// master tables' cached state (mutate()/formButtons() are deliberately NOT
+// reused here for that reason).
+
+const TOURNAMENT_REWARDS_HINT =
+  'rewards (JSON) — {positionRewards:{"1":[...],"2":[...],"3":[...]}, ' +
+  'percentileRewards:[{fromPct,toPct,rewards:[...]}, ...]}. A reward is ' +
+  '{type:"gold",amount} | {type:"item",itemId,qty} | {type:"equipment",equipmentDefId} | ' +
+  '{type:"rune",runeDefId} | {type:"monster",speciesId}. percentileRewards tiers must be ' +
+  "ordered, contiguous, and cover 1-100 exactly, and every reward list (a position's or a " +
+  'tier\'s) must be non-empty. Shape example: {"positionRewards":{"1":[{"type":"gold",' +
+  '"amount":500}]},"percentileRewards":[{"fromPct":1,"toPct":100,"rewards":[]}]} — swap that ' +
+  "empty [] for real rewards before saving.";
+
+function tournamentsTab() {
+  if (creatingTournament) return tournamentForm();
+  els.body.appendChild(toolbar("＋ New tournament", () => { creatingTournament = true; renderBody(); }));
+
+  if (!tournamentsData) {
+    els.body.appendChild(el("p", "adm-hint", "Loading…"));
+    loadTournaments()
+      .then((res) => { tournamentsData = res.tournaments; renderBody(); })
+      .catch((e) => pushMsg(`Could not load tournaments: ${e.message}`, true));
+    return;
+  }
+
+  for (const t of tournamentsData) {
+    const row = el("div", "adm-row");
+    const id = el("div", "adm-id");
+    const txt = el("span");
+    txt.append(el("b", null, t.name), el("small", null,
+      `#${t.id} · ${fmtDate(t.regStartsAt)} – ${fmtDate(t.regEndsAt)} · entry fee ${t.entryFee} 🪙`));
+    id.append(txt);
+
+    const side = el("div", "adm-actions");
+    side.append(badge(t.status), badge(`${t.entrantCount} entered`));
+    if (t.status !== "completed" && t.status !== "cancelled") {
+      side.append(button("Cancel", "btn ghost adm-small adm-danger", async () => {
+        if (!window.confirm(
+          `Cancel tournament "${t.name}"? Every entrant's monster locks are released and entry fees refunded.`
+        )) return;
+        els.msgs.innerHTML = "";
+        try {
+          await cancelTournament(t.id);
+          tournamentsData = (await loadTournaments()).tournaments;
+          renderBody();
+          pushMsg("Tournament cancelled.");
+        } catch (e) {
+          pushMsg(e.message, true);
+        }
+      }));
+    }
+    row.append(id, side);
+    els.body.appendChild(row);
+  }
+}
+
+/** Local "YYYY-MM-DDTHH:mm" for a <input type="datetime-local"> default —
+ *  new Date(localString) below reads it back as local time, same round trip. */
+function toDatetimeLocal(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function tournamentForm() {
+  const form = el("div", "adm-form");
+  form.appendChild(el("h4", null, "New tournament"));
+
+  const now = Date.now();
+  const f = {
+    name: textInput("", "Summer Cup"),
+    description: textInput("", "optional"),
+    entryFee: numInput(0, 0, 1_000_000),
+    regStartsAt: el("input"),
+    regEndsAt: el("input"),
+    rewards: el("textarea"),
+  };
+  f.regStartsAt.type = "datetime-local";
+  f.regStartsAt.value = toDatetimeLocal(new Date(now + 60 * 60 * 1000)); // +1h
+  f.regEndsAt.type = "datetime-local";
+  f.regEndsAt.value = toDatetimeLocal(new Date(now + 25 * 60 * 60 * 1000)); // +25h
+  f.rewards.rows = 8;
+  f.rewards.spellcheck = false;
+  f.rewards.value = JSON.stringify({
+    positionRewards: { 1: [{ type: "gold", amount: 500 }] },
+    percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "gold", amount: 10 }] }],
+  }, null, 2);
+
+  const grid = el("div", "adm-grid");
+  grid.append(
+    field("Name", f.name), field("Description", f.description),
+    field("Entry fee (gold)", f.entryFee),
+    field("Registration starts", f.regStartsAt), field("Registration ends", f.regEndsAt),
+  );
+
+  const rewardsField = field("Rewards (JSON)", f.rewards);
+  rewardsField.classList.add("adm-wide");
+
+  form.append(grid, rewardsField, el("p", "adm-hint", TOURNAMENT_REWARDS_HINT),
+    tournamentFormButtons(() => {
+      // Client-side checks stay minimal (well-formed JSON, the fields the
+      // server can't sensibly default) — the server is the real validator
+      // (validateTournament, CLAUDE.md §1.1).
+      let rewards;
+      try {
+        rewards = JSON.parse(f.rewards.value);
+      } catch {
+        throw new Error("Rewards is not valid JSON — fix the syntax and save again");
+      }
+      if (!f.name.value.trim()) throw new Error("Name is required");
+      if (!f.regStartsAt.value || !f.regEndsAt.value) throw new Error("Both registration dates are required");
+      return createTournament({
+        name: f.name.value.trim(),
+        description: f.description.value.trim() || undefined,
+        entryFee: +f.entryFee.value,
+        regStartsAt: new Date(f.regStartsAt.value).toISOString(),
+        regEndsAt: new Date(f.regEndsAt.value).toISOString(),
+        rewards,
+      });
+    }, "Tournament created"));
+  els.body.appendChild(form);
+}
+
+/** Same shape as formButtons() but re-reads tournamentsData (the tab's OWN
+ *  list, not the shared masterState) after a win — mutate()/formButtons()
+ *  are for the master tables only. */
+function tournamentFormButtons(save, okText) {
+  const bar = el("div", "adm-toolbar");
+  const saveBtn = button("Save", "btn primary adm-small", async () => {
+    saveBtn.disabled = true;
+    els.msgs.innerHTML = "";
+    try {
+      await save();
+      tournamentsData = (await loadTournaments()).tournaments;
+      creatingTournament = false;
+      renderBody();
+      pushMsg(okText);
+    } catch (e) {
+      pushMsg(e.message, true);
+      saveBtn.disabled = false;
+    }
+  });
+  bar.append(saveBtn, button("Cancel", "btn ghost adm-small", () => { creatingTournament = false; renderBody(); }));
+  return bar;
+}
+
 // ---------- trainers (roster browser + monster minting) ----------
 
 function trainersTab() {
@@ -1214,4 +1372,8 @@ function fmtDur(s) {
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.round(s / 60)}m`;
   return `${+(s / 3600).toFixed(1)}h`;
+}
+
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString();
 }

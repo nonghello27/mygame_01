@@ -309,3 +309,35 @@ export async function cancelListing(listingId) {
 export async function sellToSystem(body) {
   return postJson("/api/trainer/inventory/sell", body);
 }
+
+/**
+ * The Tournament panel's one read (Phase 9.2): every tournament (any status —
+ * cancelled/past stay visible as history), each with a live entrant count and
+ * the CALLER's own entry summary (or null) — never another trainer's team.
+ * @returns {Promise<{tournaments:{id:number, name:string, description:string,
+ *   regStartsAt:string, regEndsAt:string, status:string, entryFee:number,
+ *   rewards:object, entrantCount:number,
+ *   myEntry:{enteredAt:string, monsterIds:number[], feePaid:number}|null}[]}>}
+ */
+export async function fetchTournaments() {
+  return getJson("/api/battle/tournaments");
+}
+
+/**
+ * Register exactly 3 owned, free monsters for one tournament — their ORDER
+ * is the lane order the frozen team snapshot freezes. 409s: "registration is
+ * not open", "not enough gold for the entry fee", "a monster is busy or not
+ * yours", "already registered for this tournament".
+ * @param {number} tournamentId
+ * @param {number[]} monsterIds exactly 3 distinct owned free monster ids
+ * @returns {Promise<{entry:{enteredAt:string, monsterIds:number[], feePaid:number}}>}
+ */
+export async function registerTournament(tournamentId, monsterIds) {
+  return postJson("/api/battle/tournament/register", { tournamentId, monsterIds });
+}
+
+/** Withdraw a registration while the window is still open — releases the
+ *  party lock and refunds whatever this entry actually paid. */
+export async function withdrawTournament(tournamentId) {
+  return postJson("/api/battle/tournament/withdraw", { tournamentId });
+}
