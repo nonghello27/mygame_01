@@ -123,3 +123,40 @@ button.btn.guild-danger{color:var(--hp-low);border-color:var(--hp-low)}
   border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:12.5px;
 }
 .gvg-history-name{font-weight:600;flex:1}
+
+/* detail view: war bracket + standings (Phase 9.7) — same chrome as
+   tournament.css's own tour-detail/-round/-pairing/-standings rules. */
+.gvg-detail{display:flex;flex-direction:column;gap:10px}
+.gvg-cancelled-note{color:var(--hp-low)}
+
+.gvg-round{display:flex;flex-direction:column;gap:6px}
+.gvg-pairing-block{display:flex;flex-direction:column;gap:4px}
+.gvg-pairing{
+  display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:9px;padding:7px 11px;font-size:12.5px;
+}
+.gvg-pairing-side{flex:1;color:var(--text)}
+.gvg-pairing-side.gvg-bye{color:var(--muted);font-style:italic}
+.gvg-pairing-side.gvg-winner{color:var(--hp-good);font-weight:700}
+.gvg-pairing-vs{color:var(--muted);font-size:11px;text-transform:uppercase}
+.gvg-pairing-pending{
+  color:var(--clash);font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;
+}
+
+.gvg-battle-list{display:flex;flex-direction:column;gap:2px;padding-left:12px}
+.gvg-battle-line{margin:0;font-size:11.5px;color:var(--muted)}
+.gvg-battle-line.gvg-tiebreak{color:var(--clash);font-style:italic}
+
+.gvg-standings{display:flex;flex-direction:column;gap:6px}
+.gvg-standing-row{
+  display:flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:9px;padding:7px 11px;font-size:12.5px;
+}
+.gvg-standing-row.gvg-standing-mine{border-color:var(--a-deep)}
+.gvg-standing-rank{font-weight:700;color:var(--a-deep);flex:none;width:34px}
+.gvg-standing-name{flex:1}
+.gvg-standing-reward-row{
+  display:flex;align-items:center;gap:10px;padding:5px 11px 5px 44px;font-size:11.5px;
+}
+.gvg-standing-reward-name{flex:1;color:var(--text)}
+.gvg-standing-reward{color:var(--muted);text-align:right}

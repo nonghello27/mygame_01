@@ -879,5 +879,47 @@
   "runeUse": {
     "a": {},
     "b": {}
+  },
+  "finalState": {
+    "a": [
+      {
+        "idx": 0,
+        "hp": 47,
+        "statuses": []
+      },
+      {
+        "idx": 1,
+        "hp": 41,
+        "statuses": []
+      },
+      {
+        "idx": 2,
+        "hp": 47,
+        "statuses": []
+      }
+    ],
+    "b": [
+      {
+        "idx": 0,
+        "hp": 0,
+        "statuses": [
+          {
+            "id": "burn",
+            "turnsLeft": 2,
+            "pct": 8
+          }
+        ]
+      },
+      {
+        "idx": 1,
+        "hp": 0,
+        "statuses": []
+      },
+      {
+        "idx": 2,
+        "hp": 0,
+        "statuses": []
+      }
+    ]
   }
 }

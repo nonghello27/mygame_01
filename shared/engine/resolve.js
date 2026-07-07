@@ -51,10 +51,21 @@ import { STATUSES, statMod, hasFlag } from "../rules/statuses.js";
  *   that trigger applies) plus a per-instance tally on the returned
  *   `runeUse` object, for the caller (server/services/matches.js
  *   `resolveMatch`) to settle durability after the fact.
+ *   A lane may also carry `startHp`/`startStatuses` (Phase 9.6, GVG relay
+ *   battles): `startHp` seeds the unit's opening hp (a unit at `startHp <= 0`
+ *   enters BORN FALLEN — no turn, no `fall` event, it fell in a previous
+ *   battle) and `startStatuses` (plain `{id, turnsLeft, pct}` objects) seeds
+ *   its opening statuses. Readiness gauges and cooldowns always reset per
+ *   battle regardless — only life and status carry over. Absent/empty ⇒
+ *   identical to a fresh full-health unit, exactly as before this phase.
  * @returns {{youWin:boolean, draw:boolean, survivor:{side:string,idx:number}|null,
- *   events:object[], runeUse:{a:Object<number,number>, b:Object<number,number>}}}
+ *   events:object[], runeUse:{a:Object<number,number>, b:Object<number,number>},
+ *   finalState:{a:object[], b:object[]}}}
  *   runeUse maps each side's rune INSTANCE ids (server row ids, not def ids)
- *   to how many charges that instance spent this battle.
+ *   to how many charges that instance spent this battle. finalState is one
+ *   `{idx, hp, statuses}` entry per unit per side (fallen units included) —
+ *   feed it straight back in as the next chained battle's `startHp`/
+ *   `startStatuses`, mapped by idx (Phase 9.6/9.7).
  */
 export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   const rng = makeRng(seed);
@@ -75,11 +86,18 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   // skill-array order, then side b — THEN unit passives, in the existing
   // frozen order (player lanes front-to-back, then enemy lanes) — THEN
   // equipment (monster-domain, then trainer-domain; Phase 7.2 step C) — THEN
-  // runes (Phase 7.3 step C, below).
+  // runes (Phase 7.3 step C, below). The three per-unit stages below all
+  // skip a unit that isn't `alive` — this only ever matters for a Phase 9.6
+  // BORN FALLEN unit (startHp <= 0): without the gate, a battle_start
+  // perm_stat maxHp or heal would silently revive it (`target.hp =
+  // target.maxHp`), and that resurrection would leak into `finalState` for
+  // 9.7's next relay battle to wrongly resurrect it from. A dead unit fires
+  // nothing and receives nothing at battle_start.
   fireTrainerEffects("a", "battle_start", trainers, A, events, rng);
   fireTrainerEffects("b", "battle_start", trainers, B, events, rng);
 
   for (const u of all) {
+    if (!u.alive) continue;
     for (const sk of u.skills) {
       for (const fx of sk.data.passive ?? []) {
         if (fx.when === "battle_start") {
@@ -97,6 +115,7 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   // 1. Monster-domain equipment: worn by a specific unit, targets only that
   //    unit, same iteration order as the passives loop above.
   for (const u of all) {
+    if (!u.alive) continue;
     for (const piece of u.equipment) {
       for (const fx of piece.effects ?? []) {
         if (fx.when === "battle_start") {
@@ -131,6 +150,7 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   // never revisits it once exhausted at this stage, since battle_start only
   // runs once).
   for (const u of all) {
+    if (!u.alive) continue;
     for (const rune of u.runes) {
       const fxs = (rune.effects ?? []).filter((fx) => fx.when === "battle_start");
       if (fxs.length === 0) continue;
@@ -169,7 +189,21 @@ export function resolveBattle(laneA, laneB, seed = 1, trainers = {}) {
   const youWin = !draw && aliveCount(A) > 0;
   if (draw) events.push({ t: "draw", turns });
   const survivor = draw ? null : firstAlive(youWin ? A : B);
-  return { youWin, draw, survivor: survivor ? ref(survivor) : null, events, runeUse };
+  return {
+    youWin, draw, survivor: survivor ? ref(survivor) : null, events, runeUse,
+    finalState: { a: A.map(endState), b: B.map(endState) },
+  };
+}
+
+/**
+ * Carry-over snapshot (Phase 9.6): one entry per unit, INCLUDING fallen ones
+ * (hp 0) — the caller (server/services/gvg.js) maps by idx into the next
+ * chained battle's `startHp`/`startStatuses`, so a full roster round-trips
+ * with no filtering on either end. Statuses are copied to plain objects —
+ * the same shape liveUnit() reads back in, never a live reference.
+ */
+function endState(u) {
+  return { idx: u.idx, hp: u.hp, statuses: u.statuses.map((s) => ({ id: s.id, turnsLeft: s.turnsLeft, pct: s.pct })) };
 }
 
 /**
@@ -394,6 +428,8 @@ function applyEffect(source, fallbackTarget, fx, skill, events, rng, pool = []) 
 
 /** A live combat instance from a snapshot lane (derived stats precomputed). */
 function liveUnit(d, side) {
+  const maxHp = d.maxHp ?? d.hp;
+  const hp = d.startHp ?? maxHp;
   return {
     side,
     idx: d.idx,
@@ -403,8 +439,8 @@ function liveUnit(d, side) {
     attackKind: d.attackKind ?? "melee",
     attackStyle: d.attackStyle ?? "phys",
     targeting: d.attackKind === "range" ? d.targeting ?? "front" : "front", // melee locks to front
-    maxHp: d.maxHp ?? d.hp,
-    hp: d.maxHp ?? d.hp,
+    maxHp,
+    hp,
     atkMin: d.atkMin ?? d.atk,
     atkMax: d.atkMax ?? d.atk,
     matkMin: d.matkMin ?? 0,
@@ -428,9 +464,17 @@ function liveUnit(d, side) {
     cooldowns: Object.fromEntries(
       (d.skills ?? []).filter((s) => s.cooldown > 0).map((s) => [s.id, s.cooldown])
     ),
-    statuses: [],
+    // Carried statuses (Phase 9.6 relay battles): deep-copied to plain
+    // {id, turnsLeft, pct} objects — the engine mutates statuses in place
+    // (turnsLeft ticks, splice on expiry) and must never touch the caller's
+    // snapshot. Absent/empty ⇒ [] exactly as before this phase.
+    statuses: (d.startStatuses ?? []).map((s) => ({ id: s.id, turnsLeft: s.turnsLeft, pct: s.pct })),
     gauge: 0,
-    alive: true,
+    // Carried hp (Phase 9.6): a unit entering at startHp <= 0 is BORN
+    // FALLEN — it fell in a previous relay battle, so it never acts, is
+    // never targeted, and emits no `fall` event here (that event already
+    // happened, in the earlier battle).
+    alive: hp > 0,
   };
 }
 

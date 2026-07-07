@@ -255,8 +255,20 @@ job_defs(id, kind 'work'|'training', name, duration_s INT, rewards JSONB, unlock
 activities(id, trainer_id, monster_id, job_id, started_at, ends_at,
            resolved BOOL DEFAULT false, outcome JSONB)
 
--- later phases: marketplace_listings, guilds, guild_members, quests,
--- quest_submissions, messages, tournament/gvg match kinds — same patterns.
+-- later phases: quests, quest_submissions, messages — same patterns.
+-- Marketplace/tournaments/guilds/GVG (Phases 8-9) already ship real tables
+-- (marketplace_listings, tournaments/tournament_entries/tournament_matches,
+-- guilds/guild_members/guild_applications, gvg_events/gvg_teams/
+-- gvg_registrations/gvg_wars — db/migrations/013-018, exact columns in each
+-- domain's server/repos/*.js). Of note here: gvg_wars (017's schema) is now
+-- a WRITTEN table as of Phase 9.7 — one row per resolved guild-vs-guild war
+-- (event, round, position, both guild ids, seed, winner, a small `results`
+-- JSONB carrying the relay's per-battle summary + an optional tiebreak
+-- flag), `UNIQUE(event_id, round, position)` backing its exactly-once
+-- insert claim; and gvg_teams gained a `reward` column (018, NULL until
+-- settlement stamps `{rank, rewards}` — the tournament_entries.reward (015)
+-- precedent, one idempotent claim per lineup team, since GVG rewards follow
+-- contribution, not guild membership).
 ```
 
 Migration discipline: schema lives in `db/migrations/NNN_*.sql`, applied in
@@ -367,6 +379,14 @@ resolveBattle(battleState, seed) → { winner, events[], finalState }
 - **Termination:** hard turn cap → draw result. Every emitted event carries
   enough data to animate without recomputation (`before`/`after` HP, status
   ids, etc.) — the replayer must never do math.
+- **Carry-over state** (Phase 9.6, for GVG's relay wars — 9.7): a lane may
+  optionally carry `startHp`/`startStatuses` in (a unit at `startHp <= 0`
+  enters born fallen — no turn, no `fall` event, it fell in an earlier
+  battle), and every result carries `finalState:{a,b}` — one `{idx, hp,
+  statuses}` per unit, fallen ones included — back out, so the caller can
+  feed one battle's survivors straight into the next as-is. Readiness
+  gauges and cooldowns always reset per battle regardless; absent fields
+  behave exactly like a fresh full-health unit.
 - **Tests first here.** The engine is the one part of the codebase that gets
   unit tests from day one (`node --test` on fixture states + fixed seeds,
   golden event logs).
@@ -666,6 +686,22 @@ POST /api/guild/gvg/register  { eventId } → { registered:true, lineup }
                               staged; 403 leader only, 409 "registration is
                               not open" / "set a lineup of N-M teams first" /
                               "your guild is already registered"
+GET  /api/guild/gvg/detail    ?id=<eventId> (Phase 9.7) → the war-bracket +
+                              standings detail view — settlement
+                              (settleGvg()) runs first, so this always
+                              reflects the freshest state: event summary,
+                              every registered guild's display info, a
+                              `teams` map (gvg_teams id -> {guildId,
+                              trainerId, trainerName, display} — display
+                              only, never lanes) built by reading each
+                              registered guild's lineup exactly once and
+                              reusing it for both that map and the
+                              standings' reward lines, the bracket
+                              re-derived round by round (each pairing's
+                              seed, per-battle relay summary, tiebreak
+                              flag), the 3rd-place pairing, the enriched
+                              standings, and the caller's own guild id
+                              (`myGuildId`, null when guildless)
 
 # not yet built (future domains, still under the 12-function cap)
 GET  /api/market/browse       search/filter listings (kind, text, price

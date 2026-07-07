@@ -80,10 +80,11 @@
 //   status) with a live registered-guild count — the admin tab's list.
 // POST /api/admin/gvg  { name, description?, minTeams?, maxTeams?,
 //   regStartsAt, regEndsAt, rewards }  -> { event }  create one; status
-//   always starts 'scheduled' (settleGvgSetup() is what later advances it to
-//   'registration'; running/completed are Phase 9.7). rewards is the same
-//   Phase 9.1 grammar tournaments.rewards uses; minTeams/maxTeams (1-10,
-//   default 1/10) bound how many ordered teams a guild's lineup may field.
+//   always starts 'scheduled' (settleGvg() is what later advances it all the
+//   way through 'registration' -> 'running' -> 'completed', Phase 9.7).
+//   rewards is the same Phase 9.1 grammar tournaments.rewards uses;
+//   minTeams/maxTeams (1-10, default 1/10) bound how many ordered teams a
+//   guild's lineup may field.
 // POST /api/admin/gvg/cancel  { id }  -> { event }  cancel at any
 //   non-completed status: releases every submitted team's busy lock
 //   (idempotent — safe to click twice); GVG events have no entry fee, so

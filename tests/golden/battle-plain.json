@@ -465,5 +465,31 @@
   "runeUse": {
     "a": {},
     "b": {}
+  },
+  "finalState": {
+    "a": [
+      {
+        "idx": 0,
+        "hp": 0,
+        "statuses": []
+      },
+      {
+        "idx": 1,
+        "hp": 0,
+        "statuses": []
+      }
+    ],
+    "b": [
+      {
+        "idx": 0,
+        "hp": 0,
+        "statuses": []
+      },
+      {
+        "idx": 1,
+        "hp": 40,
+        "statuses": []
+      }
+    ]
   }
 }

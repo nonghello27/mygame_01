@@ -4,8 +4,9 @@
 // role-check flow doesn't belong under any existing domain). Owns every
 // /api/guild/* URL — browse/me/create/apply/accept/reject/leave/kick/
 // promote/transfer for Phase 9.4, plus (Phase 9.5) GVG events/submit/
-// withdraw/lineup/register. api/guild/[...route].js (prod) and
-// vite.config.js's dev middleware (local) both just call route().
+// withdraw/lineup/register, and (Phase 9.7) GVG detail — the war bracket +
+// standings view. api/guild/[...route].js (prod) and vite.config.js's dev
+// middleware (local) both just call route().
 //
 // Every URL here needs at least one path segment after /api/guild — a
 // Vercel catch-all `[...route].js` never matches its own bare prefix (same
@@ -17,7 +18,7 @@ import {
   browse, me, create, apply, accept, reject, leave, kick, promote, transfer,
 } from "../routes/guild.js";
 import {
-  gvgEvents, gvgSubmit, gvgWithdraw, gvgLineup, gvgRegister,
+  gvgEvents, gvgSubmit, gvgWithdraw, gvgLineup, gvgRegister, gvgDetail,
 } from "../routes/gvg.js";
 
 export const route = createRouter({
@@ -37,4 +38,5 @@ export const route = createRouter({
   "/api/guild/gvg/withdraw": { POST: gvgWithdraw },
   "/api/guild/gvg/lineup": { POST: gvgLineup },
   "/api/guild/gvg/register": { POST: gvgRegister },
+  "/api/guild/gvg/detail": { GET: gvgDetail },
 });

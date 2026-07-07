@@ -491,3 +491,21 @@ export async function setGvgLineup(eventId, teamIds) {
 export async function registerGvgGuild(eventId) {
   return postJson("/api/guild/gvg/register", { eventId });
 }
+
+/**
+ * The war-bracket/standings detail view (Phase 9.7): registered guilds
+ * (display only — never another guild's lanes), a `teams` map (gvg_teams id
+ * -> {guildId, trainerId, trainerName, display}) for labeling bracket/battle
+ * lines, the bracket re-derived round by round (each pairing `{a, b, winner,
+ * seed, battles, tiebreak}`, guild ids or null for a bye — `battles` is the
+ * per-battle relay summary, null while unplayed), the 3rd-place pairing
+ * (same shape, or null if this field never had one), the enriched standings
+ * ({rank, guildId, guildName, rewards:{teamId, trainerId, trainerName,
+ * reward}[]}), and the caller's own guild id (`myGuildId`, null when
+ * guildless). `rounds`/`thirdPlace`/`standings` are all null/empty for an
+ * event that hasn't started running yet.
+ * @param {number} eventId
+ */
+export async function fetchGvgDetail(eventId) {
+  return getJson(`/api/guild/gvg/detail?id=${encodeURIComponent(eventId)}`);
+}

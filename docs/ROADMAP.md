@@ -1009,25 +1009,25 @@ the leader picks and orders a lineup and registers; a non-leader attempting
 selection or registration gets 403; window close releases unpicked teams'
 monsters; admin cancel releases everything.
 
-### Phase 9.6 — Engine: carry-over battle state (pure, isolated)
+### Phase 9.6 — Engine: carry-over battle state (pure, isolated) ✅ CODE COMPLETE (2026-07-07)
 
 The one engine change in Phase 9, landed alone so its blast radius is a
 single reviewable diff with golden coverage — everything before it ships
 without touching `shared/engine/`.
 
-- `resolveBattle()` lane snapshots accept optional `startHp` and
+- ✅ `resolveBattle()` lane snapshots accept optional `startHp` and
   `startStatuses` (`liveUnit()` reads `hp: d.startHp ?? d.maxHp ?? d.hp`,
   seeds `statuses` from `startStatuses` instead of `[]`; a unit entering at
   `startHp <= 0` is born fallen). Readiness gauges and cooldowns still
   reset per battle — the design carries LIFE AND STATUS between relay
   battles, nothing else.
-- The result envelope gains `finalState: {a: [{idx, hp, statuses}], b:
+- ✅ The result envelope gains `finalState: {a: [{idx, hp, statuses}], b:
   [...]}` — the surviving state 9.7 feeds into the next chained battle.
   Like 7.3's `runeUse`, this is additive: no fixture carries `startHp`, so
   every existing event array must be byte-identical — golden logs
   regenerated in the same commit for the envelope field only, verified not
   assumed.
-- Tests: a chained-battle case in a new `tests/relay-engine.test.mjs` —
+- ✅ Tests: a chained-battle case in a new `tests/relay-engine.test.mjs` —
   battle 1's `finalState` fed as battle 2's `startHp`/`startStatuses`
   reproduces deterministically; absent-vs-empty carry fields produce
   identical logs (the 7.2/7.3 back-compat precedent); a DOT status carried
@@ -1037,36 +1037,71 @@ without touching `shared/engine/`.
 relay test chain is deterministic; a free/PVP/adventure battle's behavior
 is provably unchanged.
 
-### Phase 9.7 — GVG: war resolution, rewards, results
+### Phase 9.7 — GVG: war resolution, rewards, results ✅ CODE COMPLETE (2026-07-07)
 
-- Relay resolution (`server/services/gvg.js`): a war between two ordered
-  lineups is a chain of `resolveBattle()` calls — each side fields its
-  current team; the LOSING side's next team (by `battle_order`) steps in
-  while the winner's survivors carry their exact `finalState` hp/statuses
-  forward (the user-specified rule: life and status are NOT reset, the
-  standing team fights until its last unit falls). Every battle in the
-  chain is seeded off the war seed + battle index (`deriveNodeSeed`
-  precedent) and appended to `gvg_wars.results` — the whole war replayable
-  from one stored seed. A drawn battle (turn cap) eliminates BOTH current
-  teams — the design decision to lock here, mirroring how a drawn
-  tournament battle needs a deterministic winner rule (seeded coin flip
-  recorded in the result) so brackets always advance.
-- `settleGvg()`: same lazy shape as 9.3 — registration close with < 2
-  registered guilds auto-cancels; the guild bracket generates off the event
-  seed via 9.1's `generateBracket`; one round of wars per claimed pass;
-  placements + 3rd-place decider identical to tournaments.
-- Rewards: 9.1's position + percentile resolution over GUILD placements,
-  paid to the trainers whose teams were in the guild's registered lineup
-  (participants, not the whole roster — the locked design decision: rewards
-  follow contribution), each payout an idempotent claimed statement. All
-  `busy_kind='gvg'` locks release on the guild's elimination, not the
-  event's end — a knocked-out guild's monsters go home early.
-- UI: the 🏰 panel's GVG section gains live event state (bracket, my
-  guild's current war, per-battle summaries — text summaries, no cutscene
-  replay, the Adventure precedent) and a results history (standings,
-  rewards, past wars browsable per event).
-- Docs: GAME_DESIGN §6.4 and ARCHITECTURE's data-model section updated to
-  the shipped shapes in the same change (standing rule below).
+Remaining (operator step): `npm run db:migrate` (018).
+
+- ✅ `018_gvg_rewards.sql`: ONE new column, `gvg_teams.reward` (NULL until
+  settlement stamps it — the exact `tournament_entries.reward` (015)
+  precedent); rewards follow CONTRIBUTION, not guild membership, so the
+  gate lives on `gvg_teams` (one claim per lineup team), never on
+  `gvg_registrations`/`gvg_events`.
+- ✅ Relay resolution (`shared/rules/gvgWar.js`'s `resolveWarRelay()`,
+  called from `server/services/gvg.js`): a war between two ordered lineups
+  is a chain of `resolveBattle()` calls — each side fields its current
+  team; on a decisive battle the LOSING side's next team (by
+  `battle_order`) steps in FRESH while the WINNING side's current team
+  carries its exact `finalState` hp/statuses (9.6) forward into the next
+  battle; a DRAWN battle (the engine's turn-cap) eliminates BOTH current
+  teams — neither carries anything forward. The war ends the instant a
+  side has no next team to field; if both sides exhaust at once (a draw
+  when both current teams were each side's last), the tie breaks with one
+  more deterministic roll off the war seed itself (`makeRng(warSeed)
+  .chance(50)`, recorded as `tiebreak:true`). Every battle in the chain is
+  seeded off the war seed + battle index (`deriveNodeSeed` precedent) and
+  the whole war is replayable from one stored seed plus the two guilds'
+  frozen `gvg_teams.team` snapshots — only a small per-battle summary
+  (`{index, teamA, teamB, seed, outcome, aAlive, bAlive}`) persists in
+  `gvg_wars.results`, never the full event log (CLAUDE.md §1.6).
+- ✅ `settleGvg()`/`settleRunningGvg()`: same lazy shape as 9.3's
+  `settleTournaments()`/`settleRunning()` — registration close with < 2
+  registered guilds auto-cancels; the guild bracket re-derives every read
+  from (registered guild ids, the event's seed, and `gvg_wars` rows already
+  resolved) via `shared/rules/bracket.js`'s `replayBracket()` — no bracket
+  JSONB column anywhere; one round of real, undecided pairings resolves per
+  claimed pass (skip byes), plus the 3rd-place decider once its own two
+  sides are real, each war persisted via an exactly-once `insertGvgWar()`
+  claim. THE INSTANT a war resolves, the LOSING guild's every lineup team's
+  lock is released (`claimReleaseGvgTeam` + `releaseGvgParty`, both
+  idempotent) — the locked design decision: a knocked-out guild's monsters
+  go home the moment it's eliminated, not at the event's end. Once the
+  re-derived bracket comes back complete: `placements()` →
+  `resolveRewards()` against the event's configured rewards, one idempotent
+  `claimGvgTeamReward()` PER LINEUP TEAM (participants, not the whole
+  roster) granting through the SAME `REWARD_GRANTERS` registry tournaments
+  use (lifted out to `server/services/eventRewards.js` the moment GVG
+  needed it too) and releasing that team's lock (a no-op for an
+  already-eliminated guild, finally freeing the champion's), THEN
+  `claimCompleteGvgEvent()` stamps the standings JSONB and flips
+  `running -> completed`. Admin cancel mid-`running` still works unchanged:
+  whichever guarded status flip lands first wins the race.
+- ✅ Results: `GET /api/guild/gvg/detail?id=` (`getGvgDetail()`) returns the
+  event summary, every registered guild's display info, a `teams` map
+  (gvg_teams id -> guildId/trainerId/trainerName/display — display data
+  only, never lanes) built by reading each registered guild's lineup
+  exactly once and reusing it for both that map and the standings' reward
+  lines, the war bracket re-derived round by round (each pairing's seed,
+  per-battle summary, tiebreak flag), the 3rd-place pairing, the enriched
+  standings, and the caller's own guild id. The 🏰 panel's GVG history rows
+  gained a "Details" button swapping the panel body for this view
+  (`src/ui/guild.js`, re-instantiating `src/ui/tournament.js`'s own bracket/
+  standings view almost verbatim): round labels ("Round N" / "Semifinals" /
+  "Final" / "3rd-place war"), byes as "bye", unplayed pairings "pending",
+  and a per-war battle-summary list (one text line per battle — "Battle N:
+  X's team vs Y's team — winner wins (N alive)", "both teams fall" for a
+  draw, a tiebreak note — no cutscene replay, the Adventure precedent).
+- ✅ Docs: GAME_DESIGN §6.4 and ARCHITECTURE's data-model/API sections, plus
+  CLAUDE.md, updated to the shipped shapes in this same change.
 
 **Done when:** two real guilds register lineups; after the window a plain
 read resolves wars round by round exactly once (racing reads safe); the

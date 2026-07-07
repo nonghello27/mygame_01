@@ -38,12 +38,13 @@ The vision and plans live in `docs/` — treat them as part of this file:
   reward math), 9.2 (tournament schema, admin lifecycle, registration, with
   a live 🏆 Tournament panel + admin tab), 9.3 (tournaments' lazy
   resolution, rewards, a bracket/standings detail view), 9.4 (guilds:
-  creation, membership, roles, with a live 🏰 Guild panel), and 9.5 (GVG
+  creation, membership, roles, with a live 🏰 Guild panel), 9.5 (GVG
   events: schedule, team submission, lineup, with a live ⚔ Guild vs. Guild
-  section in the 🏰 Guild panel + an admin ⚔ GVG tab) are all code complete;
-  9.6 (the one engine change — carry-over battle state between relay
-  battles) is next up, followed by 9.7 (GVG war resolution/rewards/results);
-  chat, notifications & the photo quest are Phase 10.
+  section in the 🏰 Guild panel + an admin ⚔ GVG tab), 9.6 (the one engine
+  change — carry-over battle state between relay battles), and 9.7 (GVG war
+  resolution/rewards/results, with a live bracket/standings detail view in
+  the same ⚔ Guild vs. Guild section) are all code complete — **Phase 9 is
+  done**. Phase 10 (chat, notifications & the photo quest) is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -199,10 +200,21 @@ per roadmap phase, don't big-bang rename.)
 │                           # LIFO compensation over the flat gold cost, apply/accept/reject,
 │                           # leave/kick/promote/transfer — every one re-deriving the caller's
 │                           # role from getMembership() first, never trusting the body — and
-│                           # me()'s guildless/member/leader-or-officer three-shape view)
+│                           # me()'s guildless/member/leader-or-officer three-shape view),
+│                           # eventRewards.js (the REWARD_GRANTERS registry lifted out of
+│                           # tournament.js the moment GVG needed the identical payout
+│                           # registry too — one source of truth, no drift), gvg.js (Phase
+│                           # 9.5's team submission/withdrawal/lineup/registration plus
+│                           # Phase 9.7's settleGvg()/settleRunningGvg() war-resolution
+│                           # engine — one guild-vs-guild war per bracket pairing via
+│                           # shared/rules/gvgWar.js's resolveWarRelay(), an exactly-once
+│                           # insertGvgWar() claim, immediate lock release on a guild's
+│                           # elimination rather than waiting for the event's end, the
+│                           # shared REWARD_GRANTERS payout, and getGvgDetail() for the
+│                           # bracket/standings read)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
-│   │                       # up to 017_gvg.sql as of Phase 9.5)
+│   │                       # up to 018_gvg_rewards.sql as of Phase 9.7)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
@@ -221,7 +233,11 @@ per roadmap phase, don't big-bang rename.)
 │                           # read-side "rebuild the bracket from a durable results log"
 │                           # rebuild — no bracket is ever persisted as JSON), rewards.js
 │                           # (the tournament/GVG reward grammar + resolveRewards()
-│                           # position/percentile payout math, Phase 9.1)
+│                           # position/percentile payout math, Phase 9.1), gvgWar.js
+│                           # (resolveWarRelay(): Phase 9.7's pure seeded guild-vs-guild
+│                           # war — a chain of resolveBattle() calls over two ordered
+│                           # lineups per the carry-over/elimination/tiebreak rules, a
+│                           # small per-battle battles[] summary out, never the event log)
 ├── tests/                  # node --test; fixtures.mjs + golden/ (regen.mjs)
 ├── public/sprites/         # uNN.png sheets + TEMPLATE.md (art spec)
 └── src/
@@ -251,7 +267,9 @@ per roadmap phase, don't big-bang rename.)
     │                       # leader-only accept/reject/kick/promote/transfer controls, and
     │                       # (Phase 9.5) a ⚔ Guild vs. Guild section — open-event cards with
     │                       # a team-submit party picker for any member, plus a leader-only
-    │                       # per-team lineup-order editor and register-guild button)
+    │                       # per-team lineup-order editor and register-guild button, and
+    │                       # (Phase 9.7) a per-event "Details" war-bracket/standings view
+    │                       # off the same section, mirroring the tournament panel's own)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -703,13 +721,14 @@ compensating release on any failure. The LEADER (only, role re-derived via
 `getMembership()` first, CLAUDE.md §1.1) stages a lineup with `setLineup`
 (clears then re-sets each team's `battle_order`, 1-based, order IS the relay
 order) and then `registerGuild` (409 unless the lineup's count sits within
-`[minTeams, maxTeams]` with contiguous order). `settleGvgSetup()` — called
+`[minTeams, maxTeams]` with contiguous order). `settleGvg()` — called
 lazily at the top of every GVG read, the `settleTournaments`/`settleActivities`
 precedent — opens due registration windows cosmetically and, once a window
 closes, releases every submitted-but-unpicked team's lock plus every team
 belonging to a guild that never completed registration; a picked team
 belonging to a registered guild stays locked for 9.7's eventual war to
-release. Admin cancel (`⚔ GVG` tab, mirroring `🏆 Tournaments`) releases
+release (9.7, below, is what actually walks a `running` event). Admin cancel
+(`⚔ GVG` tab, mirroring `🏆 Tournaments`) releases
 every team's lock at any non-completed status, idempotently. The 🏰 Guild
 panel's new "⚔ Guild vs. Guild" section (`src/ui/guild.js`) is the same
 msgs+body shell as the rest of the panel: any member sees open events with a

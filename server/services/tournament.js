@@ -59,7 +59,9 @@
 //     configured rewards, one idempotent claimEntryReward() per entry
 //     (reward IS NULL is the gate — a re-run after a crash mid-payout only
 //     ever finishes the remainder, never double-pays or double-releases),
-//     granting through the pluggable REWARD_GRANTERS registry below and
+//     granting through the pluggable REWARD_GRANTERS registry (Phase 9.7
+//     lifted this out to server/services/eventRewards.js the moment GVG
+//     needed the identical registry — one source of truth, no drift) and
 //     releasing that entry's party lock, THEN — only once every entry is
 //     stamped — claimCompleteTournament flips running -> completed with the
 //     standings JSONB. Admin cancel mid-'running' still works exactly as
@@ -76,20 +78,17 @@ import {
   openRegistrationWindows, listDueTournaments, claimStartTournament, claimCompleteTournament,
   insertTournamentMatch, listMatchesForTournament, claimEntryReward, listEntrantsForTournament,
 } from "../repos/tournaments.js";
-import { listMonstersByTrainer, mintMonster } from "../repos/monsters.js";
+import { listMonstersByTrainer } from "../repos/monsters.js";
 import { listEquippedMonsterEquipment } from "../repos/equipment.js";
 import { listSocketedRunes } from "../repos/runes.js";
 import { debitGold, refundGold } from "../repos/trainers.js";
 import {
   listSpeciesAdmin, listItemsAdmin, listEquipmentAdmin, listRunesAdmin,
 } from "../repos/admin.js";
-import { getSpeciesById } from "../repos/species.js";
-import {
-  grantItem, grantEquipment, grantMonsterEquipment, grantRune, getEquipmentDomain,
-} from "../repos/inventory.js";
 import { validateTournament } from "./adminValidate.js";
 import { settleActivities } from "./activities.js";
 import { toLane, groupByMonster } from "./matches.js";
+import { REWARD_GRANTERS } from "./eventRewards.js";
 import { resolveBattle } from "../../shared/engine/resolve.js";
 import { makeRng } from "../../shared/engine/rng.js";
 import { replayBracket, derivePairingSeed, placements } from "../../shared/rules/bracket.js";
@@ -468,31 +467,6 @@ export async function adminList(sql) {
 }
 
 // --- settlement engine (Phase 9.3) ------------------------------------------
-
-/**
- * The pluggable reward-grant registry (the performSummon REQUIREMENT_
- * CHECKERS / adventure.js NODE_RESOLVERS precedent, CLAUDE.md §1.4): a new
- * reward type is one more entry here (plus one more branch in
- * shared/rules/rewards.js's EVENT_REWARD_TYPES and server/services/
- * adminValidate.js's validateReward) — never a bare `if` bolted onto an
- * existing branch. Keys cover EVENT_REWARD_TYPES exactly.
- */
-const REWARD_GRANTERS = {
-  gold: (sql, trainerId, r) => refundGold(sql, trainerId, r.amount),
-  item: (sql, trainerId, r) => grantItem(sql, trainerId, r.itemId, r.qty),
-  equipment: async (sql, trainerId, r) => {
-    const domain = await getEquipmentDomain(sql, r.equipmentDefId);
-    return domain === "monster"
-      ? grantMonsterEquipment(sql, trainerId, r.equipmentDefId)
-      : grantEquipment(sql, trainerId, r.equipmentDefId);
-  },
-  rune: (sql, trainerId, r) => grantRune(sql, trainerId, r.runeDefId),
-  monster: async (sql, trainerId, r) => {
-    const species = await getSpeciesById(sql, r.speciesId);
-    if (!species) throw httpError(500, `tournament reward names an unknown species "${r.speciesId}"`);
-    return mintMonster(sql, trainerId, species);
-  },
-};
 
 /** `{round, position, winner}[]` for shared/rules/bracket.js's replayBracket,
  *  from listMatchesForTournament()'s rows. */

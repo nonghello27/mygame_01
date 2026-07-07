@@ -28,13 +28,22 @@
 // window, team-count bounds, contiguous order) is the server's job — this
 // only builds the ordered team-id list the leader actually entered and lets
 // the server 409 with its own message for anything else (CLAUDE.md §1.1).
+//
+// GVG detail view (Phase 9.7): every history row's "Details" button swaps
+// the WHOLE panel body (same swap ui/tournament.js's own Details button
+// makes) for the war bracket + standings view, off one fetchGvgDetail()
+// call — round labels, byes, "pending" pairings, and the standings list all
+// reinstantiate ui/tournament.js's own rendering almost verbatim, plus a
+// per-war battle-summary list (text only, CLAUDE.md §1.6 — no cutscene
+// replay, the Adventure precedent) built from the response's `teams` map so
+// a battle line can name whose team fought without ever seeing lanes.
 
 import {
   fetchGuildBrowse, fetchGuildMe, createGuild, applyGuild, acceptGuildApplication,
   rejectGuildApplication, leaveGuild, kickGuildMember, promoteGuildMember,
   transferGuildLeadership,
   fetchGvgEvents, submitGvgTeam, withdrawGvgTeam, setGvgLineup, registerGvgGuild,
-  loadFarm,
+  fetchGvgDetail, loadFarm,
 } from "../services/content.js";
 
 const CREATE_COST_LABEL = "500 🪙"; // mirrors GUILD_CREATE_COST server/services/guild.js
@@ -56,6 +65,8 @@ let gvgEvents = [];     // last fetchGvgEvents() result's `events`, loaded whene
 let gvgRoster = null;   // loadFarm() result, loaded lazily on first "Submit team" click (mirrors tournament.js's `roster`)
 let submittingId = null; // GVG event id whose party picker is expanded, or null
 let gvgPicks = [];       // in-progress team picks for `submittingId`, in pick order
+let gvgDetailId = null;  // GVG event id whose detail (bracket/standings) view is showing, or null
+let gvgDetail = null;    // last fetchGvgDetail() result for `gvgDetailId`, or null while loading
 
 export function initGuild() {
   els = {
@@ -78,6 +89,8 @@ async function refresh() {
   els.msgs.innerHTML = "";
   submittingId = null;
   gvgPicks = [];
+  gvgDetailId = null;
+  gvgDetail = null;
   try {
     me = await fetchGuildMe();
     if (!me.guild) {
@@ -137,6 +150,16 @@ const ROLE_LABEL = { leader: "Leader", officer: "Officer", member: "Member" };
 
 function renderBody() {
   els.body.innerHTML = "";
+
+  if (gvgDetailId != null) {
+    if (!gvgDetail) {
+      els.body.appendChild(el("p", "guild-hint", "Loading…"));
+      return;
+    }
+    els.body.appendChild(gvgDetailView());
+    return;
+  }
+
   if (!me) return;
 
   els.body.appendChild(me.guild ? memberView() : guildlessView());
@@ -683,5 +706,157 @@ function gvgHistoryRow(e) {
     badge(GVG_STATUS_LABEL[e.status] ?? e.status, e.status === "cancelled" ? "gvg-cancelled" : undefined),
     el("span", "guild-hint", `${e.registeredGuildCount} guild${e.registeredGuildCount === 1 ? "" : "s"} registered`),
   );
+  row.append(button("Details", "btn ghost guild-small", () => openGvgDetail(e.id)));
   return row;
+}
+
+// ---------- detail view: war bracket + standings (Phase 9.7) ----------
+
+async function openGvgDetail(eventId) {
+  gvgDetailId = eventId;
+  gvgDetail = null;
+  els.msgs.innerHTML = "";
+  renderBody(); // show the "Loading…" state immediately
+  try {
+    gvgDetail = await fetchGvgDetail(eventId);
+  } catch (e) {
+    pushMsg(`Could not load GVG detail: ${e.message}`, true);
+    gvgDetailId = null;
+  }
+  renderBody();
+}
+
+function backToGuild() {
+  gvgDetailId = null;
+  gvgDetail = null;
+  renderBody();
+}
+
+/** "Round 1"/"Round 2".. for anything bigger, "Semifinals" for the one round
+ *  with exactly 2 pairings, "Final" for the last round (always 1 pairing) —
+ *  the exact ui/tournament.js roundLabel() rule, re-instantiated at guild
+ *  level (a bracket entrant here is a registered GUILD, not a tournament
+ *  entry). */
+function gvgRoundLabel(round, idx) {
+  if (round.pairings.length === 1) return "Final";
+  if (round.pairings.length === 2) return "Semifinals";
+  return `Round ${idx + 1}`;
+}
+
+/** guildId -> guild name (or "#id" fallback, "bye" for a null slot), reading
+ *  only the detail response's own `guilds` list — never another endpoint. */
+function gvgGuildLabel(guildId) {
+  if (guildId == null) return "bye";
+  const g = (gvgDetail.guilds ?? []).find((x) => x.guildId === guildId);
+  return g ? g.guildName : `#${guildId}`;
+}
+
+/** gvg_teams id -> "trainerName" (or a "team #id" fallback when the id is
+ *  missing from the response's `teams` map — never shown a lane). */
+function gvgTeamLabel(teamId) {
+  const t = gvgDetail.teams?.[teamId];
+  return t?.trainerName ?? `team #${teamId}`;
+}
+
+function gvgSideSpan(guildId, winnerId) {
+  if (guildId == null) return el("span", "gvg-pairing-side gvg-bye", "bye");
+  const isWinner = winnerId != null && guildId === winnerId;
+  return el("span", "gvg-pairing-side" + (isWinner ? " gvg-winner" : ""), gvgGuildLabel(guildId));
+}
+
+function gvgPairingRow(p) {
+  const row = el("div", "gvg-pairing");
+  row.append(gvgSideSpan(p.a, p.winner), el("span", "gvg-pairing-vs", "vs"), gvgSideSpan(p.b, p.winner));
+  if (p.winner == null && p.a != null && p.b != null) row.append(el("span", "gvg-pairing-pending", "pending"));
+  return row;
+}
+
+/** One battle summary line: "Battle N: <a>'s team vs <b>'s team — <winner>
+ *  wins (X alive)", or "both teams fall" for a drawn battle — text only, no
+ *  cutscene replay (CLAUDE.md §1.6, the Adventure precedent). */
+function gvgBattleLine(b) {
+  const a = gvgTeamLabel(b.teamA);
+  const bside = gvgTeamLabel(b.teamB);
+  if (b.outcome === "draw") return `Battle ${b.index + 1}: ${a}'s team vs ${bside}'s team — both teams fall`;
+  const winner = b.outcome === "a" ? a : bside;
+  const alive = b.outcome === "a" ? b.aAlive : b.bAlive;
+  return `Battle ${b.index + 1}: ${a}'s team vs ${bside}'s team — ${winner} wins (${alive} alive)`;
+}
+
+/** One pairing's row plus (once played) its per-battle summary list and, on
+ *  a simultaneous-exhaustion tiebreak, a note calling that out. */
+function gvgPairingBlock(p) {
+  const wrap = el("div", "gvg-pairing-block");
+  wrap.append(gvgPairingRow(p));
+  if (Array.isArray(p.battles) && p.battles.length) {
+    const list = el("div", "gvg-battle-list");
+    for (const b of p.battles) list.append(el("p", "gvg-battle-line", gvgBattleLine(b)));
+    if (p.tiebreak) {
+      list.append(el("p", "gvg-battle-line gvg-tiebreak",
+        "Both sides exhausted their lineup at once — a coin flip broke the tie."));
+    }
+    wrap.append(list);
+  }
+  return wrap;
+}
+
+function gvgRoundBlock(round, idx) {
+  const block = el("div", "gvg-round");
+  block.append(el("h5", "guild-subhead", gvgRoundLabel(round, idx)));
+  for (const p of round.pairings) block.append(gvgPairingBlock(p));
+  return block;
+}
+
+function gvgStandingsList(standings) {
+  const list = el("div", "gvg-standings");
+  for (const s of standings) {
+    const row = el("div", "gvg-standing-row" + (s.guildId === gvgDetail.myGuildId ? " gvg-standing-mine" : ""));
+    row.append(el("span", "gvg-standing-rank", `#${s.rank}`));
+    row.append(el("span", "gvg-standing-name", s.guildName ?? `#${s.guildId}`));
+    list.append(row);
+    for (const r of s.rewards ?? []) {
+      const rewardRow = el("div", "gvg-standing-reward-row");
+      const rewardLine = r.reward?.rewards?.length ? rewardListText(r.reward.rewards) : "—";
+      rewardRow.append(el("span", "gvg-standing-reward-name", r.trainerName ?? `#${r.trainerId}`));
+      rewardRow.append(el("span", "gvg-standing-reward", rewardLine));
+      list.append(rewardRow);
+    }
+  }
+  return list;
+}
+
+function gvgDetailView() {
+  const e = gvgDetail.event;
+  const wrap = el("div", "gvg-detail");
+
+  const head = el("div", "guild-head");
+  head.append(
+    el("b", null, e.name),
+    badge(GVG_STATUS_LABEL[e.status] ?? e.status, e.status === "cancelled" ? "gvg-cancelled" : undefined),
+  );
+  wrap.append(head);
+  if (e.status === "cancelled") wrap.append(el("p", "guild-hint gvg-cancelled-note", "This GVG event was cancelled."));
+  if (e.description) wrap.append(el("p", "guild-desc", e.description));
+  wrap.append(el("p", "guild-hint",
+    `${e.minTeams}-${e.maxTeams} teams · ${e.registeredGuildCount} guild${e.registeredGuildCount === 1 ? "" : "s"} registered`));
+
+  if (gvgDetail.rounds && gvgDetail.rounds.length) {
+    wrap.append(el("h4", "guild-subhead", "Bracket"));
+    gvgDetail.rounds.forEach((round, idx) => wrap.append(gvgRoundBlock(round, idx)));
+    if (gvgDetail.thirdPlace) {
+      const block = el("div", "gvg-round");
+      block.append(el("h5", "guild-subhead", "3rd-place war"), gvgPairingBlock(gvgDetail.thirdPlace));
+      wrap.append(block);
+    }
+  } else {
+    wrap.append(el("p", "guild-hint", "The war bracket hasn't started yet."));
+  }
+
+  if (gvgDetail.standings && gvgDetail.standings.length) {
+    wrap.append(el("h4", "guild-subhead", "Standings"));
+    wrap.append(gvgStandingsList(gvgDetail.standings));
+  }
+
+  wrap.append(button("Back", "btn ghost guild-small", backToGuild));
+  return wrap;
 }

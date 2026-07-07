@@ -106,7 +106,19 @@ the player next looks (no live timers server-side — ARCHITECTURE §time).
      rewards by final rank. Asynchronous: you fight the **stored defense
      formation** of another player, they don't need to be online.
    - **Tournament** — entry criteria; bracket auto-resolved by the server.
-   - **GVG** — guild leader picks member teams; guild vs guild.
+   - **GVG** — members submit teams, the guild leader orders them into a
+     lineup; guild vs guild plays out as a RELAY, not one battle: each side
+     fields its lineup in order, and on a decisive result the LOSING side's
+     next team steps in fresh (full health, clean statuses) while the
+     WINNING side's current team carries its exact HP and statuses forward
+     into the next battle — a standing team fights until its last unit
+     falls. A drawn battle (hitting the turn cap) eliminates both current
+     teams outright; if both sides exhaust their whole lineup at the same
+     moment, a seeded coin flip breaks the tie so every war still produces a
+     winner. Rewards (the same position + percentile shape as tournaments)
+     pay only the trainers whose teams were actually in the guild's
+     registered lineup, not the whole roster; a guild's monsters unlock the
+     instant it's eliminated, not at the whole event's end.
 5. **Summon Hall** — summon monsters when a condition is met: items, gold,
    quest completions.
    **⚠ open (high risk):** the "photo quest" idea — daily/weekly hint, players

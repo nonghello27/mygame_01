@@ -13,6 +13,9 @@
 //   only: replace the guild's whole lineup (ordered submitted-team ids).
 // POST /api/guild/gvg/register { eventId } -> { registered:true, lineup }
 //   leader only: register the guild once a valid lineup is staged.
+// GET  /api/guild/gvg/detail  ?id=<eventId> -> the war bracket + standings
+//   detail view (Phase 9.7) — settlement runs first (the lazy hook), so this
+//   always reflects the freshest possible state.
 //
 // Same "act, then hand back everything the client needs to refresh"
 // precedent as server/routes/guild.js — validation, role checks, and every
@@ -30,6 +33,7 @@ import {
   withdrawTeam as withdrawTeamUc,
   setLineup as setLineupUc,
   registerGuild as registerGuildUc,
+  getGvgDetail as getGvgDetailUc,
 } from "../services/gvg.js";
 
 export async function gvgEvents(req, res) {
@@ -69,4 +73,18 @@ export async function gvgRegister(req, res) {
 
   const body = await readJson(req);
   sendJson(res, 200, await registerGuildUc(db(), trainerId, body));
+}
+
+export async function gvgDetail(req, res) {
+  const trainerId = trainerIdFromRequest(req);
+  if (!trainerId) return sendJson(res, 401, { error: "not logged in" });
+
+  const sql = db();
+  // createRouter strips the query string for ROUTING only — req.url still
+  // carries it here (same precedent as server/routes/tournament.js's own
+  // tournamentDetail()).
+  const params = new URL(req.url, "http://localhost").searchParams;
+  const id = params.get("id");
+  if (!id) return sendJson(res, 400, { error: "id is required" });
+  sendJson(res, 200, await getGvgDetailUc(sql, trainerId, id));
 }
