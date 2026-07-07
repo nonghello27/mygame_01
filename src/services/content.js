@@ -418,3 +418,76 @@ export async function promoteGuildMember(trainerId, role) {
 export async function transferGuildLeadership(trainerId) {
   return postJson("/api/guild/transfer", { trainerId });
 }
+
+// --- GVG events (Phase 9.5) ---------------------------------------------------
+
+/**
+ * Every GVG event (any status — cancelled/past stay visible as history), each
+ * with a live registered-guild count, the caller's OWN team summary (or
+ * null), and — only while the caller is in a guild — whether that guild has
+ * registered. A guild's LEADER additionally sees every team their guild has
+ * submitted (`guildTeams`: display info only, never another trainer's lanes).
+ * @returns {Promise<{membership:{guildId:number, role:string}|null,
+ *   events:{id:number, name:string, description:string, regStartsAt:string,
+ *   regEndsAt:string, status:string, minTeams:number, maxTeams:number,
+ *   rewards:object, registeredGuildCount:number,
+ *   myTeam:{teamId:number, monsterIds:number[], battleOrder:number|null,
+ *   submittedAt:string}|null, guildRegistered?:boolean,
+ *   guildTeams?:{teamId:number, trainerId:number, trainerName:string,
+ *   display:object[], battleOrder:number|null, submittedAt:string}[]}[]}>}
+ */
+export async function fetchGvgEvents() {
+  return getJson("/api/guild/gvg/events");
+}
+
+/**
+ * Submit exactly 3 owned, free monsters as one team for a GVG event — one
+ * submission per trainer per event. 409s: "join a guild first", "team
+ * submission is not open", "a monster is busy or not yours", "you already
+ * submitted a team for this event".
+ * @param {number} eventId
+ * @param {number[]} monsterIds exactly 3 distinct owned free monster ids
+ * @returns {Promise<{team:{teamId:number, monsterIds:number[],
+ *   battleOrder:number|null, submittedAt:string}}>}
+ */
+export async function submitGvgTeam(eventId, monsterIds) {
+  return postJson("/api/guild/gvg/submit", { eventId, monsterIds });
+}
+
+/**
+ * Withdraw the caller's own submitted team while it's still unpicked and the
+ * window is open. 409s: "team submission is closed", "your team is in the
+ * guild's lineup — ask your leader to unpick it first"; 404 "you have no
+ * team submitted for this event".
+ * @param {number} eventId
+ * @returns {Promise<{withdrawn:true}>}
+ */
+export async function withdrawGvgTeam(eventId) {
+  return postJson("/api/guild/gvg/withdraw", { eventId });
+}
+
+/**
+ * Replace the guild's whole lineup for one event — leader only. `teamIds` is
+ * the ordered (1st to last) list of submitted team ids to field; any
+ * submitted team NOT listed drops out of the lineup. 403 "leader only", 409
+ * "the registration window is closed", 400 for a bad/unknown team id.
+ * @param {number} eventId
+ * @param {number[]} teamIds ordered team ids, first to last
+ * @returns {Promise<{guildTeams:object[]}>} the refreshed lineup (same shape
+ *   as fetchGvgEvents()'s guildTeams)
+ */
+export async function setGvgLineup(eventId, teamIds) {
+  return postJson("/api/guild/gvg/lineup", { eventId, teamIds });
+}
+
+/**
+ * Register the guild for a GVG event — leader only, requires a valid ordered
+ * lineup already staged via setGvgLineup(). 403 "leader only", 409
+ * "registration is not open" / "set a lineup of N-M teams first" / "your
+ * guild is already registered".
+ * @param {number} eventId
+ * @returns {Promise<{registered:true, lineup:number[]}>}
+ */
+export async function registerGvgGuild(eventId) {
+  return postJson("/api/guild/gvg/register", { eventId });
+}

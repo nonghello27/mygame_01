@@ -969,13 +969,15 @@ gold cost, the other applies and is accepted); role checks hold (a member
 cannot accept applications or kick — 403); one-guild-per-trainer enforced;
 leaving/kicking updates both sides' views.
 
-### Phase 9.5 — GVG events: schedule, team submission, lineup
+### Phase 9.5 — GVG events: schedule, team submission, lineup ✅ CODE COMPLETE (2026-07-07)
+
+Remaining (operator step): `npm run db:migrate` (017).
 
 The tournament event lifecycle, re-instantiated at guild level. No battle
 resolution yet — this sub-phase is entirely setup-side, so it can ship and
 be verified before the engine work lands.
 
-- `016_gvg.sql`: `gvg_events` (admin-created, same schedule + rewards
+- ✅ `017_gvg.sql`: `gvg_events` (admin-created, same schedule + rewards
   grammar as tournaments — 9.1's validators verbatim, plus GVG knobs:
   min/max teams per guild, fixed at 1–10 per the design), `gvg_teams`
   (event, guild, submitting trainer, frozen 3-monster snapshot, locked
@@ -984,7 +986,7 @@ be verified before the engine work lands.
   event, registered by leader), `gvg_wars` (the per-pairing rows 9.7
   resolves into: event, round, both guilds, seed, winner, per-battle
   results JSONB).
-- Flow (all under the guild domain — `/api/guild/gvg/*`, no new function):
+- ✅ Flow (all under the guild domain — `/api/guild/gvg/*`, no new function):
   during the event's registration window any guild MEMBER submits a team
   (same 3-free-monster validation + busy claim + snapshot freeze as
   tournament registration, `busy_kind='gvg'`; one submission per trainer
@@ -995,9 +997,9 @@ be verified before the engine work lands.
   close, settlement releases every submitted-but-unselected team's locks
   (and all locks, if the guild never completed registration) — nobody stays
   locked for a lineup that never fought.
-- Admin: ⚔ GVG tab mirroring the 🏆 tab — create (window, rewards, team
+- ✅ Admin: ⚔ GVG tab mirroring the 🏆 tab — create (window, rewards, team
   bounds), entrant-guild count, cancel-anytime with full release.
-- UI: the 🏰 Guild panel grows a GVG section — members see open events + a
+- ✅ UI: the 🏰 Guild panel grows a GVG section — members see open events + a
   "submit my team" picker; the leader additionally sees submitted teams
   with pick/order controls (order IS the relay order, first to last) and
   the register button.

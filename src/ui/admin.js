@@ -20,6 +20,7 @@ import {
   grant,
   loadTrainers, loadTrainerMonsters, mintMonsterFor, attachMonsterTo, detachMonsterFrom,
   loadTournaments, createTournament, cancelTournament,
+  loadGvgEvents, createGvgEvent, cancelGvgEvent,
 } from "../services/admin.js";
 import { SPRITES } from "../data/sprites.js";
 import { chromaKeyed } from "./chroma.js";
@@ -35,6 +36,7 @@ const TABS = [
   ["summons", "✨ Summons"],
   ["adventures", "🗺 Adventures"],
   ["tournaments", "🏆 Tournaments"],
+  ["gvg", "⚔ GVG"],
   ["trainers", "👥 Trainers"],
   ["sprites", "🖼 Sprites"],
 ];
@@ -50,6 +52,8 @@ let managing = null; // { trainer, monsters, unassigned } of the trainer being m
 let pendingRemove = null; // monsterId awaiting a second "Remove" confirm click, or null
 let tournamentsData = null; // cached admin tournaments list (🏆 tab), null = not loaded yet
 let creatingTournament = false; // true while the 🏆 tab's create form is shown
+let gvgData = null; // cached admin GVG events list (⚔ tab), null = not loaded yet
+let creatingGvg = false; // true while the ⚔ tab's create form is shown
 
 export function initAdmin() {
   els = {
@@ -203,6 +207,7 @@ function renderTabs() {
       managing = null;
       pendingRemove = null;
       creatingTournament = false;
+      creatingGvg = false;
       els.msgs.innerHTML = "";
       renderTabs();
       renderBody();
@@ -218,7 +223,7 @@ function renderBody() {
     species: speciesTab, skills: skillsTab, classes: classesTab, jobs: jobsTab,
     items: itemsTab, equipment: equipmentTab, runes: runesTab,
     summons: summonsTab, adventures: adventuresTab, tournaments: tournamentsTab,
-    trainers: trainersTab, sprites: spritesTab,
+    gvg: gvgTab, trainers: trainersTab, sprites: spritesTab,
   })[tab]();
 }
 
@@ -1148,6 +1153,152 @@ function tournamentFormButtons(save, okText) {
     }
   });
   bar.append(saveBtn, button("Cancel", "btn ghost adm-small", () => { creatingTournament = false; renderBody(); }));
+  return bar;
+}
+
+// ---------- GVG events (Phase 9.5) ----------
+//
+// Same reasoning as the tournaments tab above: this reads its OWN endpoint
+// (GET /api/admin/gvg) rather than folding into `data`'s masterState — GVG
+// events are admin-created INSTANCE data (one-off scheduled events), not
+// reusable master content the rest of the console edits. Its own
+// `gvgData`/`creatingGvg` state stays separate from `data`/`editing` so a
+// GVG mutation can never clobber the master tables' cached state
+// (mutate()/formButtons() are deliberately NOT reused here for that reason).
+
+const GVG_REWARDS_HINT =
+  'rewards (JSON) — {positionRewards:{"1":[...],"2":[...],"3":[...]}, ' +
+  'percentileRewards:[{fromPct,toPct,rewards:[...]}, ...]}. A reward is ' +
+  '{type:"gold",amount} | {type:"item",itemId,qty} | {type:"equipment",equipmentDefId} | ' +
+  '{type:"rune",runeDefId} | {type:"monster",speciesId}. percentileRewards tiers must be ' +
+  "ordered, contiguous, and cover 1-100 exactly, and every reward list (a position's or a " +
+  'tier\'s) must be non-empty. Shape example: {"positionRewards":{"1":[{"type":"gold",' +
+  '"amount":500}]},"percentileRewards":[{"fromPct":1,"toPct":100,"rewards":[]}]} — swap that ' +
+  "empty [] for real rewards before saving.";
+
+function gvgTab() {
+  if (creatingGvg) return gvgForm();
+  els.body.appendChild(toolbar("＋ New GVG event", () => { creatingGvg = true; renderBody(); }));
+
+  if (!gvgData) {
+    els.body.appendChild(el("p", "adm-hint", "Loading…"));
+    loadGvgEvents()
+      .then((res) => { gvgData = res.events; renderBody(); })
+      .catch((e) => pushMsg(`Could not load GVG events: ${e.message}`, true));
+    return;
+  }
+
+  for (const e of gvgData) {
+    const row = el("div", "adm-row");
+    const id = el("div", "adm-id");
+    const txt = el("span");
+    txt.append(el("b", null, e.name), el("small", null,
+      `#${e.id} · ${fmtDate(e.regStartsAt)} – ${fmtDate(e.regEndsAt)} · ${e.minTeams}-${e.maxTeams} teams`));
+    id.append(txt);
+
+    const side = el("div", "adm-actions");
+    side.append(badge(e.status), badge(`${e.registeredGuildCount} guild${e.registeredGuildCount === 1 ? "" : "s"} registered`));
+    if (e.status !== "completed" && e.status !== "cancelled") {
+      side.append(button("Cancel", "btn ghost adm-small adm-danger", async () => {
+        if (!window.confirm(
+          `Cancel GVG event "${e.name}"? Every submitted team's monster locks are released.`
+        )) return;
+        els.msgs.innerHTML = "";
+        try {
+          await cancelGvgEvent(e.id);
+          gvgData = (await loadGvgEvents()).events;
+          renderBody();
+          pushMsg("GVG event cancelled.");
+        } catch (err) {
+          pushMsg(err.message, true);
+        }
+      }));
+    }
+    row.append(id, side);
+    els.body.appendChild(row);
+  }
+}
+
+function gvgForm() {
+  const form = el("div", "adm-form");
+  form.appendChild(el("h4", null, "New GVG event"));
+
+  const now = Date.now();
+  const f = {
+    name: textInput("", "Guild Clash"),
+    description: textInput("", "optional"),
+    minTeams: numInput(1, 1, 10),
+    maxTeams: numInput(10, 1, 10),
+    regStartsAt: el("input"),
+    regEndsAt: el("input"),
+    rewards: el("textarea"),
+  };
+  f.regStartsAt.type = "datetime-local";
+  f.regStartsAt.value = toDatetimeLocal(new Date(now + 60 * 60 * 1000)); // +1h
+  f.regEndsAt.type = "datetime-local";
+  f.regEndsAt.value = toDatetimeLocal(new Date(now + 25 * 60 * 60 * 1000)); // +25h
+  f.rewards.rows = 8;
+  f.rewards.spellcheck = false;
+  f.rewards.value = JSON.stringify({
+    positionRewards: { 1: [{ type: "gold", amount: 500 }] },
+    percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "gold", amount: 10 }] }],
+  }, null, 2);
+
+  const grid = el("div", "adm-grid");
+  grid.append(
+    field("Name", f.name), field("Description", f.description),
+    field("Min teams", f.minTeams), field("Max teams", f.maxTeams),
+    field("Registration starts", f.regStartsAt), field("Registration ends", f.regEndsAt),
+  );
+
+  const rewardsField = field("Rewards (JSON)", f.rewards);
+  rewardsField.classList.add("adm-wide");
+
+  form.append(grid, rewardsField, el("p", "adm-hint", GVG_REWARDS_HINT),
+    gvgFormButtons(() => {
+      // Client-side checks stay minimal (well-formed JSON, the fields the
+      // server can't sensibly default) — the server is the real validator
+      // (validateGvgEvent, CLAUDE.md §1.1).
+      let rewards;
+      try {
+        rewards = JSON.parse(f.rewards.value);
+      } catch {
+        throw new Error("Rewards is not valid JSON — fix the syntax and save again");
+      }
+      if (!f.name.value.trim()) throw new Error("Name is required");
+      if (!f.regStartsAt.value || !f.regEndsAt.value) throw new Error("Both registration dates are required");
+      return createGvgEvent({
+        name: f.name.value.trim(),
+        description: f.description.value.trim() || undefined,
+        minTeams: +f.minTeams.value,
+        maxTeams: +f.maxTeams.value,
+        regStartsAt: new Date(f.regStartsAt.value).toISOString(),
+        regEndsAt: new Date(f.regEndsAt.value).toISOString(),
+        rewards,
+      });
+    }, "GVG event created"));
+  els.body.appendChild(form);
+}
+
+/** Same shape as tournamentFormButtons() but re-reads gvgData (this tab's OWN
+ *  list, not the shared masterState) after a win. */
+function gvgFormButtons(save, okText) {
+  const bar = el("div", "adm-toolbar");
+  const saveBtn = button("Save", "btn primary adm-small", async () => {
+    saveBtn.disabled = true;
+    els.msgs.innerHTML = "";
+    try {
+      await save();
+      gvgData = (await loadGvgEvents()).events;
+      creatingGvg = false;
+      renderBody();
+      pushMsg(okText);
+    } catch (e) {
+      pushMsg(e.message, true);
+      saveBtn.disabled = false;
+    }
+  });
+  bar.append(saveBtn, button("Cancel", "btn ghost adm-small", () => { creatingGvg = false; renderBody(); }));
   return bar;
 }
 

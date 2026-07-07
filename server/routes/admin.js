@@ -76,6 +76,19 @@
 //   busy locks (idempotent — safe to click twice), pays nothing else, and
 //   keeps the row visible in history. 409 while already 'completed'.
 //
+// GET  /api/admin/gvg  -> { events }  (Phase 9.5) every GVG event (any
+//   status) with a live registered-guild count — the admin tab's list.
+// POST /api/admin/gvg  { name, description?, minTeams?, maxTeams?,
+//   regStartsAt, regEndsAt, rewards }  -> { event }  create one; status
+//   always starts 'scheduled' (settleGvgSetup() is what later advances it to
+//   'registration'; running/completed are Phase 9.7). rewards is the same
+//   Phase 9.1 grammar tournaments.rewards uses; minTeams/maxTeams (1-10,
+//   default 1/10) bound how many ordered teams a guild's lineup may field.
+// POST /api/admin/gvg/cancel  { id }  -> { event }  cancel at any
+//   non-completed status: releases every submitted team's busy lock
+//   (idempotent — safe to click twice); GVG events have no entry fee, so
+//   there is nothing to refund. 409 while already 'completed'.
+//
 // POST /api/admin/grant { trainerId?, kind, defId, qty? }
 //   The only acquisition source until Phase 7.4 (marketplace/summons):
 //   grants an item/equipment/rune to a trainer (defaults to the calling
@@ -137,6 +150,7 @@ import {
 } from "../services/admin.js";
 import { getInventory } from "../services/inventory.js";
 import { adminCreate as createTournament, adminCancel as cancelTournament, adminList as listTournamentsAdmin } from "../services/tournament.js";
+import { adminCreate as createGvgEvent, adminCancel as cancelGvgEvent, adminList as listGvgEventsAdmin } from "../services/gvg.js";
 
 export async function master(req, res) {
   const sql = db();
@@ -247,4 +261,31 @@ export async function tournamentCancel(req, res) {
 
   const body = await readJson(req);
   sendJson(res, 200, { tournament: await cancelTournament(sql, body?.id) });
+}
+
+// --- GVG events (Phase 9.5) ---------------------------------------------------
+//
+// Same "respond with just the instance(s) touched, not a full masterState"
+// shape as tournaments() above — GVG events are admin-created INSTANCE data
+// (CLAUDE.md §1.3), not master content.
+
+export async function gvg(req, res) {
+  const sql = db();
+  await requireAdmin(sql, trainerIdFromRequest(req));
+
+  if (req.method === "GET") {
+    sendJson(res, 200, await listGvgEventsAdmin(sql));
+    return;
+  }
+
+  const body = await readJson(req);
+  sendJson(res, 200, { event: await createGvgEvent(sql, body) });
+}
+
+export async function gvgCancel(req, res) {
+  const sql = db();
+  await requireAdmin(sql, trainerIdFromRequest(req));
+
+  const body = await readJson(req);
+  sendJson(res, 200, { event: await cancelGvgEvent(sql, body?.id) });
 }

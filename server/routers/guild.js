@@ -3,7 +3,8 @@
 // after the marketplace, to add a new top-level api/ entry: the application/
 // role-check flow doesn't belong under any existing domain). Owns every
 // /api/guild/* URL — browse/me/create/apply/accept/reject/leave/kick/
-// promote/transfer for Phase 9.4. api/guild/[...route].js (prod) and
+// promote/transfer for Phase 9.4, plus (Phase 9.5) GVG events/submit/
+// withdraw/lineup/register. api/guild/[...route].js (prod) and
 // vite.config.js's dev middleware (local) both just call route().
 //
 // Every URL here needs at least one path segment after /api/guild — a
@@ -15,6 +16,9 @@ import { createRouter } from "../http.js";
 import {
   browse, me, create, apply, accept, reject, leave, kick, promote, transfer,
 } from "../routes/guild.js";
+import {
+  gvgEvents, gvgSubmit, gvgWithdraw, gvgLineup, gvgRegister,
+} from "../routes/gvg.js";
 
 export const route = createRouter({
   "/api/guild/browse": { GET: browse },
@@ -27,4 +31,10 @@ export const route = createRouter({
   "/api/guild/kick": { POST: kick },
   "/api/guild/promote": { POST: promote },
   "/api/guild/transfer": { POST: transfer },
+  // Phase 9.5 — GVG events ride the guild domain (no new serverless function).
+  "/api/guild/gvg/events": { GET: gvgEvents },
+  "/api/guild/gvg/submit": { POST: gvgSubmit },
+  "/api/guild/gvg/withdraw": { POST: gvgWithdraw },
+  "/api/guild/gvg/lineup": { POST: gvgLineup },
+  "/api/guild/gvg/register": { POST: gvgRegister },
 });

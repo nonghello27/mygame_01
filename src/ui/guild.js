@@ -1,7 +1,7 @@
-// Guild panel (Phase 9.4). Same tab-less panel shell as ui/tournament.js /
-// ui/summon.js (a msgs div + a body div, one refresh() that re-reads and
-// re-renders) — no state of its own beyond what fetchGuildMe()/
-// fetchGuildBrowse() just returned.
+// Guild panel (Phase 9.4 + 9.5's GVG section). Same tab-less panel shell as
+// ui/tournament.js / ui/summon.js (a msgs div + a body div, one refresh()
+// that re-reads and re-renders) — no state of its own beyond what
+// fetchGuildMe()/fetchGuildBrowse()/fetchGvgEvents() just returned.
 //
 // Pure presentation + action layer: EVERY role check (who may accept/reject/
 // kick/promote/transfer, who may even see the pending-application queue) is
@@ -17,18 +17,45 @@
 //   - leader: all of the above, PLUS accept/reject on every application and
 //     per-member (non-self) Kick/Promote/Demote/"Make leader" controls; the
 //     leader's own Leave button is replaced by a "transfer first" hint.
+//
+// GVG section (Phase 9.5, member/officer/leader view only — the guildless
+// view has nothing to submit a team for): every member sees open GVG events
+// and can submit their own 3-monster team (the same party-picker shape
+// ui/tournament.js's register flow uses, borrowed near-verbatim); the
+// LEADER additionally sees every team the guild has submitted, with a
+// per-team order input (order IS the relay order, first to last) and the
+// register-guild button. Every lineup/registration validity check (role,
+// window, team-count bounds, contiguous order) is the server's job — this
+// only builds the ordered team-id list the leader actually entered and lets
+// the server 409 with its own message for anything else (CLAUDE.md §1.1).
 
 import {
   fetchGuildBrowse, fetchGuildMe, createGuild, applyGuild, acceptGuildApplication,
   rejectGuildApplication, leaveGuild, kickGuildMember, promoteGuildMember,
   transferGuildLeadership,
+  fetchGvgEvents, submitGvgTeam, withdrawGvgTeam, setGvgLineup, registerGvgGuild,
+  loadFarm,
 } from "../services/content.js";
 
 const CREATE_COST_LABEL = "500 🪙"; // mirrors GUILD_CREATE_COST server/services/guild.js
 
+const PARTY_SIZE = 3;
+const BUSY_LABEL = {
+  work: "Working", training: "Training", adventure: "On adventure",
+  tournament: "In a tournament", gvg: "In a GVG team",
+};
+const GVG_STATUS_LABEL = {
+  scheduled: "Scheduled", registration: "Registration", running: "Running",
+  completed: "Completed", cancelled: "Cancelled",
+};
+
 let els = null;
 let me = null;          // last fetchGuildMe() result
 let guilds = null;      // last fetchGuildBrowse() result's `guilds`, loaded lazily (guildless only)
+let gvgEvents = [];     // last fetchGvgEvents() result's `events`, loaded whenever the caller is in a guild
+let gvgRoster = null;   // loadFarm() result, loaded lazily on first "Submit team" click (mirrors tournament.js's `roster`)
+let submittingId = null; // GVG event id whose party picker is expanded, or null
+let gvgPicks = [];       // in-progress team picks for `submittingId`, in pick order
 
 export function initGuild() {
   els = {
@@ -49,9 +76,23 @@ async function toggle() {
 
 async function refresh() {
   els.msgs.innerHTML = "";
+  submittingId = null;
+  gvgPicks = [];
   try {
     me = await fetchGuildMe();
-    if (!me.guild) guilds = (await fetchGuildBrowse()).guilds;
+    if (!me.guild) {
+      guilds = (await fetchGuildBrowse()).guilds;
+      gvgEvents = [];
+    } else {
+      // A GVG load failure shouldn't blank the whole guild view — caught
+      // separately from the me()/browse() read above.
+      try {
+        gvgEvents = (await fetchGvgEvents()).events;
+      } catch (e) {
+        gvgEvents = [];
+        pushMsg(`Could not load GVG events: ${e.message}`, true);
+      }
+    }
   } catch (e) {
     me = null;
     pushMsg(`Could not load the Guild hall: ${e.message}`, true);
@@ -244,6 +285,8 @@ function memberView() {
   for (const m of me.members) roster.append(memberRow(m, isLeader));
   wrap.append(roster);
 
+  wrap.append(gvgSection(isLeader));
+
   if (isLeader) {
     wrap.append(el("p", "guild-hint", "Transfer leadership before you can leave."));
   } else {
@@ -360,4 +403,285 @@ function leaveButton() {
       pushMsg(e.message, true);
     }
   });
+}
+
+// ---------- GVG section (Phase 9.5) ----------
+
+/** Same "registerable by time window, not just status" rule the server
+ *  applies for team submission — status must also still be pre-war. */
+function gvgWindowEnded(e) {
+  return Date.now() > new Date(e.regEndsAt).getTime();
+}
+
+function gvgRegistrationOpenNow(e) {
+  const now = Date.now();
+  return now >= new Date(e.regStartsAt).getTime() && now <= new Date(e.regEndsAt).getTime();
+}
+
+function isGvgUpcoming(e) {
+  return (e.status === "scheduled" || e.status === "registration") && !gvgWindowEnded(e);
+}
+
+// ---------- reward-line rendering (same shape as ui/tournament.js's own copy) ----------
+
+function rewardText(r) {
+  if (r.type === "gold") return `${r.amount} gold`;
+  if (r.type === "item") return `${r.qty}× ${r.itemId}`;
+  if (r.type === "equipment") return r.equipmentDefId;
+  if (r.type === "rune") return r.runeDefId;
+  return r.speciesId; // monster
+}
+
+function rewardListText(list) {
+  return list.map(rewardText).join(", ");
+}
+
+const ORDINAL = { 1: "1st", 2: "2nd", 3: "3rd" };
+
+function rewardsSummaryLines(rewards) {
+  const lines = [];
+  const positionRewards = rewards?.positionRewards ?? {};
+  for (const rank of [1, 2, 3]) {
+    const list = positionRewards[rank] ?? positionRewards[String(rank)];
+    if (list && list.length) lines.push(`${ORDINAL[rank]}: ${rewardListText(list)}`);
+  }
+  for (const tier of rewards?.percentileRewards ?? []) {
+    lines.push(`Top ${tier.fromPct}–${tier.toPct}%: ${rewardListText(tier.rewards)}`);
+  }
+  return lines;
+}
+
+// ---------- section shell: open events + history ----------
+
+function gvgSection(isLeader) {
+  const wrap = el("div", "gvg-section");
+  wrap.append(el("h4", "guild-subhead", "⚔ Guild vs. Guild"));
+
+  const open = gvgEvents.filter(isGvgUpcoming);
+  const history = gvgEvents.filter((e) => !isGvgUpcoming(e));
+
+  if (open.length === 0) {
+    wrap.append(el("p", "guild-hint", "Nothing open for registration right now."));
+  } else {
+    for (const e of open) wrap.append(gvgOpenCard(e, isLeader));
+  }
+
+  if (history.length > 0) {
+    wrap.append(el("h5", "guild-subhead", "History"));
+    for (const e of history) wrap.append(gvgHistoryRow(e));
+  }
+
+  return wrap;
+}
+
+// ---------- open/upcoming card ----------
+
+function gvgOpenCard(e, isLeader) {
+  const card = el("div", "gvg-card");
+
+  const head = el("div", "guild-head");
+  head.append(el("b", null, e.name), badge(GVG_STATUS_LABEL[e.status] ?? e.status));
+  card.append(head);
+
+  if (e.description) card.append(el("p", "guild-desc", e.description));
+
+  card.append(el("p", "guild-hint",
+    `Registration: ${fmtDate(e.regStartsAt)} – ${fmtDate(e.regEndsAt)} · ${e.minTeams}-${e.maxTeams} teams` +
+    ` · ${e.registeredGuildCount} guild${e.registeredGuildCount === 1 ? "" : "s"} registered`));
+
+  const rewardLines = rewardsSummaryLines(e.rewards);
+  if (rewardLines.length > 0) {
+    const rewards = el("div", "gvg-rewards");
+    for (const line of rewardLines) rewards.append(el("p", "gvg-reward-line", line));
+    card.append(rewards);
+  }
+
+  if (!e.myTeam) {
+    if (gvgRegistrationOpenNow(e)) {
+      if (submittingId === e.id) {
+        card.append(gvgSubmitPicker(e));
+      } else {
+        card.append(button("Submit team", "btn primary guild-small", () => openGvgSubmit(e.id)));
+      }
+    } else {
+      card.append(el("p", "guild-hint", `Registration opens ${fmtDate(e.regStartsAt)}.`));
+    }
+  } else if (e.myTeam.battleOrder == null) {
+    card.append(el("p", "guild-hint", "Submitted — awaiting your leader's pick."));
+    if (gvgRegistrationOpenNow(e)) card.append(gvgWithdrawButton(e));
+  } else {
+    card.append(el("p", "guild-hint", `In your guild's lineup (slot ${e.myTeam.battleOrder}).`));
+  }
+
+  if (isLeader && Array.isArray(e.guildTeams)) card.append(gvgLineupSection(e));
+
+  return card;
+}
+
+function gvgWithdrawButton(e) {
+  const btn = button("Withdraw", "btn ghost guild-small guild-danger", async () => {
+    btn.disabled = true;
+    els.msgs.innerHTML = "";
+    try {
+      await withdrawGvgTeam(e.id);
+      pushMsg(`Withdrew your team from ${e.name}.`);
+      gvgRoster = null; // busy locks just changed — force a fresh read next time
+      await refresh();
+    } catch (err) {
+      pushMsg(err.message, true);
+      btn.disabled = false;
+    }
+  });
+  return btn;
+}
+
+// ---------- submit flow: party picker (borrows ui/tournament.js's shape) ----------
+
+async function openGvgSubmit(eventId) {
+  submittingId = eventId;
+  gvgPicks = [];
+  if (!gvgRoster) {
+    els.msgs.innerHTML = "";
+    try {
+      gvgRoster = await loadFarm();
+    } catch (e) {
+      pushMsg(`Could not load your roster: ${e.message}`, true);
+      submittingId = null;
+    }
+  }
+  renderBody();
+}
+
+function gvgSubmitPicker(e) {
+  const wrap = el("div", "gvg-submit");
+  wrap.append(el("h5", "guild-subhead", `Choose your team (${PARTY_SIZE}, in order — front first)`));
+
+  if (!gvgRoster) {
+    wrap.append(el("p", "guild-hint", "Loading…"));
+    return wrap;
+  }
+
+  wrap.append(gvgPartyPicker());
+
+  const confirmBtn = button("Submit team", "btn primary guild-small", async () => {
+    confirmBtn.disabled = true;
+    els.msgs.innerHTML = "";
+    try {
+      await submitGvgTeam(e.id, gvgPicks);
+      pushMsg(`Submitted your team for ${e.name}.`);
+      gvgRoster = null; // busy locks just changed — force a fresh read next time
+      await refresh();
+    } catch (err) {
+      pushMsg(err.message, true);
+      confirmBtn.disabled = false;
+    }
+  });
+  confirmBtn.disabled = gvgPicks.length !== PARTY_SIZE;
+
+  const cancelBtn = button("Cancel", "btn ghost guild-small", () => {
+    submittingId = null;
+    gvgPicks = [];
+    renderBody();
+  });
+
+  const bar = el("div", "gvg-toolbar");
+  bar.append(confirmBtn, cancelBtn);
+  wrap.append(bar);
+  return wrap;
+}
+
+function gvgPartyPicker() {
+  const list = el("div", "gvg-mon-list");
+  for (const m of gvgRoster.monsters) {
+    const isBusy = m.busyUntil && new Date(m.busyUntil) > new Date();
+    const pickIdx = gvgPicks.indexOf(m.id);
+    const row = el("div", "gvg-mon" + (pickIdx !== -1 ? " picked" : "") + (isBusy ? " busy" : ""));
+    row.append(el("span", "gvg-mon-emoji", m.emoji), el("span", "gvg-mon-name", m.name));
+    if (isBusy) row.append(el("span", "gvg-mon-busy-tag", BUSY_LABEL[m.busyKind] ?? m.busyKind ?? "Busy"));
+    if (pickIdx !== -1) row.append(el("span", "gvg-pick-badge", String(pickIdx + 1)));
+    if (!isBusy) row.addEventListener("click", () => toggleGvgPick(m.id));
+    list.append(row);
+  }
+  return list;
+}
+
+function toggleGvgPick(monsterId) {
+  const i = gvgPicks.indexOf(monsterId);
+  if (i !== -1) gvgPicks.splice(i, 1);
+  else if (gvgPicks.length < PARTY_SIZE) gvgPicks.push(monsterId);
+  renderBody();
+}
+
+// ---------- leader-only: lineup + register ----------
+
+function gvgLineupSection(e) {
+  const wrap = el("div", "gvg-lineup");
+  wrap.append(el("h5", "guild-subhead", "Lineup"));
+
+  const inputs = new Map(); // teamId -> its order <input>
+  if (e.guildTeams.length === 0) {
+    wrap.append(el("p", "guild-hint", "No teams submitted yet."));
+  } else {
+    for (const t of e.guildTeams) {
+      const row = el("div", "gvg-lineup-row");
+      const emoji = t.display?.[0]?.emoji;
+      row.append(el("span", "gvg-lineup-name", emoji ? `${emoji} ${t.trainerName}` : t.trainerName));
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "1";
+      input.className = "gvg-order-input";
+      input.value = t.battleOrder != null ? String(t.battleOrder) : "";
+      row.append(input);
+      wrap.append(row);
+      inputs.set(t.teamId, input);
+    }
+
+    wrap.append(button("Save lineup", "btn ghost guild-small", async () => {
+      els.msgs.innerHTML = "";
+      try {
+        // Build the ordered team-id list from whatever the leader actually
+        // entered — blank inputs simply drop that team out of the lineup.
+        // Everything else (count bounds, contiguity) is the server's call.
+        const teamIds = [...inputs.entries()]
+          .map(([teamId, input]) => ({ teamId, order: Number(input.value) }))
+          .filter((x) => Number.isFinite(x.order) && x.order > 0)
+          .sort((a, b) => a.order - b.order)
+          .map((x) => x.teamId);
+        await setGvgLineup(e.id, teamIds);
+        pushMsg("Lineup saved.");
+        await refresh();
+      } catch (err) {
+        pushMsg(err.message, true);
+      }
+    }));
+  }
+
+  if (e.guildRegistered) {
+    wrap.append(badge("Registered ✓"));
+  } else {
+    wrap.append(button("Register guild", "btn primary guild-small", async () => {
+      els.msgs.innerHTML = "";
+      try {
+        await registerGvgGuild(e.id);
+        pushMsg(`${e.name}: guild registered.`);
+        await refresh();
+      } catch (err) {
+        pushMsg(err.message, true);
+      }
+    }));
+  }
+
+  return wrap;
+}
+
+// ---------- history row ----------
+
+function gvgHistoryRow(e) {
+  const row = el("div", "gvg-history-row");
+  row.append(
+    el("span", "gvg-history-name", e.name),
+    badge(GVG_STATUS_LABEL[e.status] ?? e.status, e.status === "cancelled" ? "gvg-cancelled" : undefined),
+    el("span", "guild-hint", `${e.registeredGuildCount} guild${e.registeredGuildCount === 1 ? "" : "s"} registered`),
+  );
+  return row;
 }

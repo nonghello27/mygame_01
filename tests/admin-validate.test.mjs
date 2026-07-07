@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import {
   validateClass, validateSkill, validateSpecies, validateJob, enums,
   validateItem, validateEquipment, validateRune, validateSummon, validateAdventure,
-  validateEventSchedule, validateEventRewards, validateTournament,
+  validateEventSchedule, validateEventRewards, validateTournament, validateGvgEvent,
 } from "../server/services/adminValidate.js";
 import { SKILLS } from "../src/data/skills.js";
 import { JOBS } from "../src/data/jobs.js";
@@ -695,6 +695,63 @@ test("validateTournament rejects malformed/unknown-id rewards (delegates to vali
   ), "percentile tiers must cover 1-100");
   rejects(() => validateTournament(
     baseTournamentInput({
+      rewards: { percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "item", itemId: "it_nope", qty: 1 }] }] },
+    }),
+    EVENT_LOOKUPS
+  ), "unknown itemId via lookups");
+});
+
+// --- GVG events (Phase 9.5) ---------------------------------------------------
+
+function baseGvgInput(overrides = {}) {
+  return {
+    name: "Guild Clash",
+    regStartsAt: futureIso(60_000),
+    regEndsAt: futureIso(120_000),
+    rewards: {
+      percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "gold", amount: 10 }] }],
+    },
+    ...overrides,
+  };
+}
+
+test("validateGvgEvent accepts a happy-path row and defaults minTeams/maxTeams to 1/10", () => {
+  const input = baseGvgInput({ description: "Guild vs. guild, weekly" });
+  const v = validateGvgEvent(input, EVENT_LOOKUPS);
+  assert.equal(v.name, "Guild Clash");
+  assert.equal(v.description, "Guild vs. guild, weekly");
+  assert.equal(v.minTeams, 1);
+  assert.equal(v.maxTeams, 10);
+  assert.equal(new Date(v.regStartsAt).toISOString(), input.regStartsAt);
+  assert.equal(new Date(v.regEndsAt).toISOString(), input.regEndsAt);
+  assert.deepEqual(v.rewards, { positionRewards: {}, ...input.rewards });
+});
+
+test("validateGvgEvent accepts explicit minTeams/maxTeams within 1-10", () => {
+  const v = validateGvgEvent(baseGvgInput({ minTeams: 3, maxTeams: 5 }), EVENT_LOOKUPS);
+  assert.equal(v.minTeams, 3);
+  assert.equal(v.maxTeams, 5);
+});
+
+test("validateGvgEvent rejects minTeams > maxTeams", () => {
+  rejects(() => validateGvgEvent(baseGvgInput({ minTeams: 6, maxTeams: 5 }), EVENT_LOOKUPS),
+    "minTeams greater than maxTeams");
+});
+
+test("validateGvgEvent rejects minTeams/maxTeams out of the 1-10 range", () => {
+  rejects(() => validateGvgEvent(baseGvgInput({ minTeams: 0 }), EVENT_LOOKUPS), "minTeams below 1");
+  rejects(() => validateGvgEvent(baseGvgInput({ maxTeams: 11 }), EVENT_LOOKUPS), "maxTeams above 10");
+});
+
+test("validateGvgEvent rejects a bad registration window (delegates to validateEventSchedule)", () => {
+  rejects(() => validateGvgEvent(
+    baseGvgInput({ regStartsAt: futureIso(120_000), regEndsAt: futureIso(60_000) }), EVENT_LOOKUPS
+  ), "starts after ends");
+});
+
+test("validateGvgEvent rejects malformed/unknown-id rewards (delegates to validateEventRewards)", () => {
+  rejects(() => validateGvgEvent(
+    baseGvgInput({
       rewards: { percentileRewards: [{ fromPct: 1, toPct: 100, rewards: [{ type: "item", itemId: "it_nope", qty: 1 }] }] },
     }),
     EVENT_LOOKUPS

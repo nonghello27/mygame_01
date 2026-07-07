@@ -73,3 +73,53 @@ button.btn.guild-danger{color:var(--hp-low);border-color:var(--hp-low)}
 .guild-mem-name{font-weight:600}
 .guild-mem-joined{color:var(--muted);font-size:11.5px;margin-left:auto}
 .guild-mem-controls{display:flex;gap:6px;flex-wrap:wrap;width:100%}
+
+/* GVG section (Phase 9.5) — same chrome family as the tour-* classes above,
+   just gvg-prefixed to stay distinguishable from the plain guild-* rules. */
+.gvg-section{display:flex;flex-direction:column;gap:8px}
+.guild-badge.gvg-cancelled{color:var(--hp-low);border-color:var(--hp-low)}
+
+.gvg-card{
+  background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+}
+.gvg-rewards{display:flex;flex-direction:column;gap:2px}
+.gvg-reward-line{margin:0;font-size:12.5px;color:var(--text)}
+.gvg-toolbar{display:flex;gap:8px;flex-wrap:wrap}
+
+.gvg-submit{display:flex;flex-direction:column;gap:8px}
+.gvg-mon-list{display:flex;flex-direction:column;gap:8px}
+.gvg-mon{
+  display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);
+  border-radius:11px;padding:9px 12px;cursor:pointer;
+}
+.gvg-mon:hover{border-color:var(--line-strong)}
+.gvg-mon.picked{border-color:var(--a-deep);background:var(--a-soft)}
+.gvg-mon.busy{opacity:0.6;cursor:default}
+.gvg-mon-emoji{font-size:22px}
+.gvg-mon-name{font-size:13px;font-weight:600;flex:1}
+.gvg-mon-busy-tag{font-size:11px;color:var(--clash)}
+.gvg-pick-badge{
+  display:flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;background:var(--a-deep);color:#06150f;font-weight:700;font-size:12px;flex:none;
+}
+
+.gvg-lineup{
+  display:flex;flex-direction:column;gap:8px;background:var(--panel);
+  border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+}
+.gvg-lineup-row{
+  display:flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:9px;padding:7px 11px;font-size:12.5px;
+}
+.gvg-lineup-name{flex:1}
+.gvg-order-input{
+  width:52px;background:var(--panel);border:1px solid var(--line);border-radius:7px;
+  padding:5px 7px;font-size:12.5px;color:var(--text);font-family:inherit;
+}
+
+.gvg-history-row{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--bg-2);
+  border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:12.5px;
+}
+.gvg-history-name{font-weight:600;flex:1}

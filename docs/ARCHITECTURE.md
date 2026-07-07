@@ -556,6 +556,15 @@ POST /api/admin/tournaments/cancel  { id } → { tournament } cancel at any
                               non-completed status: releases every entrant's
                               locks and refunds entry fees (idempotent,
                               compensating), keeps the row visible in history
+GET  /api/admin/gvg           { events } → every GVG event (any status) with
+                              a live registered-guild count (Phase 9.5)
+POST /api/admin/gvg           { name, description?, minTeams?, maxTeams?,
+                              regStartsAt, regEndsAt, rewards } → { event }
+                              create one; status always starts 'scheduled'
+POST /api/admin/gvg/cancel    { id } → { event } cancel at any non-completed
+                              status: releases every submitted team's busy
+                              lock (idempotent); no fee to refund (GVG
+                              events have none)
 
 # adventure domain — api/adventure/[...route].js (Phase 7.4 step B; the 6th
 # domain, anticipated by the "not yet built" note this section used to carry)
@@ -627,6 +636,36 @@ POST /api/guild/transfer      { trainerId } → the me() view (leader-only);
                               officer); 404 target not a member of this
                               guild, 409 "leadership already changed" on a
                               lost claim
+GET  /api/guild/gvg/events    (Phase 9.5) { membership, events } → every GVG
+                              event (any status), each with a live
+                              registered-guild count, the caller's own team
+                              summary, and (in a guild) whether that guild
+                              registered; the LEADER additionally sees every
+                              submitted team (display only, never lanes)
+POST /api/guild/gvg/submit    { eventId, monsterIds:number[3] } → { team }
+                              submit a team while the window is open: party
+                              busy-claim (busy_kind='gvg') + toLane() freeze,
+                              LIFO-compensated (no fee leg, unlike
+                              tournaments); 409 "join a guild first" / "team
+                              submission is not open" / "a monster is busy
+                              or not yours" / "you already submitted a team
+                              for this event"
+POST /api/guild/gvg/withdraw  { eventId } → { withdrawn:true } withdraw an
+                              unpicked team while the window is open,
+                              releasing its lock; 409 "team submission is
+                              closed" / "your team is in the guild's lineup
+                              — ask your leader to unpick it first"; 404 no
+                              team submitted
+POST /api/guild/gvg/lineup    { eventId, teamIds:number[] } → { guildTeams }
+                              leader-only: replace the guild's whole lineup
+                              (ordered submitted-team ids, first to last);
+                              403 leader only, 409 window closed, 400 bad ids
+POST /api/guild/gvg/register  { eventId } → { registered:true, lineup }
+                              leader-only: register once a lineup within
+                              [minTeams, maxTeams] with contiguous order is
+                              staged; 403 leader only, 409 "registration is
+                              not open" / "set a lineup of N-M teams first" /
+                              "your guild is already registered"
 
 # not yet built (future domains, still under the 12-function cap)
 GET  /api/market/browse       search/filter listings (kind, text, price

@@ -37,9 +37,12 @@ The vision and plans live in `docs/` — treat them as part of this file:
   guilds → GVG setup → engine carry-over → GVG resolution) — 9.1 (bracket +
   reward math), 9.2 (tournament schema, admin lifecycle, registration, with
   a live 🏆 Tournament panel + admin tab), 9.3 (tournaments' lazy
-  resolution, rewards, a bracket/standings detail view), and 9.4 (guilds:
-  creation, membership, roles, with a live 🏰 Guild panel) are all code
-  complete; 9.5 (GVG events: schedule, team submission, lineup) is next up;
+  resolution, rewards, a bracket/standings detail view), 9.4 (guilds:
+  creation, membership, roles, with a live 🏰 Guild panel), and 9.5 (GVG
+  events: schedule, team submission, lineup, with a live ⚔ Guild vs. Guild
+  section in the 🏰 Guild panel + an admin ⚔ GVG tab) are all code complete;
+  9.6 (the one engine change — carry-over battle state between relay
+  battles) is next up, followed by 9.7 (GVG war resolution/rewards/results);
   chat, notifications & the photo quest are Phase 10.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
@@ -127,8 +130,10 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # battle domain), admin.js (master + classes/skills/species/jobs/
 │   │                       # items/equipment/runes/summons/adventures CRUD + grant +
 │   │                       # trainers list/monsters read+mint/attach/detach +
-│   │                       # tournaments create/cancel/list), guild.js (browse, me, create,
-│   │                       # apply, accept, reject, leave, kick, promote, transfer)
+│   │                       # tournaments create/cancel/list, Phase 9.5's gvg/gvgCancel),
+│   │                       # guild.js (browse, me, create, apply, accept, reject, leave,
+│   │                       # kick, promote, transfer), gvg.js (Phase 9.5: events, submit,
+│   │                       # withdraw, lineup, register — rides the guild domain)
 │   ├── db.js               # Neon connection (lazy, from DATABASE_URL)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg) + sendJson()/readJson() + createRouter()
@@ -197,7 +202,7 @@ per roadmap phase, don't big-bang rename.)
 │                           # me()'s guildless/member/leader-or-officer three-shape view)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
-│   │                       # up to 016_guilds.sql as of Phase 9.4)
+│   │                       # up to 017_gvg.sql as of Phase 9.5)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
@@ -242,8 +247,11 @@ per roadmap phase, don't big-bang rename.)
     │                       # party picker, my-entry + withdraw, a past-tournaments history list,
     │                       # and (Phase 9.3) a per-tournament "Details" bracket/standings view),
     │                       # guild (🏰 panel: guildless browse/apply/create, member roster +
-    │                       # Leave, leader/officer read of the pending-application queue, and
-    │                       # leader-only accept/reject/kick/promote/transfer controls)
+    │                       # Leave, leader/officer read of the pending-application queue,
+    │                       # leader-only accept/reject/kick/promote/transfer controls, and
+    │                       # (Phase 9.5) a ⚔ Guild vs. Guild section — open-event cards with
+    │                       # a team-submit party picker for any member, plus a leader-only
+    │                       # per-team lineup-order editor and register-guild button)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -670,6 +678,49 @@ officers additionally see the pending-application queue read-only); leader
 (all of the above, plus per-application Accept/Reject and per-member,
 non-self Kick/Promote/Demote/"Make leader" — transfer confirm()-gated —
 controls, with the leader's own Leave replaced by a "transfer first" hint).
+
+GVG events (Phase 9.5): the tournament event lifecycle re-instantiated at
+guild level — setup-side only this sub-phase (no bracket, no battles; 9.6
+lands the one engine change those need, 9.7 resolves wars). `017_gvg.sql`:
+`gvg_events` (admin-created instance data exactly like `tournaments` — same
+`validateEventSchedule`/`validateEventRewards` grammar via the new
+`validateGvgEvent`, plus `minTeams`/`maxTeams` bounds 1-10, no entry fee),
+`gvg_teams` (one row per trainer's submitted team — `guild_id` freezes the
+submitter's guild AT SUBMISSION time; `team` is the exact
+`tournament_entries.team`/`adventure_sessions.party` `{lanes, display}`
+shape; `battle_order` NULL until the leader picks it into the lineup;
+`released` is the idempotent lock-release flag, the `refunded` role minus a
+refund leg since GVG has no fee), `gvg_registrations` (one per guild per
+event, `UNIQUE(event_id, guild_id)`), and `gvg_wars` (schema only — Phase
+9.7 is its first writer, kept here so GVG has one migration to read start to
+finish, the `tournament_matches` precedent). Every route rides the EXISTING
+guild domain (`/api/guild/gvg/events|submit|withdraw|lineup|register` —
+`server/routes/gvg.js`, wired into `server/routers/guild.js`) — no new
+serverless function. `submitTeam` follows tournament registration's exact
+claim-first-then-pay shape minus the fee leg: claim the party's busy lock
+(`busy_kind='gvg'`) → freeze the `toLane()` snapshot → insert the team, with
+compensating release on any failure. The LEADER (only, role re-derived via
+`getMembership()` first, CLAUDE.md §1.1) stages a lineup with `setLineup`
+(clears then re-sets each team's `battle_order`, 1-based, order IS the relay
+order) and then `registerGuild` (409 unless the lineup's count sits within
+`[minTeams, maxTeams]` with contiguous order). `settleGvgSetup()` — called
+lazily at the top of every GVG read, the `settleTournaments`/`settleActivities`
+precedent — opens due registration windows cosmetically and, once a window
+closes, releases every submitted-but-unpicked team's lock plus every team
+belonging to a guild that never completed registration; a picked team
+belonging to a registered guild stays locked for 9.7's eventual war to
+release. Admin cancel (`⚔ GVG` tab, mirroring `🏆 Tournaments`) releases
+every team's lock at any non-completed status, idempotently. The 🏰 Guild
+panel's new "⚔ Guild vs. Guild" section (`src/ui/guild.js`) is the same
+msgs+body shell as the rest of the panel: any member sees open events with a
+3-monster team-submit picker (borrowed from `ui/tournament.js`'s party
+picker) and their own submission status; the LEADER additionally sees every
+submitted team with a per-team lineup-order `<input>`, a "Save lineup"
+button, and "Register guild"/"Registered ✓". Pure display + action over
+`src/services/content.js`'s new `fetchGvgEvents()`/`submitGvgTeam()`/
+`withdrawGvgTeam()`/`setGvgLineup()`/`registerGvgGuild()` — every validity
+check (role, window, team-count bounds, contiguous order) is the server's
+job, never re-derived client-side.
 
 ## 4. Recipes for TODAY's code
 

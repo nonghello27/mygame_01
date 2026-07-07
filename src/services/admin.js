@@ -113,3 +113,28 @@ export const createTournament = (row) => request("/api/admin/tournaments", "POST
  * @returns {Promise<{tournament:object}>}
  */
 export const cancelTournament = (id) => request("/api/admin/tournaments/cancel", "POST", { id });
+
+// --- GVG events (Phase 9.5) --------------------------------------------------
+// Same reasoning as tournaments above: this reads its OWN endpoint rather than
+// folding into loadMaster()'s masterState — GVG events are admin-created
+// INSTANCE data (one-off scheduled events), not reusable master content.
+
+/** @returns {Promise<{events:object[]}>} every GVG event (any status), with a live registered-guild count. */
+export const loadGvgEvents = () => request("/api/admin/gvg", "GET");
+
+/**
+ * Create a GVG event. Status always starts 'scheduled' server-side.
+ * @param {{name:string, description?:string, minTeams?:number, maxTeams?:number,
+ *   regStartsAt:string, regEndsAt:string, rewards:object}} row
+ * @returns {Promise<{event:object}>}
+ */
+export const createGvgEvent = (row) => request("/api/admin/gvg", "POST", row);
+
+/**
+ * Cancel at any non-completed status: releases every submitted team's busy
+ * lock, keeping the row visible in history. GVG events have no entry fee, so
+ * there is nothing to refund.
+ * @param {number} id
+ * @returns {Promise<{event:object}>}
+ */
+export const cancelGvgEvent = (id) => request("/api/admin/gvg/cancel", "POST", { id });

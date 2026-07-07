@@ -778,3 +778,38 @@ export function validateTournament(input, lookups) {
     rewards,
   };
 }
+
+// --- GVG events (Phase 9.5) --------------------------------------------------
+//
+// The tournament event lifecycle, re-instantiated at guild level: same
+// schedule + rewards grammar (validateEventSchedule/validateEventRewards,
+// composed exactly like validateTournament above), plus two GVG-only knobs —
+// minTeams/maxTeams, how many ordered teams a guild's lineup may field — and
+// NO entryFee (GVG events have none by design).
+
+/**
+ * @param {object} input raw body: {name, description?, minTeams?, maxTeams?,
+ *   regStartsAt, regEndsAt, rewards}
+ * @param {{itemIds:Set<string>, equipmentDefIds:Set<string>,
+ *   runeDefIds:Set<string>, speciesIds:Set<string>}} lookups fetched by the
+ *   service (fresh DB state), same split as validateTournament's own param.
+ * @returns {{name:string, description:string, minTeams:number, maxTeams:number,
+ *   regStartsAt:string, regEndsAt:string, rewards:object}}
+ */
+export function validateGvgEvent(input, lookups) {
+  const schedule = validateEventSchedule(input);
+  const rewards = validateEventRewards(input?.rewards, lookups);
+  const minTeams = int(input?.minTeams ?? 1, "minTeams", { min: 1, max: 10 });
+  const maxTeams = int(input?.maxTeams ?? 10, "maxTeams", { min: 1, max: 10 });
+  if (minTeams > maxTeams) throw bad("minTeams must be at most maxTeams");
+  return {
+    name: str(input?.name, "GVG event name", { max: 120 }),
+    description: input?.description === undefined || input?.description === null || input?.description === ""
+      ? "" : str(input.description, "description", { max: 500 }),
+    minTeams,
+    maxTeams,
+    regStartsAt: schedule.regStartsAt,
+    regEndsAt: schedule.regEndsAt,
+    rewards,
+  };
+}
