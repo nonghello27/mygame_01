@@ -4,6 +4,7 @@
 
 import "./styles/base.css";
 import "./styles/board.css";
+import "./styles/menu.css";
 import "./styles/sprite.css";
 import "./styles/cutscene.css";
 import "./styles/auth.css";
@@ -34,6 +35,8 @@ import { initAdventure } from "./ui/adventure.js";
 import { initMarketplace } from "./ui/marketplace.js";
 import { initTournament } from "./ui/tournament.js";
 import { initGuild } from "./ui/guild.js";
+import { initParty, renderParty, getPartyIds } from "./ui/party.js";
+import { initMenubar } from "./ui/menubar.js";
 
 const startBtn = document.getElementById("startBtn");
 const resetBtn = document.getElementById("resetBtn");
@@ -111,12 +114,15 @@ async function backToSetup(loader, { rethrow = false } = {}) {
   resetBtn.disabled = true;
   hint.style.display = "";
   renderBoard();
+  await renderParty();
 }
 
-/** Open a new match, surfacing server errors on the status line. */
+/** Open a new match, surfacing server errors on the status line. Reuses
+ *  whatever party the strip (ui/party.js) has remembered — null there means
+ *  "server default" (Phase 10.2), which covers Reset/New Opponent/PVP alike. */
 async function openMatch(mode) {
   try {
-    await newMatch(mode);
+    await newMatch(mode, getPartyIds() ?? undefined);
   } catch (e) {
     setStatus(`Could not start a match: ${e.message}`);
     throw e;
@@ -129,6 +135,7 @@ function onCinematicToggle() {
 }
 
 // --- boot ---
+initMenubar();
 initBoard();
 initLog();
 initCutscene();
@@ -142,6 +149,7 @@ initAdventure();
 initMarketplace();
 initTournament();
 initGuild();
+initParty({ onFieldParty: () => backToSetup(openMatch) });
 // The landing/login screen owns the start: once the session is confirmed it
 // calls startSession(), which loads content and opens the first match.
 initAuth(startSession);
@@ -151,6 +159,7 @@ async function startSession() {
     await initContent();
     await newMatch();
     renderBoard();
+    await renderParty();
   } catch (e) {
     setStatus(`Could not load the game: ${e.message}`);
   }

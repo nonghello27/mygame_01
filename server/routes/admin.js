@@ -99,6 +99,11 @@
 //   Every trainer account (id, name, email, gold, exp, expertise, isAdmin,
 //   createdAt, monsterCount). Admin only.
 //
+// POST /api/admin/trainers/update { trainerId, gold } -> { trainer }
+//   Sets that trainer's gold to an absolute amount (integer >= 0) — the
+//   admin states the balance, unlike /api/admin/grant's relative credit.
+//   Admin only.
+//
 // GET  /api/admin/monsters?trainerId=<id> -> { trainer, monsters, unassigned }
 //   One trainer's full monster roster, plus every UNASSIGNED monster
 //   (trainer_id IS NULL — detached from an account but not deleted; see
@@ -144,6 +149,7 @@ import {
   removeAdventure,
   grantToTrainer,
   listTrainers,
+  setTrainerGold,
   trainerMonsters,
   mintMonsterForTrainer,
   attachMonsterToTrainer,
@@ -203,6 +209,13 @@ export async function trainers(req, res) {
   const sql = db();
   await requireAdmin(sql, trainerIdFromRequest(req));
   sendJson(res, 200, { trainers: await listTrainers(sql) });
+}
+
+export async function trainerUpdate(req, res) {
+  const sql = db();
+  await requireAdmin(sql, trainerIdFromRequest(req));
+  const body = await readJson(req);
+  sendJson(res, 200, await setTrainerGold(sql, body));
 }
 
 export async function monsters(req, res) {

@@ -62,3 +62,15 @@ export async function refundGold(sql, trainerId, amount) {
     RETURNING gold`;
   return rows[0] || null;
 }
+
+/**
+ * Admin-only absolute set (Phase 10.1) — deliberately unlike debit/refund's
+ * relative math: the admin states the balance. Null means no such trainer.
+ */
+export async function setGold(sql, trainerId, gold) {
+  const rows = await sql`
+    UPDATE trainers SET gold = ${gold}
+    WHERE id = ${trainerId}
+    RETURNING id, name, email, exp, gold, expertise, is_admin, created_at`;
+  return shape(rows[0]);
+}

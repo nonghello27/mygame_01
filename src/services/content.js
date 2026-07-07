@@ -37,15 +37,23 @@ export async function loadSprites() {
 
 /**
  * Open a match session. The server assembles YOUR team from your owned
- * monsters (granting starters on the very first call) and picks + freezes the
- * enemy team and lane order. Requires login.
+ * monsters (granting starters on the very first call) — the first 3
+ * available, or the exact 3 the optional `monsterIds` picks, in that order
+ * (Phase 10.2) — and picks + freezes the enemy team and lane order. Requires
+ * login.
  * @param {string} [mode] "pvp" opens a ladder match against another
  *   trainer's saved defense formation; omit (or anything else) for today's
  *   free match against a random species team — existing callers unchanged.
+ * @param {number[]} [monsterIds] exactly 3 distinct owned, non-busy monster
+ *   ids choosing WHICH monsters fight and their initial lane order; omit for
+ *   the server's default (first 3 available).
  * @returns {Promise<{matchId:string, you:object[], enemy:object[], opponent?:{name:string,rating:number}}>}
  */
-export async function createMatch(mode) {
-  return postJson("/api/battle/match", mode ? { mode } : {});
+export async function createMatch(mode, monsterIds) {
+  return postJson("/api/battle/match", {
+    ...(mode ? { mode } : {}),
+    ...(monsterIds ? { monsterIds } : {}),
+  });
 }
 
 /**

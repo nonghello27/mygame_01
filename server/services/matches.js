@@ -26,8 +26,13 @@ import { settleActivities } from "./activities.js";
 // attacker-side selection (same rule as free play).
 export const TEAM_SIZE = 3;
 
-/** @returns {Promise<{matchId:string, you:object[], enemy:object[]}>} */
-export async function createMatch(sql, trainerId) {
+/**
+ * @returns {Promise<{matchId:string, you:object[], enemy:object[]}>}
+ * @param {number[]} [monsterIds] optional (Phase 10.2 battlefield party
+ *   picker) — see pickParty() below for its exact contract; omitted keeps
+ *   today's first-3-available behavior byte-for-byte.
+ */
+export async function createMatch(sql, trainerId, monsterIds) {
   // The trainer's own team — starters are granted on first need (lazy, like
   // everything else). Wire shape: idx is the lane identity the client and
   // server exchange; stats ride along for display but the DB copy is what
@@ -51,7 +56,7 @@ export async function createMatch(sql, trainerId) {
   // those are PVP-only auras. Runes have no trainer-domain equivalent.
   const equipByMonster = groupByMonster(await listEquippedMonsterEquipment(sql, trainerId));
   const runesByMonster = groupByMonster(await listSocketedRunes(sql, trainerId));
-  const attacker = available.slice(0, TEAM_SIZE).map((m, i) =>
+  const attacker = pickParty(roster, available, monsterIds).map((m, i) =>
     toLane(m, i, equipByMonster.get(m.id) ?? [], runesByMonster.get(m.id) ?? [])
   );
 
@@ -221,6 +226,58 @@ export const toLane = (m, i, equipment = [], runes = []) => ({
   // applyRuneWear key durability off of).
   runes,
 });
+
+/**
+ * Choose the TEAM_SIZE monsters that will fight, and in what order (Phase
+ * 10.2 — the battlefield party picker). Pure, no SQL: `roster` is every
+ * monster the trainer owns, `available` the subset not currently busy
+ * (both already fetched by the caller).
+ *
+ *   monsterIds == null -> today's pre-10.2 default: the first TEAM_SIZE
+ *                         available monsters, in roster order.
+ *   otherwise           -> exactly TEAM_SIZE distinct ids, every one owned
+ *                         by this trainer and currently available,
+ *                         returned in the CALLER'S order.
+ *
+ * The order returned becomes the INITIAL lane order — drag on the client,
+ * then the resolve step's `playerOrder` permutation gate (applyOrder()
+ * above), still refine it from there; this only decides WHO is in the
+ * lineup, never the final order a battle actually runs in.
+ *
+ * The shared/free-form checks (array of exactly 3, all integers, 3
+ * distinct) copy saveDefense's exact wording (server/services/pvp.js) —
+ * same grammar, same messages, since both are "pick 3 owned monster ids"
+ * gates. Ownership is checked the same way too. The busy check is new
+ * here: unlike a defense formation (which fights passively while its
+ * owner is offline and may include busy monsters), a live match can only
+ * ever field monsters that are free right now.
+ */
+export function pickParty(roster, available, monsterIds) {
+  if (monsterIds == null) return available.slice(0, TEAM_SIZE);
+
+  if (!Array.isArray(monsterIds) || monsterIds.length !== TEAM_SIZE) {
+    throw httpError(400, `monsterIds must be exactly ${TEAM_SIZE} monster ids`);
+  }
+  const ids = monsterIds.map(Number);
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw httpError(400, "monsterIds must be integer monster ids");
+  }
+  if (new Set(ids).size !== ids.length) {
+    throw httpError(400, `monsterIds must be ${TEAM_SIZE} distinct monsters`);
+  }
+
+  const owned = new Set(roster.map((m) => m.id));
+  for (const id of ids) {
+    if (!owned.has(id)) throw httpError(400, "monster not found");
+  }
+
+  const byId = new Map(available.map((m) => [m.id, m]));
+  for (const id of ids) {
+    if (!byId.has(id)) throw httpError(409, "that monster is busy — it can't join a match right now");
+  }
+
+  return ids.map((id) => byId.get(id));
+}
 
 /**
  * Group a snapshot-read's rows (one row per piece, each tagged with the

@@ -22,6 +22,11 @@ The vision and plans live in `docs/` — treat them as part of this file:
   skills, runes, activities, and the **reference battle-flow design** (§7).
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — target directory layout,
   data model (master/instance tables), battle **engine v2** spec, API surface.
+- **[docs/AGENT_WORKFLOW.md](docs/AGENT_WORKFLOW.md)** — **how AI sessions
+  must run implementation work here**: the main session is planner/PM only
+  (read-only exploration, specs, review); every file edit is delegated to
+  the `implementer` subagent and reviewed round by round. Read it before
+  starting any implementation task.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — phased build order. **When asked
   "what next?", answer from here.** Current position: Phases 0–6 complete
   (Firebase auth; owned monsters; tamper-proof matches; battle engine v2;
@@ -44,7 +49,13 @@ The vision and plans live in `docs/` — treat them as part of this file:
   change — carry-over battle state between relay battles), and 9.7 (GVG war
   resolution/rewards/results, with a live bracket/standings detail view in
   the same ⚔ Guild vs. Guild section) are all code complete — **Phase 9 is
-  done**. Phase 10 (chat, notifications & the photo quest) is next.
+  done**. Phase 10 (trainer & battlefield QoL) was staged 2026-07-07 as
+  sub-phases 10.1–10.3 in the roadmap — 10.1 (admin: set any trainer's
+  gold), 10.2 (battlefield party picker: choose which 3 owned monsters
+  fight, free & PVP, with a live party strip), and 10.3 (a grouped
+  dropdown menu bar over the control buttons) are all code complete —
+  **Phase 10 is done**. Phase 11 (chat, notifications & the photo quest)
+  is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -130,7 +141,7 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # (tournaments list, register, withdraw, detail — rides the
 │   │                       # battle domain), admin.js (master + classes/skills/species/jobs/
 │   │                       # items/equipment/runes/summons/adventures CRUD + grant +
-│   │                       # trainers list/monsters read+mint/attach/detach +
+│   │                       # trainers list/gold-set/monsters read+mint/attach/detach +
 │   │                       # tournaments create/cancel/list, Phase 9.5's gvg/gvgCancel),
 │   │                       # guild.js (browse, me, create, apply, accept, reject, leave,
 │   │                       # kick, promote, transfer), gvg.js (Phase 9.5: events, submit,
@@ -243,9 +254,9 @@ per roadmap phase, don't big-bang rename.)
 └── src/
     ├── main.js             # ENTRY: imports CSS, inits modules, wires buttons
     ├── config.js           # COLORS, accentFor(), cutscene timings
-    ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm | admin
-    │                       # | pvp | trainer | inventory | summon | adventure | market | tournament
-    │                       # | guild
+    ├── styles/             # base.css (tokens) | board | menu | cutscene | sprite | auth | farm
+    │                       # | admin | pvp | trainer | inventory | summon | adventure | market
+    │                       # | tournament | guild
     ├── data/               # seed content: classes, sprites, units, skills, jobs, expertises,
     │                       # items, equipment, runes, summons, adventures
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js, admin.js
@@ -269,7 +280,11 @@ per roadmap phase, don't big-bang rename.)
     │                       # a team-submit party picker for any member, plus a leader-only
     │                       # per-team lineup-order editor and register-guild button, and
     │                       # (Phase 9.7) a per-event "Details" war-bracket/standings view
-    │                       # off the same section, mirroring the tournament panel's own)
+    │                       # off the same section, mirroring the tournament panel's own),
+    │                       # party (🪖 party strip: pick which 3 owned monsters fight, Phase 10.2),
+    │                       # menubar (Phase 10.3: a grouped dropdown menu bar over the existing
+    │                       # button ids — Playground/Activities/Battlefield dropdowns plus a few
+    │                       # direct top-level buttons)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -290,7 +305,9 @@ The stable `idx` is the only identity the client and server exchange. Two linkin
 always via `services/content.js`.
 
 Flow: login → `POST /api/battle/match` (server assembles YOUR team from
-`monsters`, picks + freezes the enemy team/order, mints + stores the seed in
+`monsters` — the first 3 available, or the exact 3 the optional
+`monsterIds` picks, in that order (Phase 10.2) — picks + freezes the enemy
+team/order, mints + stores the seed in
 `matches`) → drag your lanes only → `POST /api/battle/resolve {matchId,
 playerOrder}` (permutation
 gate `applyOrder()` in `server/services/matches.js`; each match resolves

@@ -17,7 +17,7 @@ import {
 import { listEquippedMonsterEquipment, getTrainerEquipmentSnapshot } from "../repos/equipment.js";
 import { listSocketedRunes } from "../repos/runes.js";
 import { settleActivities } from "./activities.js";
-import { TEAM_SIZE, toLane, groupByMonster } from "./matches.js";
+import { TEAM_SIZE, toLane, groupByMonster, pickParty } from "./matches.js";
 
 /**
  * Lazy season rollover — the same pattern as settleActivities: no cron, this
@@ -132,8 +132,11 @@ export async function getDefense(sql, trainerId) {
  * rating-proximity pool. Snapshots + a fresh seed are frozen into the match
  * row exactly like createMatch — the resolve step (server/services/matches.js)
  * is the only place a battle actually runs.
+ * @param {number[]} [monsterIds] optional (Phase 10.2) — same contract as
+ *   createMatch's, applied to the attacker side only; the defender side
+ *   (another trainer's saved defense formation) is untouched.
  */
-export async function createPvpMatch(sql, trainerId) {
+export async function createPvpMatch(sql, trainerId, monsterIds) {
   await settleActivities(sql, trainerId);
   const season = await ensureSeason(sql);
   const me = await ensureRankEntry(sql, season.id, trainerId);
@@ -151,7 +154,7 @@ export async function createPvpMatch(sql, trainerId) {
   // routes group identically.
   const equipByMonster = groupByMonster(await listEquippedMonsterEquipment(sql, trainerId));
   const runesByMonster = groupByMonster(await listSocketedRunes(sql, trainerId));
-  const attacker = available.slice(0, TEAM_SIZE).map((m, i) =>
+  const attacker = pickParty(roster, available, monsterIds).map((m, i) =>
     toLane(m, i, equipByMonster.get(m.id) ?? [], runesByMonster.get(m.id) ?? [])
   );
   // Trainer-domain skills AND equipment both freeze into the match row here —

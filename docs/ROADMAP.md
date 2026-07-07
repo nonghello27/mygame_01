@@ -822,7 +822,7 @@ golden-style determinism cases; no runtime surface changed.
 - ✅ Routes ride the EXISTING `battle` domain (`/api/battle/tournaments` list +
   detail, `/api/battle/tournament/register|withdraw` — new rows in
   `server/routers/battle.js`, NOT a new serverless function: the guild
-  domain (9.4) takes one of the two remaining Hobby-cap slots, and Phase 10
+  domain (9.4) takes one of the two remaining Hobby-cap slots, and Phase 11
   may want the last, CLAUDE.md §5). Admin create/cancel/list rides
   `api/admin/` like every other admin write.
 - ✅ Registration (`server/services/tournament.js`): validated against the
@@ -1110,7 +1110,120 @@ battle at its carried HP); positions and percentile tiers pay guild
 participants exactly once; eliminated guilds' monsters free immediately;
 the full event is browsable afterward and replayable from stored seeds.
 
-## Phase 10 — Chat, notifications & photo quest (later)
+## Phase 10 — Trainer & battlefield QoL
+
+Three quality-of-life gaps surfaced by playtesting Phases 0–9, staged
+2026-07-07 as sub-phases 10.1–10.3, each independently shippable. None of
+them needs a new serverless function (CLAUDE.md §5: the two QoL endpoints
+ride the existing `admin` and `battle` domains; 10.3 is client-only), and
+none touches the engine — no golden-log churn anywhere in this phase.
+Order rationale: the admin gold editor (10.1) is a small, isolated
+backend-plus-console slice proving nothing new; the battle party picker
+(10.2) is the one real gameplay change and lands before the menu redesign
+so the battlefield's final control set is known; the grouped menu bar
+(10.3) is pure presentation over ids that already exist, so it goes last
+and re-homes every button exactly once.
+
+### Phase 10.1 — Admin: edit a trainer's gold ✅ CODE COMPLETE (2026-07-07)
+
+The 👥 Trainers tab can already read every account and manage rosters, but
+gold can only be *granted relative to itself* via items; there's no way to
+set an account's balance outright.
+
+- ✅ `POST /api/admin/trainers/update {trainerId, gold}` — a new row in the
+  admin domain's router table (`server/routes/admin.js` +
+  `server/routers/admin.js`, NOT a new serverless function). Admin-gated
+  exactly like every other admin write (`server/services/admin.js`).
+  Validation: `trainerId` names a real trainer; `gold` is an integer ≥ 0.
+  Semantics: an absolute SET (the admin states the balance), deliberately
+  unlike `POST /api/admin/grant`'s relative credit — one guarded UPDATE in
+  `server/repos/trainers.js`, returning the refreshed trainer row.
+- ✅ UI: the 👥 Trainers tab's "Manage" view (`src/ui/admin.js`) gains an
+  editable gold field + Save next to the trainer's header info,
+  re-rendering from the endpoint's response like every other admin write;
+  the roster list's gold column refreshes on return.
+
+**Done when:** an admin opens Manage on any account, types a new gold
+amount, saves, and the header chip on that account's next `/api/trainer/me`
+read shows exactly that balance; a non-admin calling the endpoint gets 403;
+`gold:-5` or a fractional value gets 400.
+
+### Phase 10.2 — Battlefield: pick your party ✅ CODE COMPLETE (2026-07-07)
+
+Today `createMatch` (free) and `createPvpMatch` (attacker side) both take
+`available.slice(0, TEAM_SIZE)` — a trainer with five monsters can never
+field #4 or #5. The client should choose WHICH three fight (a choice, per
+CLAUDE.md §1.1 — ids the server re-validates, never stats), while the
+server keeps assembling everything else about the snapshot.
+
+- ✅ `POST /api/battle/match` accepts an optional `monsterIds` (both modes;
+  free and `mode:"pvp"` attacker) — a new pure `pickParty()` helper
+  (`server/services/matches.js`) both `createMatch` and `createPvpMatch`
+  call. When present: exactly 3 distinct integer ids, every one owned by
+  the caller and not busy — the same validation ladder `saveDefense` runs
+  plus the busy check `createMatch` already applies, 400/409 otherwise.
+  When absent: today's first-3 behavior, byte-for-byte backward
+  compatible. The chosen ORDER is the initial lane order; the existing
+  drag + `playerOrder` permutation gate at resolve is unchanged (picker
+  chooses members, drag refines order).
+- ✅ A match stays frozen at creation (CLAUDE.md §1.6): changing the party
+  after a match is open simply opens a fresh match via the same endpoint —
+  exactly what "New Opponent" already does.
+- ✅ UI: a new `src/ui/party.js` module owns a party strip on the
+  battlefield (`#partyStrip`, between the battle controls and the drag
+  hint) listing every owned monster (the adventure/tournament
+  party-picker row shape; busy monsters disabled with their `busyKind`
+  label), the current three (read off `state.armyA`'s `monsterId`s)
+  highlighted. Picking a full, different 3 reveals a "Field this party"
+  button; clicking it remembers the choice in module memory and asks
+  `main.js` (via a callback) to open a fresh match with it — reused by
+  Reset-after-a-battle, "New Opponent", and Ranked Battle alike, since all
+  three already funnel through the same `openMatch()`. A "Default party"
+  control appears whenever a non-default pick is remembered (including
+  right after a failed attempt), reverting to the server's first-3-available.
+
+**Done when:** a trainer with 5 monsters fields any 3 of them in a free
+match and a PVP attack, in the order picked; a busy monster can't be
+picked; sending someone else's monster id, a duplicate, or 2/4 ids gets
+400/409 and no match row; omitting `monsterIds` still works exactly as
+before.
+
+### Phase 10.3 — Menu bar: grouped navigation ✅ CODE COMPLETE (2026-07-07)
+
+Client-only. The flat 14-button `.controls` row (index.html) is replaced
+by a horizontal menu bar above the battlefield, left to right, with
+groups opening on hover AND on press (the viewport meta says touch
+matters — click toggles, hover previews):
+
+- ✅ **Playground** — Start Battle · Reset · New Opponent · Cinematic: On
+- ✅ **Inventory** — direct button (opens the 🎒 panel)
+- ✅ **Activities** — Farm · Trainer · Adventure
+- ✅ **Battlefield** — Arena · Tournament · Guild
+- ✅ **Summon** — direct button
+- ✅ **Marketplace** — direct button
+- ✅ **Admin** — direct button, hidden unless `is_admin` (existing behavior)
+
+Every existing button id (`startBtn`, `resetBtn`, `shuffleBtn`, `cineBtn`,
+`farmBtn`, `pvpBtn`, `trainerBtn`, `inventoryBtn`, `summonBtn`,
+`adventureBtn`, `marketBtn`, `tournamentBtn`, `guildBtn`, `adminBtn`)
+survived the move unchanged, so `src/main.js` and every panel's wiring keep
+working; the new dropdown behavior lives in a new `src/styles/menu.css`
+(imported from `main.js` right after `board.css`) plus a small new
+`src/ui/menubar.js` (`initMenubar()`, DOM-only: click toggles one group at
+a time via a shared `.open` class, one document-level listener closes
+everything on an outside click or Escape, hover-open is CSS-only via
+`@media (hover:hover)`). Disabled states (`resetBtn` disabled until a
+battle ran) still render legibly inside a dropdown (the existing global
+`opacity:.4` on `:disabled`).
+
+**Done when:** every panel and battle control is reachable through the
+grouped bar with both mouse hover and touch press; nothing else changed —
+`npm run build` passes and no server file is touched. ✅ Verified: all 14
+button ids resolve exactly once in `index.html`, `npm test` (197 passing)
+and `npm run build` both pass, and no file under `server/` or `shared/`
+changed.
+
+## Phase 11 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants
 to emit events into them), then the one deliberately-parked high-risk
@@ -1142,7 +1255,7 @@ practice.
   implementation can be an image-embedding similarity call behind an env
   key, swappable without touching quest logic. Needs image storage (object
   store, not the DB), content moderation + abuse handling (pre-score NSFW
-  filter, report/ban hooks into Phase 10's moderation basics), and
+  filter, report/ban hooks into Phase 11's moderation basics), and
   rate/size limits on upload. Ship behind an `enabled` flag on the quest
   def — the retirement lever precedent from `summon_defs`. Percentile
   rewards mean scoring is relative: settle rewards only at window close,

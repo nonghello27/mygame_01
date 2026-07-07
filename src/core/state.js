@@ -34,9 +34,12 @@ export async function initContent() {
  * Open a fresh match session for the logged-in trainer: your monsters vs a
  * new server-picked opponent. Replaces the previous match entirely.
  * @param {string} [mode] "pvp" for a ladder match; omit for free play.
+ * @param {number[]} [monsterIds] exactly 3 owned, non-busy monster ids
+ *   choosing WHICH monsters fight (Phase 10.2); omit for the server's
+ *   default (first 3 available) — passed straight through to createMatch().
  */
-export async function newMatch(mode) {
-  const match = await createMatch(mode);
+export async function newMatch(mode, monsterIds) {
+  const match = await createMatch(mode, monsterIds);
   state.matchId = match.matchId;
   state.opponent = match.opponent ?? null;
   defs = { you: match.you, enemy: match.enemy };

@@ -168,3 +168,28 @@
   .army-label{writing-mode:vertical-rl;transform:rotate(180deg);align-self:center}
   .clash{width:auto;min-width:120px}
 }
+
+/* party strip (Phase 10.2) — pick WHICH 3 owned monsters fight; battlefield
+   furniture, not a panel, so it lives here rather than a new stylesheet. */
+.party-strip{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+
+.party-chips{display:flex;flex-wrap:wrap;gap:8px}
+.party-chip{
+  display:flex;align-items:center;gap:6px;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:10px;
+  padding:6px 10px;font:inherit;cursor:pointer;color:var(--text);
+}
+.party-chip:hover:not(:disabled){border-color:var(--line-strong)}
+.party-chip.picked{border-color:var(--a-deep);background:var(--a-soft)}
+.party-chip.busy,.party-chip:disabled{opacity:0.55;cursor:default}
+.party-chip-emoji{font-size:18px}
+.party-chip-name{font-size:12.5px;font-weight:600}
+.party-chip-busy{font-size:10.5px;color:var(--clash)}
+.party-chip-badge{
+  display:flex;align-items:center;justify-content:center;width:18px;height:18px;
+  border-radius:50%;background:var(--a-deep);color:#06150f;font-weight:700;font-size:11px;flex:none;
+}
+
+.party-bar{display:flex;gap:8px;flex-wrap:wrap}
+.party-field-btn,.party-auto-btn{padding:7px 14px;font-size:12.5px;border-radius:9px}
+.party-field-btn:disabled,.party-auto-btn:disabled{opacity:0.5;cursor:default}

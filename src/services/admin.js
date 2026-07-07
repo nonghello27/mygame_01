@@ -61,6 +61,14 @@ export const grant = (body) => request("/api/admin/grant", "POST", body);
 /** @returns {Promise<{trainers:object[]}>} every account, for the 👥 Trainers tab's roster browser. */
 export const loadTrainers = () => request("/api/admin/trainers", "GET");
 
+/**
+ * Set a trainer's gold to an absolute amount (Phase 10.1) — unlike grant()'s
+ * relative credit, the admin states the balance directly.
+ * @param {{trainerId:number, gold:number}} body
+ * @returns {Promise<{trainer:object}>}
+ */
+export const updateTrainer = (body) => request("/api/admin/trainers/update", "POST", body);
+
 /** @returns {Promise<{trainer:object, monsters:object[], unassigned:object[]}>} one
  *  trainer's full roster, plus every unassigned (ownerless) monster available to attach. */
 export const loadTrainerMonsters = (trainerId) =>

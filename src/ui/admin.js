@@ -18,7 +18,7 @@ import {
   saveSummon, deleteSummon,
   saveAdventure, deleteAdventure,
   grant,
-  loadTrainers, loadTrainerMonsters, mintMonsterFor, attachMonsterTo, detachMonsterFrom,
+  loadTrainers, loadTrainerMonsters, mintMonsterFor, attachMonsterTo, detachMonsterFrom, updateTrainer,
   loadTournaments, createTournament, cancelTournament,
   loadGvgEvents, createGvgEvent, cancelGvgEvent,
 } from "../services/admin.js";
@@ -1355,7 +1355,31 @@ function trainerDetail({ trainer, monsters, unassigned }) {
   const headId = el("div", "adm-id");
   headId.append(el("b", null, trainer.name), el("small", null, trainer.email));
   const headSide = el("div", "adm-actions");
-  headSide.append(badge(`${trainer.gold} 🪙`), badge(`${trainer.exp} ⭐`));
+  // Inline gold editor (Phase 10.1): an admin states the ABSOLUTE balance,
+  // unlike the grant flow's relative credit — prefilled with the current
+  // value, "Set gold" posts it straight to /api/admin/trainers/update.
+  const goldInput = numInput(trainer.gold, 0);
+  headSide.append(
+    field("Gold", goldInput),
+    button("Set gold", "btn ghost adm-small", async () => {
+      pendingRemove = null;
+      els.msgs.innerHTML = "";
+      const gold = Number(goldInput.value);
+      if (goldInput.value === "" || Number.isNaN(gold)) {
+        pushMsg("enter a gold amount", true);
+        return;
+      }
+      try {
+        const res = await updateTrainer({ trainerId: trainer.id, gold });
+        managing = { ...managing, trainer: res.trainer };
+        renderBody();
+        pushMsg(`Set ${res.trainer.name}'s gold to ${res.trainer.gold}.`);
+      } catch (e) {
+        pushMsg(e.message, true);
+      }
+    }),
+    badge(`${trainer.exp} ⭐`),
+  );
   header.append(headId, headSide);
   els.body.appendChild(header);
 

@@ -6,7 +6,7 @@
 // refused (409) while instance rows still reference the master row.
 
 import { httpError } from "../http.js";
-import { getTrainerById } from "../repos/trainers.js";
+import { getTrainerById, setGold } from "../repos/trainers.js";
 import {
   listMonstersByTrainer, mintMonster, getMonsterById,
   listUnassignedMonsters, detachMonster, returnMonsterGearToBag, attachMonster,
@@ -254,6 +254,23 @@ export async function grantToTrainer(sql, adminId, { trainerId, kind, defId, qty
 
 export async function listTrainers(sql) {
   return listTrainersAdmin(sql);
+}
+
+/**
+ * Set a trainer's gold to an ABSOLUTE amount (Phase 10.1) — unlike
+ * debitGold/refundGold's relative math, the admin states the balance
+ * directly. requireAdmin() stays a route-layer concern (like every other
+ * admin write); this assumes the caller already gated it.
+ */
+export async function setTrainerGold(sql, { trainerId, gold }) {
+  const id = Number(trainerId);
+  if (!Number.isInteger(id)) throw httpError(400, "trainerId must be an integer id");
+  if (!Number.isSafeInteger(gold) || gold < 0) {
+    throw httpError(400, "gold must be a non-negative integer");
+  }
+  const trainer = await setGold(sql, id, gold);
+  if (!trainer) throw httpError(404, "no such trainer");
+  return { trainer };
 }
 
 export async function trainerMonsters(sql, trainerId) {

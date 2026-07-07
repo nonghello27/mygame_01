@@ -502,9 +502,15 @@ POST /api/trainer/summon      { summonId } → pull one banner: pays its cost
                               materials" when a cost leg can't be paid
 
 # battle domain — api/battle/[...route].js
-POST /api/battle/match        { mode? } → create match session ('free', default:
-                              server picks a random defender + seed | 'pvp':
-                              matched against another trainer's defense formation)
+POST /api/battle/match        { mode?, monsterIds? } → create match session
+                              ('free', default: server picks a random defender
+                              + seed | 'pvp': matched against another
+                              trainer's defense formation); monsterIds
+                              (Phase 10.2, optional, both modes) is exactly 3
+                              owned, non-busy monster ids choosing WHICH
+                              monsters fight and their initial lane order —
+                              400/409 on a bad pick, omitted = first 3
+                              available (pre-10.2 behavior)
 POST /api/battle/resolve      { matchId, playerOrder } → persisted result + events;
                               a pvp match's result also carries
                               pvp: { yourDelta, theirDelta, yourRating };
@@ -585,6 +591,10 @@ POST /api/admin/gvg/cancel    { id } → { event } cancel at any non-completed
                               status: releases every submitted team's busy
                               lock (idempotent); no fee to refund (GVG
                               events have none)
+POST /api/admin/trainers/update  { trainerId, gold } → { trainer } set that
+                              trainer's gold to an absolute amount (integer
+                              >= 0) — the admin states the balance, unlike
+                              /api/admin/grant's relative credit (Phase 10.1)
 
 # adventure domain — api/adventure/[...route].js (Phase 7.4 step B; the 6th
 # domain, anticipated by the "not yet built" note this section used to carry)
