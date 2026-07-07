@@ -5,7 +5,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { generateBracket, nextRound, resolveThirdPlace, placements } from "../shared/rules/bracket.js";
+import {
+  generateBracket, nextRound, resolveThirdPlace, placements, derivePairingSeed, replayBracket,
+} from "../shared/rules/bracket.js";
 
 function entrants(n) {
   return Array.from({ length: n }, (_, i) => `t${i}`);
@@ -191,4 +193,156 @@ test("placements ties: same-round eliminations get distinct ranks, stable per se
     [1, 2, 3].slice(i + 1).some((s2) => JSON.stringify(runs[s1]) !== JSON.stringify(runs[s2]))
   );
   assert.ok(diffs, "different seeds should (almost always) produce different placement orders");
+});
+
+// --- Phase 9.3: derivePairingSeed / replayBracket ---------------------------
+
+test("derivePairingSeed is deterministic and varies across seed/round/position", () => {
+  const first = derivePairingSeed(42, 1, 2);
+  const second = derivePairingSeed(42, 1, 2);
+  assert.equal(second, first, "same inputs must always reproduce the same seed");
+
+  const seeds = new Set([
+    derivePairingSeed(42, 0, 0),
+    derivePairingSeed(42, 0, 1),
+    derivePairingSeed(42, 1, 0),
+    derivePairingSeed(42, 1, 1),
+    derivePairingSeed(7, 0, 0),
+  ]);
+  assert.equal(seeds.size, 5, "every distinct (seed, round, position) combination should produce a distinct seed");
+});
+
+/**
+ * Plays a bracket to completion exactly like the bye-aware playOut() above,
+ * but ALSO records every decided pairing as a `{round, position, winner}`
+ * result row — the exact durable-log shape replayBracket() consumes (and
+ * server/repos/tournaments.js's tournament_matches rows carry in
+ * production). The 3rd-place decider's row follows the documented
+ * convention: round = the FINAL round's index, position = 1.
+ */
+function playOutToResults(bracket) {
+  const results = [];
+  let b = bracket;
+  for (;;) {
+    const roundIdx = b.rounds.length - 1;
+    const current = b.rounds[roundIdx];
+    const allDecided = current.pairings.every((p) => p.winner != null);
+    if (!allDecided) {
+      const roundResults = current.pairings.map((p, pos) => {
+        if (p.winner != null) return null; // bye, already decided — no result row needed
+        const winner = p.a < p.b ? p.a : p.b;
+        results.push({ round: roundIdx, position: pos, winner });
+        return winner;
+      });
+      b = nextRound(b, roundResults);
+      continue;
+    }
+    if (current.pairings.length === 1) break; // the final is decided; nothing left to advance
+  }
+  if (b.thirdPlace && b.thirdPlace.winner == null) {
+    const { a, b: bb } = b.thirdPlace;
+    const winner = a < bb ? a : bb;
+    results.push({ round: b.rounds.length - 1, position: 1, winner });
+    b = resolveThirdPlace(b, winner);
+  }
+  return { bracket: b, results };
+}
+
+test("replayBracket: a full 5-entrant tournament replayed from result rows reaches complete=true with correct placements", () => {
+  const seed = 2024;
+  const n = 5;
+  const playedOut0 = generateBracket(entrants(n), seed);
+  const { bracket: playedOut, results } = playOutToResults(playedOut0);
+
+  const { bracket: replayed, complete } = replayBracket(entrants(n), seed, results);
+  assert.equal(complete, true);
+  assert.deepEqual(replayed, playedOut, "replaying every result row must reproduce the identical resolved bracket");
+
+  const ranks = placements(replayed);
+  assert.equal(ranks.length, n);
+  assert.deepEqual(ranks.map((r) => r.rank).sort((x, y) => x - y), [1, 2, 3, 4, 5]);
+  assert.deepEqual(ranks, placements(playedOut), "placements must agree between the live-played and replayed brackets");
+});
+
+test("replayBracket: withholding the final's result -> complete=false even though everything else (incl. 3rd place) is resolved", () => {
+  const seed = 55;
+  const n = 8;
+  const playedOut0 = generateBracket(entrants(n), seed);
+  const { bracket: playedOut, results } = playOutToResults(playedOut0);
+  const finalRoundIdx = playedOut.rounds.length - 1;
+
+  const withoutFinal = results.filter((r) => !(r.round === finalRoundIdx && r.position === 0));
+  const { bracket, complete } = replayBracket(entrants(n), seed, withoutFinal);
+  assert.equal(complete, false);
+  assert.equal(bracket.rounds[bracket.rounds.length - 1].pairings[0].winner, null, "the final itself must stay undecided");
+});
+
+test("replayBracket: 2-entrant field — round 0 IS the final, no 3rd-place decider ever appears", () => {
+  const seed = 3;
+  const n = 2;
+  const playedOut0 = generateBracket(entrants(n), seed);
+  const { bracket: playedOut, results } = playOutToResults(playedOut0);
+  assert.equal(playedOut.thirdPlace, null);
+
+  const { bracket, complete } = replayBracket(entrants(n), seed, results);
+  assert.equal(complete, true);
+  assert.equal(bracket.thirdPlace, null);
+  assert.equal(bracket.rounds.length, 1);
+  assert.deepEqual(bracket, playedOut);
+});
+
+test("replayBracket: the 3rd-place row's convention (round = final round index, position 1) resolves independently of the final", () => {
+  const seed = 55;
+  const n = 8;
+  const playedOut0 = generateBracket(entrants(n), seed);
+  const { bracket: playedOut, results } = playOutToResults(playedOut0);
+  const finalRoundIdx = playedOut.rounds.length - 1;
+
+  const thirdRow = results.find((r) => r.round === finalRoundIdx && r.position === 1);
+  assert.ok(thirdRow, "the 3rd-place row must be present at (finalRoundIdx, 1)");
+  assert.equal(thirdRow.winner, playedOut.thirdPlace.winner);
+
+  // Withhold ONLY the 3rd-place row: the champion is still fully decided,
+  // but the tournament as a whole is not complete until 3rd place is too.
+  const withoutThird = results.filter((r) => r !== thirdRow);
+  const { bracket, complete } = replayBracket(entrants(n), seed, withoutThird);
+  assert.equal(complete, false);
+  assert.notEqual(bracket.rounds[bracket.rounds.length - 1].pairings[0].winner, null, "the final IS decided");
+  assert.equal(bracket.thirdPlace.winner, null, "but the 3rd-place decider is still pending");
+});
+
+test("replayBracket is deterministic: same entrantIds + seed + results always reproduce the same bracket", () => {
+  const seed = 777;
+  const n = 16;
+  const playedOut0 = generateBracket(entrants(n), seed);
+  const { results } = playOutToResults(playedOut0);
+
+  const first = replayBracket(entrants(n), seed, results);
+  const second = replayBracket(entrants(n), seed, results);
+  assert.deepEqual(second, first);
+  assert.equal(first.complete, true);
+});
+
+test("replayBracket resolved one round at a time (the settlement engine's own usage pattern) reaches the same end state as replaying everything at once", () => {
+  const seed = 909;
+  const n = 8;
+  const playedOut0 = generateBracket(entrants(n), seed);
+  const { bracket: fullyPlayedOut, results: allResults } = playOutToResults(playedOut0);
+
+  // Feed results in one round at a time, re-deriving with replayBracket()
+  // after each slice — mirrors settleTournaments()'s "resolve one round per
+  // pass" loop, minus the actual battle/DB plumbing.
+  let accumulated = [];
+  let bracket, complete;
+  const byRound = new Map();
+  for (const r of allResults) {
+    if (!byRound.has(r.round)) byRound.set(r.round, []);
+    byRound.get(r.round).push(r);
+  }
+  for (const round of [...byRound.keys()].sort((a, b) => a - b)) {
+    accumulated = accumulated.concat(byRound.get(round));
+    ({ bracket, complete } = replayBracket(entrants(n), seed, accumulated));
+  }
+  assert.equal(complete, true);
+  assert.deepEqual(bracket, fullyPlayedOut);
 });

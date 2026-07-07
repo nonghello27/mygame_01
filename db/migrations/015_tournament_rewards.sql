@@ -1,0 +1,25 @@
+-- 015_tournament_rewards — Tournaments, settlement half (Phase 9.3). Adds
+-- exactly ONE column to the schema 014 already landed: append-only, 014 is
+-- never touched.
+--
+-- tournament_entries.reward: NULL until settleTournaments()'s payout stamps
+-- it with {rank, rewards} — the per-entry idempotent payout claim, same
+-- `reward IS NULL` precedent as rank_entries.reward (008_pvp_guards.sql /
+-- server/repos/pvp.js's payoutSeason). A guarded
+-- `UPDATE ... WHERE reward IS NULL` (server/repos/tournaments.js's
+-- claimEntryReward) is the whole gate: a re-run settlement pass (after a
+-- crash mid-payout) sees a non-NULL reward and skips granting/releasing that
+-- entry a second time.
+--
+-- NO bracket JSONB column here, by design (CLAUDE.md §1.6): a tournament's
+-- bracket is re-derived on every read from (this tournament's entry ids,
+-- ordered by id ASC, `tournaments.seed`, and the `tournament_matches` rows
+-- 014 already created) via shared/rules/bracket.js's replayBracket() —
+-- tournament_matches is the one durable record of a resolved pairing;
+-- `tournaments.standings` (also already in 014) is the only thing persisted
+-- at completion, as a small denormalized summary for fast reads.
+--
+-- CAUTION: the migration runner splits statements on ';' after stripping
+-- full-line comments — no semicolons inside inline `--` comments.
+
+ALTER TABLE tournament_entries ADD COLUMN IF NOT EXISTS reward JSONB;

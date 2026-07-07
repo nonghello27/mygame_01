@@ -68,3 +68,33 @@ button.btn.tour-danger{color:var(--hp-low);border-color:var(--hp-low)}
   display:flex;align-items:center;justify-content:center;width:22px;height:22px;
   border-radius:50%;background:var(--a-deep);color:#06150f;font-weight:700;font-size:12px;flex:none;
 }
+
+/* detail view: bracket + standings (Phase 9.3) */
+.tour-detail{display:flex;flex-direction:column;gap:10px}
+.tour-cancelled-note{color:var(--hp-low)}
+
+.tour-round{display:flex;flex-direction:column;gap:6px}
+.tour-round-title{
+  margin:2px 0 0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.08em;
+  text-transform:uppercase;font-size:11px;color:var(--muted);
+}
+.tour-pairing{
+  display:flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:9px;padding:7px 11px;font-size:12.5px;
+}
+.tour-pairing-side{flex:1;color:var(--text)}
+.tour-pairing-side.tour-bye{color:var(--muted);font-style:italic}
+.tour-pairing-side.tour-winner{color:var(--hp-good);font-weight:700}
+.tour-pairing-vs{color:var(--muted);font-size:11px;text-transform:uppercase}
+.tour-pairing-pending{
+  color:var(--clash);font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;
+}
+
+.tour-standings{display:flex;flex-direction:column;gap:6px}
+.tour-standing-row{
+  display:flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:9px;padding:7px 11px;font-size:12.5px;
+}
+.tour-standing-rank{font-weight:700;color:var(--a-deep);flex:none;width:34px}
+.tour-standing-name{flex:1}
+.tour-standing-reward{color:var(--muted);font-size:11.5px;text-align:right}

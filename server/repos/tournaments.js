@@ -39,6 +39,11 @@ function shapeEntry(r) {
     feePaid: Number(r.fee_paid),
     refunded: r.refunded === true,
     enteredAt: r.entered_at,
+    // NULL until settleTournaments() (Phase 9.3) stamps {rank, rewards} via
+    // the idempotent claimEntryReward() below — absent from a query that
+    // doesn't SELECT it (this codebase's older 9.2 queries) reads as
+    // undefined ?? null, same as any freshly-registered entry.
+    reward: r.reward ?? null,
   };
 }
 
@@ -102,11 +107,19 @@ export async function claimCancelTournament(sql, id) {
   return shapeTournament(rows[0]);
 }
 
-/** Every entry for one tournament — adminCancel's refund/release loop walks this. */
+/**
+ * Every entry for one tournament, ordered by id ASC — adminCancel's
+ * refund/release loop walks this, and (Phase 9.3) settleTournaments()'s
+ * `entrantIds = entries.map(e => String(e.id))` relies on this exact order:
+ * the bracket's entrant ORDER (before generateBracket's own seeded shuffle)
+ * must be stable and reproducible across settlement passes, and "entry id
+ * ascending" is the one order this table already guarantees without an
+ * extra column.
+ */
 export async function listEntriesForTournament(sql, tournamentId) {
   const rows = await sql`
-    SELECT id, tournament_id, trainer_id, team, monster_ids, fee_paid, refunded, entered_at
-    FROM tournament_entries WHERE tournament_id = ${tournamentId}`;
+    SELECT id, tournament_id, trainer_id, team, monster_ids, fee_paid, refunded, entered_at, reward
+    FROM tournament_entries WHERE tournament_id = ${tournamentId} ORDER BY id`;
   return rows.map(shapeEntry);
 }
 
@@ -233,4 +246,159 @@ export async function releaseTournamentParty(sql, trainerId, monsterIds) {
     UPDATE monsters
     SET busy_until = NULL, busy_kind = NULL
     WHERE id = ANY(${monsterIds}::bigint[]) AND trainer_id = ${trainerId} AND busy_kind = 'tournament'`;
+}
+
+// --- settlement (Phase 9.3): status walk, bracket persistence, payout ------
+//
+// Bracket generation/round-by-round resolution lives in
+// server/services/tournament.js's settleTournaments() — this half only
+// reads/writes tournaments/tournament_entries/tournament_matches for it.
+
+/**
+ * Cosmetic status walk: flip scheduled -> registration for tournaments whose
+ * window has actually opened. Registration itself was NEVER gated on this
+ * (REGISTRABLE_STATUSES in server/services/tournament.js already accepts
+ * both statuses) — this only keeps the DISPLAYED status truthful for the
+ * panel/admin tab. Bulk (no id needed, no RETURNING read back) — a lost race
+ * against a concurrent settlement pass just means the flip already happened.
+ */
+export async function openRegistrationWindows(sql) {
+  await sql`
+    UPDATE tournaments SET status = 'registration'
+    WHERE status = 'scheduled' AND reg_starts_at <= now() AND reg_ends_at >= now()`;
+}
+
+/**
+ * Tournaments due for a lazy settlement pass: a registration window that has
+ * closed (whatever its cosmetic status — scheduled or registration, both
+ * pre-bracket) needs to either auto-cancel or start its bracket; anything
+ * already 'running' needs another round resolved, or is ready to complete.
+ * `tournaments_status_idx` (014) serves this without a table scan.
+ */
+export async function listDueTournaments(sql) {
+  const rows = await sql`
+    SELECT id, name, description, reg_starts_at, reg_ends_at, seed, rewards,
+           entry_fee, status, standings, created_at
+    FROM tournaments
+    WHERE (status IN ('scheduled', 'registration') AND reg_ends_at < now())
+       OR status = 'running'
+    ORDER BY id`;
+  return rows.map(shapeTournament);
+}
+
+/**
+ * Guarded flip scheduled/registration -> running: the settlement claim that
+ * starts a bracket exactly once. A lost claim (null) means another
+ * concurrent settlement pass (or a racing admin cancel) already moved this
+ * tournament past that pair of statuses — the caller re-reads rather than
+ * assuming it won and generating a second, divergent bracket.
+ */
+export async function claimStartTournament(sql, id) {
+  const rows = await sql`
+    UPDATE tournaments SET status = 'running'
+    WHERE id = ${id} AND status IN ('scheduled', 'registration')
+    RETURNING id, name, description, reg_starts_at, reg_ends_at, seed, rewards,
+              entry_fee, status, standings, created_at`;
+  return shapeTournament(rows[0]);
+}
+
+/**
+ * Guarded flip running -> completed, stamping the final standings JSONB in
+ * the same statement — the LAST step of settlement (server/services/
+ * tournament.js), only reached once every entry's reward claim has already
+ * been stamped, so a re-run after a crash right before this UPDATE simply
+ * finds nothing left to pay and reaches this same call again.
+ */
+export async function claimCompleteTournament(sql, id, standings) {
+  const rows = await sql`
+    UPDATE tournaments SET status = 'completed', standings = ${JSON.stringify(standings)}::jsonb
+    WHERE id = ${id} AND status = 'running'
+    RETURNING id, name, description, reg_starts_at, reg_ends_at, seed, rewards,
+              entry_fee, status, standings, created_at`;
+  return shapeTournament(rows[0]);
+}
+
+/**
+ * Insert one resolved pairing. `UNIQUE(tournament_id, round, position)`
+ * (014) is the exactly-once-per-pairing claim — `ON CONFLICT DO NOTHING`
+ * means a concurrent settlement pass that reached the same pairing first
+ * just loses this INSERT (null back). The race LOSER must never re-derive a
+ * different winner for the same pairing: a pairing's outcome is fully
+ * deterministic from its own stored seed (shared/rules/bracket.js's
+ * derivePairingSeed), so whichever caller wins the insert, the winner it
+ * computed independently is guaranteed identical — the loser simply skips
+ * writing it again.
+ * @returns {Promise<number|null>} the new row's id, or null on a lost claim
+ */
+export async function insertTournamentMatch(sql, { tournamentId, round, position, entryA, entryB, seed, winner, result }) {
+  const rows = await sql`
+    INSERT INTO tournament_matches (tournament_id, round, position, entry_a, entry_b, seed, winner, result)
+    VALUES (${tournamentId}, ${round}, ${position}, ${entryA}, ${entryB ?? null}, ${seed}, ${winner},
+            ${JSON.stringify(result)}::jsonb)
+    ON CONFLICT (tournament_id, round, position) DO NOTHING
+    RETURNING id`;
+  return rows[0] ? Number(rows[0].id) : null;
+}
+
+/**
+ * Every resolved pairing for one tournament — shaped for
+ * shared/rules/bracket.js's replayBracket() `results` input (round/position/
+ * winner) once the service maps `winner` id -> string, plus the seed/result
+ * every other reader (the detail view) needs to display or replay a match.
+ */
+export async function listMatchesForTournament(sql, tournamentId) {
+  const rows = await sql`
+    SELECT id, tournament_id, round, position, entry_a, entry_b, seed, winner, result
+    FROM tournament_matches WHERE tournament_id = ${tournamentId} ORDER BY round, position`;
+  return rows.map((r) => ({
+    id: Number(r.id),
+    round: r.round,
+    position: r.position,
+    entryA: r.entry_a === null ? null : Number(r.entry_a),
+    entryB: r.entry_b === null ? null : Number(r.entry_b),
+    seed: Number(r.seed),
+    winner: r.winner === null ? null : Number(r.winner),
+    result: r.result,
+  }));
+}
+
+/**
+ * The idempotent per-entry reward claim: `reward IS NULL` is the whole
+ * gate, same shape as server/repos/pvp.js's payoutSeason / claimRefundEntry
+ * above. A re-run settlement pass (after a crash between stamping this and
+ * actually granting/releasing — see settleTournaments()'s own note on that
+ * narrow accepted window) sees `reward` already non-NULL and correctly skips
+ * granting or releasing this entry a second time.
+ * @returns the refreshed entry (so the caller reads trainerId/monsterIds to
+ *   grant/release), or null when another settlement pass already won it.
+ */
+export async function claimEntryReward(sql, entryId, reward) {
+  const rows = await sql`
+    UPDATE tournament_entries SET reward = ${JSON.stringify(reward)}::jsonb
+    WHERE id = ${entryId} AND reward IS NULL
+    RETURNING id, tournament_id, trainer_id, team, monster_ids, fee_paid, refunded, entered_at, reward`;
+  return shapeEntry(rows[0]);
+}
+
+/**
+ * Entrants for the detail view: the trainer's name and ONLY the frozen
+ * team's `display` field (CLAUDE.md §1.1 — another trainer's stat/lane
+ * snapshot is never shipped, `team -> 'display'` never selects `team ->
+ * 'lanes'`), plus each entry's stamped reward once payout has run.
+ */
+export async function listEntrantsForTournament(sql, tournamentId) {
+  const rows = await sql`
+    SELECT e.id, e.trainer_id, t.name AS trainer_name, e.entered_at,
+           e.team -> 'display' AS display, e.reward
+    FROM tournament_entries e JOIN trainers t ON t.id = e.trainer_id
+    WHERE e.tournament_id = ${tournamentId}
+    ORDER BY e.id`;
+  return rows.map((r) => ({
+    entryId: Number(r.id),
+    trainerId: Number(r.trainer_id),
+    trainerName: r.trainer_name,
+    enteredAt: r.entered_at,
+    display: r.display,
+    reward: r.reward ?? null,
+  }));
 }

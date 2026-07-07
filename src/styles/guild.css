@@ -1,0 +1,75 @@
+/* Guild panel (src/ui/guild.js) — Phase 9.4. Same chrome family as the
+   Tournament / Summon Hall / Adventure panels (header, msgs, body). */
+
+.guild{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.guild h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+}
+
+.guild-msgs{padding:0 14px}
+.guild-msgs p{margin:9px 0 0;font-size:13px;color:var(--hp-good)}
+.guild-msgs p.err{color:var(--hp-low)}
+
+.guild-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:12px}
+.guild-view{display:flex;flex-direction:column;gap:12px}
+.guild-hint{margin:0;font-size:12.5px;color:var(--muted)}
+.guild-subhead{
+  margin:4px 0 -2px;font-family:Rajdhani,sans-serif;font-weight:600;
+  letter-spacing:0.1em;text-transform:uppercase;font-size:11.5px;color:var(--muted);
+}
+
+.guild-card{
+  background:var(--bg-2);border:1px solid var(--line);
+  border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;
+}
+.guild-head{display:flex;align-items:center;gap:10px}
+.guild-head-main{margin-bottom:2px}
+.guild-head b{font-size:14.5px;flex:1}
+.guild-emblem{font-size:20px}
+.guild-emblem-big{font-size:28px}
+.guild-desc{margin:0;font-size:12.5px;color:var(--muted)}
+
+.guild-badge{
+  font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:3px 9px;
+  white-space:nowrap;
+}
+
+button.btn.guild-small{align-self:flex-start;padding:8px 16px;font-size:12.5px;border-radius:9px}
+button.btn.guild-small:disabled{opacity:0.5;cursor:default}
+button.btn.guild-danger{color:var(--hp-low);border-color:var(--hp-low)}
+
+.guild-input{
+  background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:8px 11px;font-size:12.5px;color:var(--text);font-family:inherit;
+}
+.guild-input-emblem{width:80px}
+
+.guild-apply{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.guild-create{
+  display:flex;flex-direction:column;gap:8px;background:var(--bg-2);
+  border:1px solid var(--line);border-radius:11px;padding:12px 14px;
+}
+
+.guild-app-row{
+  display:flex;align-items:center;gap:10px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:9px;padding:8px 12px;font-size:12.5px;flex-wrap:wrap;
+}
+.guild-app-pending{gap:8px}
+.guild-app-name{font-weight:600;flex:1}
+.guild-app-msg{color:var(--muted);font-style:italic}
+.guild-app-date{color:var(--muted);font-size:11.5px}
+
+.guild-roster{display:flex;flex-direction:column;gap:8px}
+.guild-mem-row{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:12.5px;
+}
+.guild-mem-name{font-weight:600}
+.guild-mem-joined{color:var(--muted);font-size:11.5px;margin-left:auto}
+.guild-mem-controls{display:flex;gap:6px;flex-wrap:wrap;width:100%}

@@ -414,7 +414,7 @@ server secrets are `SESSION_SECRET` and `DATABASE_URL`.
 
 ## 8. API surface (grows with the roadmap)
 
-The surface below groups URLs by the domain that owns them: 6 serverless
+The surface below groups URLs by the domain that owns them: 8 serverless
 functions, each internally routing multiple endpoints via a static table in
 its `server/routers/<domain>.js` — the Vercel Hobby plan's 12-function limit
 is the reason for grouping (never a file-per-endpoint), and growth inside a
@@ -514,6 +514,15 @@ POST /api/battle/tournament/withdraw  { tournamentId } → { withdrawn:true }
                               give up a registration while still open:
                               guarded entry delete + lock release + fee
                               refund
+GET  /api/battle/tournament/detail  ?id=<tournamentId> (Phase 9.3) →
+                              { tournament, entrants, rounds, thirdPlace,
+                              standings, myEntry } — settles this tournament
+                              (and any other due one) first, then re-derives
+                              its bracket from entries + seed +
+                              tournament_matches (no bracket is ever stored
+                              as JSON); rounds/thirdPlace/standings are
+                              null/empty until it's actually started running;
+                              entrants carry display info only, never lanes
 
 # activities domain — api/activities.js (plain file: one route today)
 GET  /api/activities          the farm: jobs + monsters + running assignments
@@ -576,6 +585,48 @@ POST /api/adventure/move      { choice:number } → resolve the CURRENT step's
 POST /api/adventure/abandon   {} → give up the active run early (guarded
                               'active'→'abandoned'), releases the party;
                               404 if no active session
+
+# guild domain — api/guild/[...route].js (Phase 9.4; the 8th domain, the
+# second sanctioned reason — after the marketplace — to add a new
+# top-level api/ entry, CLAUDE.md §5)
+GET  /api/guild/browse        { guilds } → every guild (id, name,
+                              description, emblem, leaderId, leaderName,
+                              memberCount, createdAt), newest first
+GET  /api/guild/me            the caller's whole guild view: guildless ->
+                              { guild:null, myApplications }; in a guild ->
+                              { guild, myRole, members } plus an
+                              `applications` array ONLY when myRole is
+                              'leader' or 'officer'
+POST /api/guild/create        { name, description?, emblem? } → the me()
+                              view; claim-first-then-pay the flat
+                              GUILD_CREATE_COST (500) + LIFO compensation,
+                              same shape as performSummon; 409 "you're
+                              already in a guild" / "not enough gold" /
+                              "guild name is taken" (case-insensitive)
+POST /api/guild/apply         { guildId, message? } → the me() view; 409
+                              "you're already in a guild" / "you already
+                              applied to this guild", 404 unknown guild
+POST /api/guild/accept        { applicationId } → the me() view
+                              (leader-only, 403 otherwise); 404 unknown
+                              application / not this guild's, 409 if the
+                              applicant joined elsewhere meanwhile
+POST /api/guild/reject        { applicationId } → the me() view
+                              (leader-only); 404 unknown/not this guild's
+POST /api/guild/leave         {} → { left:true }; 409 "you're not in a
+                              guild" / "transfer leadership before
+                              leaving" (a leader can never leave directly)
+POST /api/guild/kick          { trainerId } → the me() view (leader-only);
+                              404 "no such member to kick" (also covers a
+                              self-kick attempt, blocked by the same guard)
+POST /api/guild/promote       { trainerId, role:'officer'|'member' } → the
+                              me() view (leader-only); 400 for any other
+                              role value, 404 no such member
+POST /api/guild/transfer      { trainerId } → the me() view (leader-only);
+                              hands leadership to another member of the
+                              caller's own guild (the old leader becomes an
+                              officer); 404 target not a member of this
+                              guild, 409 "leadership already changed" on a
+                              lost claim
 
 # not yet built (future domains, still under the 12-function cap)
 GET  /api/market/browse       search/filter listings (kind, text, price

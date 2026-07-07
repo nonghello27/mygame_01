@@ -12,7 +12,7 @@ import { match } from "../routes/match.js";
 import { battle } from "../routes/battle.js";
 import { ladder } from "../routes/ladder.js";
 import { formation } from "../routes/formation.js";
-import { tournaments, tournamentRegister, tournamentWithdraw } from "../routes/tournament.js";
+import { tournaments, tournamentRegister, tournamentWithdraw, tournamentDetail } from "../routes/tournament.js";
 
 export const route = createRouter({
   "/api/battle/match": { POST: match },
@@ -24,4 +24,7 @@ export const route = createRouter({
   "/api/battle/tournaments": { GET: tournaments },
   "/api/battle/tournament/register": { POST: tournamentRegister },
   "/api/battle/tournament/withdraw": { POST: tournamentWithdraw },
+  // Phase 9.3 — lazy resolution, rewards, results: the bracket/standings
+  // detail view, one tournament at a time (?id=).
+  "/api/battle/tournament/detail": { GET: tournamentDetail },
 });

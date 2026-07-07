@@ -341,3 +341,80 @@ export async function registerTournament(tournamentId, monsterIds) {
 export async function withdrawTournament(tournamentId) {
   return postJson("/api/battle/tournament/withdraw", { tournamentId });
 }
+
+/**
+ * The bracket/standings detail view (Phase 9.3): entrants (display only —
+ * never another trainer's lanes), the bracket re-derived round by round
+ * (each pairing `{a, b, winner, seed}`, entrant ids or null for a bye), the
+ * 3rd-place pairing (same shape, or null if this field never had one), the
+ * enriched standings ({rank, entryId, trainerId, trainerName, reward}), and
+ * the caller's own entry summary. `rounds`/`thirdPlace`/`standings` are all
+ * null/empty for a tournament that hasn't started running yet.
+ * @param {number} tournamentId
+ */
+export async function fetchTournamentDetail(tournamentId) {
+  return getJson(`/api/battle/tournament/detail?id=${encodeURIComponent(tournamentId)}`);
+}
+
+/**
+ * Every guild (Phase 9.4), newest first — id/name/description/emblem plus a
+ * live member count and the leader's display name. Pure read, no auth
+ * distinction beyond being logged in.
+ * @returns {Promise<{guilds:{id:number, name:string, description:string,
+ *   emblem:string, leaderId:number, leaderName:string, memberCount:number,
+ *   createdAt:string}[]}>}
+ */
+export async function fetchGuildBrowse() {
+  return getJson("/api/guild/browse");
+}
+
+/**
+ * The caller's whole guild view. Guildless: `{guild:null, myApplications}`.
+ * In a guild: `{guild, myRole, members}` plus an `applications` array — but
+ * ONLY when `myRole` is `'leader'` or `'officer'` (a plain member never sees
+ * the pending queue, same shape the server enforces).
+ * @returns {Promise<object>}
+ */
+export async function fetchGuildMe() {
+  return getJson("/api/guild/me");
+}
+
+/** Found a new guild for the flat gold cost (server-enforced). */
+export async function createGuild(name, description, emblem) {
+  return postJson("/api/guild/create", { name, description, emblem });
+}
+
+/** Apply to join a guild, with an optional message. */
+export async function applyGuild(guildId, message) {
+  return postJson("/api/guild/apply", { guildId, message });
+}
+
+/** Accept a pending application into the caller's own guild (leader only). */
+export async function acceptGuildApplication(applicationId) {
+  return postJson("/api/guild/accept", { applicationId });
+}
+
+/** Reject a pending application (leader only). */
+export async function rejectGuildApplication(applicationId) {
+  return postJson("/api/guild/reject", { applicationId });
+}
+
+/** Leave the caller's own guild. 409s for a leader — transfer first. */
+export async function leaveGuild() {
+  return postJson("/api/guild/leave", {});
+}
+
+/** Remove a member from the caller's guild (leader only). */
+export async function kickGuildMember(trainerId) {
+  return postJson("/api/guild/kick", { trainerId });
+}
+
+/** Promote/demote a member to 'officer' or 'member' (leader only). */
+export async function promoteGuildMember(trainerId, role) {
+  return postJson("/api/guild/promote", { trainerId, role });
+}
+
+/** Hand guild leadership to another member (leader only). */
+export async function transferGuildLeadership(trainerId) {
+  return postJson("/api/guild/transfer", { trainerId });
+}

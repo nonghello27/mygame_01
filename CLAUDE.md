@@ -35,10 +35,12 @@ The vision and plans live in `docs/` — treat them as part of this file:
   complete; tournaments, guilds & GVG (Phase 9) are staged 2026-07-06 as
   sub-phases 9.1–9.7 in the roadmap (shared event rules → tournaments ×2 →
   guilds → GVG setup → engine carry-over → GVG resolution) — 9.1 (bracket +
-  reward math) and 9.2 (tournament schema, admin lifecycle, registration,
-  with a live 🏆 Tournament panel + admin tab) are code complete; 9.3
-  (tournaments' lazy resolution, rewards, results) is next up; chat,
-  notifications & the photo quest are Phase 10.
+  reward math), 9.2 (tournament schema, admin lifecycle, registration, with
+  a live 🏆 Tournament panel + admin tab), 9.3 (tournaments' lazy
+  resolution, rewards, a bracket/standings detail view), and 9.4 (guilds:
+  creation, membership, roles, with a live 🏰 Guild panel) are all code
+  complete; 9.5 (GVG events: schedule, team submission, lineup) is next up;
+  chat, notifications & the photo quest are Phase 10.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -69,13 +71,14 @@ is the layout that is real today.
 
 - **Vanilla JavaScript, ES modules.** No framework — intentional; keep
   dependencies minimal and the codebase approachable.
-- **Vite** for dev server + build; deploys as a static site + **7 Vercel
+- **Vite** for dev server + build; deploys as a static site + **8 Vercel
   serverless functions, grouped by domain** (`api/auth/`, `api/battle/`,
   `api/trainer/`, `api/activities.js`, `api/admin/`, `api/adventure/`,
-  `api/market/` — Hobby plan caps deployments at 12 functions; each domain
-  internally routes multiple endpoints via a table in `server/routers/`, so
-  growth inside a domain never costs a new function; the Vite dev middleware
-  calls the matching `server/routers/<domain>.js` directly).
+  `api/market/`, `api/guild/` — Hobby plan caps deployments at 12 functions;
+  each domain internally routes multiple endpoints via a table in
+  `server/routers/`, so growth inside a domain never costs a new function;
+  the Vite dev middleware calls the matching `server/routers/<domain>.js`
+  directly).
 - **Neon Postgres** via `@neondatabase/serverless` (connection in `server/db.js`).
 - **CSS + inline SVG + PNG sprite sheets** for art; motion is CSS keyframes.
 
@@ -99,19 +102,20 @@ per roadmap phase, don't big-bang rename.)
 ```
 ├── index.html              # static shell + DOM the app mounts into
 ├── vite.config.js          # base:'./'; routes /api/<domain>/* to server/routers/<domain>.js in dev
-├── api/                    # 7 serverless functions (Vercel Hobby caps at 12), one per domain:
+├── api/                    # 8 serverless functions (Vercel Hobby caps at 12), one per domain:
 │   ├── auth/[...route].js      # /api/auth/*      -> server/routers/auth.js
 │   ├── battle/[...route].js    # /api/battle/*     -> server/routers/battle.js
 │   ├── trainer/[...route].js   # /api/trainer/*    -> server/routers/trainer.js
 │   ├── activities.js           # /api/activities   -> server/routers/activities.js (plain file: one route)
 │   ├── admin/[...route].js     # /api/admin/*      -> server/routers/admin.js
 │   ├── adventure/[...route].js # /api/adventure/*  -> server/routers/adventure.js
-│   └── market/[...route].js    # /api/market/*     -> server/routers/market.js
+│   ├── market/[...route].js    # /api/market/*     -> server/routers/market.js
+│   └── guild/[...route].js     # /api/guild/*      -> server/routers/guild.js
 ├── server/                 # server-only logic (imported by api/, never by src/)
 │   ├── routers/            # one file per domain: createRouter({...}) table (pathname→
 │   │                       # {METHOD:handler}) + export route(); auth, battle, trainer,
-│   │                       # activities, admin, adventure, market — matches the api/
-│   │                       # entries 1:1
+│   │                       # activities, admin, adventure, market, guild — matches the
+│   │                       # api/ entries 1:1
 │   ├── routes/             # one handler per endpoint (happy path + httpError throws):
 │   │                       # auth.js (login/logout), me, classes, activities, match,
 │   │                       # battle, progression, trainerSkills, formation, ladder,
@@ -119,11 +123,12 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # runes.js (socket, repair), summon.js (summonHall, summon),
 │   │                       # adventure.js (state, start, move, abandon), market.js
 │   │                       # (browse, mine, list, buy, cancel), tournament.js
-│   │                       # (tournaments list, register, withdraw — rides the battle
-│   │                       # domain), admin.js (master + classes/skills/species/jobs/
+│   │                       # (tournaments list, register, withdraw, detail — rides the
+│   │                       # battle domain), admin.js (master + classes/skills/species/jobs/
 │   │                       # items/equipment/runes/summons/adventures CRUD + grant +
 │   │                       # trainers list/monsters read+mint/attach/detach +
-│   │                       # tournaments create/cancel/list)
+│   │                       # tournaments create/cancel/list), guild.js (browse, me, create,
+│   │                       # apply, accept, reject, leave, kick, promote, transfer)
 │   ├── db.js               # Neon connection (lazy, from DATABASE_URL)
 │   ├── auth.js             # Firebase token verify + HMAC session + cookie helpers
 │   ├── http.js             # httpError(status, msg) + sendJson()/readJson() + createRouter()
@@ -145,7 +150,16 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # per kind, browse/mine enrichment), tournaments.js (create,
 │   │                       # list-with-counts, guarded cancel-status-flip, entry CRUD +
 │   │                       # idempotent per-entry refund claim, guarded withdraw DELETE,
-│   │                       # the tournament party busy-lock claim/release pair)
+│   │                       # the tournament party busy-lock claim/release pair, Phase 9.3's
+│   │                       # settlement claims: bulk registration-window open, due-tournament
+│   │                       # probe, guarded running/completed status flips, exactly-once
+│   │                       # tournament_matches insert + read, idempotent per-entry reward
+│   │                       # claim, entrant list for the detail view), guilds.js (guild CRUD +
+│   │                       # member-count/browse read, getMembership (the one re-read every
+│   │                       # write starts from), guarded leave/kick DELETEs and promote
+│   │                       # UPDATE all excluding role='leader', claimTransferLeadership's
+│   │                       # 3-statement leader-swap sequence, application insert/accept/
+│   │                       # reject/list-by-guild/list-by-trainer)
 │   └── services/           # matches.js (applyOrder gate + PVP Elo on resolve, gathers
 │                           # equipped monster gear + socketed runes into toLane()'s
 │                           # snapshot, settles rune durability from the engine's runeUse
@@ -170,11 +184,20 @@ per roadmap phase, don't big-bang rename.)
 │                           # compensations after a won claim), tournament.js (list/
 │                           # register/withdraw claim-first-then-pay with LIFO
 │                           # compensations, same performSummon shape; adminCreate/
-│                           # adminCancel/adminList — cancel's idempotent per-entry
-│                           # refund loop is safe to re-run after a crash)
+│                           # adminCancel (factored into a shared cancelCore())/adminList;
+│                           # Phase 9.3's settleTournaments() — the lazy on-read settlement
+│                           # engine driving scheduled->registration->running->completed,
+│                           # one bracket round resolved per pass via replayBracket() +
+│                           # resolveBattle() called directly, a pluggable REWARD_GRANTERS
+│                           # payout registry, and getTournamentDetail() for the bracket/
+│                           # standings read), guild.js (create's claim-first-then-pay +
+│                           # LIFO compensation over the flat gold cost, apply/accept/reject,
+│                           # leave/kick/promote/transfer — every one re-deriving the caller's
+│                           # role from getMembership() first, never trusting the body — and
+│                           # me()'s guildless/member/leader-or-officer three-shape view)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
-│   │                       # up to 014_tournaments.sql as of Phase 9.2)
+│   │                       # up to 016_guilds.sql as of Phase 9.4)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
@@ -188,7 +211,10 @@ per roadmap phase, don't big-bang rename.)
 │                           # adventure.js (generateMap/deriveNodeSeed/rollLoot/rollEncounter:
 │                           # pure seeded map generation + node rolls), bracket.js
 │                           # (generateBracket/nextRound/placements: seeded single-
-│                           # elimination bracket + rank math, Phase 9.1), rewards.js
+│                           # elimination bracket + rank math, Phase 9.1; derivePairingSeed/
+│                           # replayBracket: Phase 9.3's per-pairing seed derivation + the
+│                           # read-side "rebuild the bracket from a durable results log"
+│                           # rebuild — no bracket is ever persisted as JSON), rewards.js
 │                           # (the tournament/GVG reward grammar + resolveRewards()
 │                           # position/percentile payout math, Phase 9.1)
 ├── tests/                  # node --test; fixtures.mjs + golden/ (regen.mjs)
@@ -198,6 +224,7 @@ per roadmap phase, don't big-bang rename.)
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board | cutscene | sprite | auth | farm | admin
     │                       # | pvp | trainer | inventory | summon | adventure | market | tournament
+    │                       # | guild
     ├── data/               # seed content: classes, sprites, units, skills, jobs, expertises,
     │                       # items, equipment, runes, summons, adventures
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js, admin.js
@@ -212,7 +239,11 @@ per roadmap phase, don't big-bang rename.)
     │                       # (🗺 panel: route list + party picker, step options, run log),
     │                       # marketplace (🏪 panel: browse + my listings + list-a-good picker),
     │                       # tournament (🏆 panel: open/upcoming cards with a register flow +
-    │                       # party picker, my-entry + withdraw, a past-tournaments history list)
+    │                       # party picker, my-entry + withdraw, a past-tournaments history list,
+    │                       # and (Phase 9.3) a per-tournament "Details" bracket/standings view),
+    │                       # guild (🏰 panel: guildless browse/apply/create, member roster +
+    │                       # Leave, leader/officer read of the pending-application queue, and
+    │                       # leader-only accept/reject/kick/promote/transfer controls)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -507,15 +538,15 @@ own bag/roster that calls `list`) — and the 🎒 Inventory panel's three
 tabs each grow a price-labeled Sell button wherever a def's `sellGold` is
 nonzero and the piece is currently unequipped/unsocketed.
 
-Tournaments (Phase 9.2): `tournaments` is admin-created INSTANCE data (a
+Tournaments (Phase 9.2 schema/lifecycle/registration + Phase 9.3 lazy
+resolution/rewards/results): `tournaments` is admin-created INSTANCE data (a
 one-off scheduled event, name/description/window/rewards/entry fee), not
 master content — it has no `src/data/*.js` seed file and no `npm run
 db:seed` path, only the admin console's 🏆 Tournaments tab
 (`POST/GET /api/admin/tournaments`, `POST /api/admin/tournaments/cancel`).
 Registration is gated purely by the `[reg_starts_at, reg_ends_at]` time
 window, never by `status` alone (`scheduled`/`registration` are both
-registerable while the window is open — this phase never advances status
-past `scheduled` on its own; that lazy walk is Phase 9.3). `POST
+registerable while the window is open). `POST
 /api/battle/tournament/register {tournamentId, monsterIds}` follows the
 exact claim-first-then-pay + LIFO-compensation shape `performSummon` set:
 debit the optional entry fee → claim the 3-monster party's busy lock
@@ -526,22 +557,119 @@ socketed runes included) → insert the `tournament_entries` row (`UNIQUE
 a given step onward undoes every earlier step in reverse. `POST
 /api/battle/tournament/withdraw {tournamentId}` is a guarded entry DELETE
 (the claim itself) followed by a lock release and a fee refund, allowed
-only while the window is still open. Both routes ride the existing
-`battle` domain rather than a new serverless function
+only while the window is still open. Every tournament route rides the
+existing `battle` domain rather than a new serverless function
 (`server/routes/tournament.js`, wired into `server/routers/battle.js`).
 Admin cancel (`server/services/tournament.js`'s `adminCancel`) flips any
 non-`completed` status to `cancelled` and then walks every entry through
 an idempotent per-entry refund claim (`refunded` flips false→true,
-guarded), so re-running a cancel after a crash never double-refunds or
-double-releases a lock. The 🏆 Tournament panel (`src/ui/tournament.js`) is
-the same msgs+body, refresh-on-open shell as Summon/Adventure: open/
-upcoming tournaments show the window, entry fee, entrant count, and a
-plain-text rewards summary, with either a register flow (the 3-monster
-party picker borrowed straight from Adventure's) or, once registered, a
-"Registered" line and a Withdraw button (hidden once the window closes);
-a compact history list covers anything past its window or already
-running/completed/cancelled — the bracket/standings detail view is
-Phase 9.3.
+guarded, factored into a shared `cancelCore()` both admin cancel and
+settlement's own auto-cancel call), so re-running a cancel after a crash
+never double-refunds or double-releases a lock.
+
+Settlement (Phase 9.3) is entirely lazy (CLAUDE.md §1.5): `settleTournaments()`
+runs at the top of every tournament read (list, admin list, detail). It
+first bulk-flips any `scheduled` tournament whose window has opened to
+`registration` (cosmetic only — registration was never gated on status). For
+each tournament actually DUE (registration closed, or already `running`): a
+window that closed with fewer than 2 entrants auto-cancels (the same
+`cancelCore()` refund/release walk as an explicit admin cancel); otherwise a
+guarded flip to `running` falls straight into settling it. There is NO
+bracket JSONB column anywhere — a tournament's bracket is re-derived on
+every read from (its entries' ids ordered by id ASC, its stored `seed`, and
+the `tournament_matches` rows already resolved) via `shared/rules/
+bracket.js`'s new `replayBracket()`, folding a durable results log back
+through `generateBracket`/`nextRound`/`resolveThirdPlace` — the ONLY place a
+bracket object is ever materialized. Settlement resolves exactly ONE round
+per pass (bounded work per serverless invocation): every real, undecided
+pairing in the bracket's current round gets `resolveBattle()` called
+DIRECTLY (no `matches` row — the same `adventure.js` precedent as an
+Adventure battle node) off a seed minted by `derivePairingSeed(tournament
+.seed, round, position)` — a draw breaks with one more roll
+(`makeRng(seed).chance(50)`) off that SAME pairing seed, still fully
+deterministic and replayable — and persists via an exactly-once
+`insertTournamentMatch()` claim (`UNIQUE(tournament_id, round, position)`;
+a lost claim just means another settlement pass already computed the
+IDENTICAL winner, so it skips re-writing it). Resolving the final round
+also resolves the 3rd-place decider in the same pass, once its own two
+sides are real. Once the bracket, re-derived after this pass, comes back
+`complete`: `placements()` → `shared/rules/rewards.js`'s `resolveRewards()`
+against this tournament's configured rewards, one idempotent
+`claimEntryReward()` per entry (`reward IS NULL` is the whole gate — the
+`payoutSeason` precedent, safe to re-run after a mid-payout crash), granting
+through a pluggable `REWARD_GRANTERS` registry (gold credit / `grantItem` /
+`grantEquipment`-or-`grantMonsterEquipment` by domain / `grantRune` /
+`mintMonster` — the `performSummon` REQUIREMENT_CHECKERS precedent, one
+entry per `EVENT_REWARD_TYPES` member) and releasing that entry's party
+lock — THEN, only once every entry is stamped, `claimCompleteTournament()`
+stamps the standings JSONB and flips `running -> completed`. Admin cancel
+mid-`running` still works exactly as 9.2 designed it: whichever guarded
+status flip lands first wins the race. `GET
+/api/battle/tournament/detail?id=` (`getTournamentDetail()`) returns the
+tournament summary, every entrant's public display info (never another
+trainer's lanes) plus their stamped reward, the bracket re-derived round by
+round with each pairing's seed, the 3rd-place pairing, the enriched
+standings, and the caller's own entry summary — settlement runs first, so
+this always reflects the freshest state. The 🏆 Tournament panel
+(`src/ui/tournament.js`) is the same msgs+body, refresh-on-open shell as
+Summon/Adventure: open/upcoming tournaments show the window, entry fee,
+entrant count, and a plain-text rewards summary, with either a register
+flow (the 3-monster party picker borrowed straight from Adventure's) or,
+once registered, a "Registered" line and a Withdraw button (hidden once the
+window closes); a compact history list covers anything past its window or
+already running/completed/cancelled; every card/history row now also has a
+"Details" button that swaps the panel body for the bracket/standings view
+— round labels ("Round N" / "Semifinals" / "Final" / "3rd-place match"),
+byes rendered as "bye", and a running tournament's still-unplayed pairings
+marked "pending".
+
+Guilds (Phase 9.4): `guilds`/`guild_members`/`guild_applications` are
+player-created INSTANCE data, not master content — a guild is a one-off
+thing a trainer founds (like a tournament), not reusable balance content, so
+there's no `src/data/*.js` seed file and no admin console tab at all; the
+only "admin" surface is the ordinary player-facing flow itself. `guild_id`/
+`trainer_id` UNIQUE on `guild_members` is THE one-guild-per-trainer
+invariant every join path (create, an accepted application) 23505s against
+at the DB layer, not just a service-side pre-check. Application flow, not
+invites: a guildless trainer `POST /api/guild/apply {guildId, message?}`s to
+a guild; the guild's LEADER (only) `accept`s or `reject`s — there is no
+status column on `guild_applications`, a pending application IS a row's
+existence, so both actions are just a guarded DELETE (accept also inserts
+the membership row first). The 8th domain — `api/guild/[...route].js` +
+`server/routers/guild.js`, the second sanctioned reason (after the
+marketplace) to add a new top-level `api/` entry, CLAUDE.md §5 — covers
+`browse`/`me`/`create`/`apply`/`accept`/`reject`/`leave`/`kick`/`promote`/
+`transfer`. EVERY write in `server/services/guild.js` re-derives the
+caller's OWN role from `guild_members` via `getMembership()` first — a role
+is never trusted from the request body (CLAUDE.md §1.1); accept/kick/
+promote/reject/transfer are leader-only (403 otherwise), and a plain member
+never even sees the pending-application queue (`me()`'s `applications` key
+is present only when the caller's role is `'leader'` or `'officer'` — an
+officer sees it read-only, only the leader can act on it this phase).
+`create` follows the exact claim-first-then-pay + LIFO-compensation shape
+`performSummon` set: `debitGold(GUILD_CREATE_COST)` (500, 409 "not enough
+gold" on a lost claim) → `insertGuild` (a case-insensitive duplicate name
+23505s → refund → 409 "guild name is taken") → `insertMember(role:
+'leader')` (a failure here deletes the just-created guild THEN refunds the
+gold, LIFO) → the founder's own stale pending applications (if any) are
+cleaned up on success. `leave`/`kick`/`updateMemberRole` are all guarded
+statements that exclude `role = 'leader'` from their WHERE
+(`server/repos/guilds.js`) — a leader can never leave (even solo;
+disbanding a guild outright is out of scope this phase, documented as such)
+or be kicked/demoted directly; the ONLY way the `'leader'` role moves is
+`transfer`'s `claimTransferLeadership` — a guarded `guilds.leader_id` UPDATE
+(the real claim: a lost race means someone already transferred first) that,
+only once won, swaps both member rows' roles in the same sequence (new
+leader → `'leader'`, old leader → `'officer'`). The 🏰 Guild panel
+(`src/ui/guild.js`) is the same msgs+body, refresh-on-open shell as
+Tournament/Summon/Adventure, rendering three shapes off one `fetchGuildMe()`
+read: guildless (my pending applications, a browse list with Apply/Applied
+per guild, and a "Found a guild" form labeled with the gold cost); member/
+officer (guild header, full roster with role badges, a Leave button;
+officers additionally see the pending-application queue read-only); leader
+(all of the above, plus per-application Accept/Reject and per-member,
+non-self Kick/Promote/Demote/"Make leader" — transfer confirm()-gated —
+controls, with the leader's own Leave replaced by a "transfer first" hint).
 
 ## 4. Recipes for TODAY's code
 
@@ -616,7 +744,7 @@ Phase 9.3.
   `api/<domain>/[...route].js` + `server/routers/<domain>.js` — the only
   time to add a file under `api/` (Vercel deploys each top-level `api/`
   entry as another serverless function, and the Hobby plan caps a
-  deployment at 12; today's 7 domains leave room for ~2 more).
+  deployment at 12; today's 8 domains leave room for ~1 more).
 - Faction colors are synced in two places: CSS vars `--a`/`--b` in
   `styles/base.css` and `COLORS` in `src/config.js`. Update both.
 - Cutscene keyframes are authored against a **2.1s timeline, impact ~66%**;

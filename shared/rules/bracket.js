@@ -91,6 +91,40 @@
 // placements() requires the bracket to be fully resolved: the final round
 // must have a winner, and thirdPlace (if it exists and both its sides are
 // real) must be resolved too.
+//
+// --- settlement (Phase 9.3) --------------------------------------------------
+//
+// derivePairingSeed(seed, round, position) mints ONE pairing's battle seed
+// from the tournament's own stored seed — same "XOR with a
+// position-dependent constant" derivation style as deriveTierSeed above (and
+// shared/rules/adventure.js's deriveNodeSeed): every pairing a bracket will
+// ever play is independently, deterministically, and forever replayable from
+// (tournament seed, round, position) alone — no separate seed needs to be
+// minted or stored per match.
+//
+// replayBracket(entrantIds, seed, results) is the read-side counterpart to
+// nextRound()/resolveThirdPlace(): rather than the CALLER driving the
+// bracket forward turn by turn, this rebuilds the bracket ENTIRELY from
+// scratch every time, by folding a durable log of already-decided pairings
+// (`results`, shaped `{round, position, winner}[]` — round/position index
+// into `bracket.rounds`/`.pairings` exactly like the object's own shape, and
+// `winner` is one of that pairing's two entrant ids) back through
+// generateBracket + nextRound + resolveThirdPlace. This is the ONLY way a
+// bracket is ever materialized in this codebase (CLAUDE.md §1.6: no bracket
+// JSONB column anywhere — `tournament_matches` rows are the sole durable
+// record, and this function is how they're turned back into the same
+// bracket object generateBracket() would have produced if walked forward
+// live). Convention: the 3rd-place decider's result is stored at
+// `round = rounds.length - 1` (the FINAL round's index, once that round
+// exists) and `position = 1` (the final round only ever has one pairing, at
+// position 0, so position 1 is otherwise unused there).
+//
+// Same determinism contract as everywhere else in this module: identical
+// entrantIds + seed + results ALWAYS reproduce an identical bracket object.
+// Returns `{bracket, complete}` — `complete` is exactly placements()'s own
+// readiness check (the final decided, and thirdPlace resolved if it exists
+// and isn't a bye-auto-resolve), so a caller can gate `placements(bracket)`
+// on it without re-deriving that rule.
 
 import { makeRng } from "../engine/rng.js";
 
@@ -300,4 +334,90 @@ export function placements(bracket) {
   }
 
   return ranked;
+}
+
+/**
+ * Derive one bracket pairing's battle seed from the tournament's stored
+ * seed + its coordinates. Same style as deriveTierSeed (above) and
+ * shared/rules/adventure.js's deriveNodeSeed — every pairing's outcome is
+ * forever replayable/auditable from (tournament seed, round, position)
+ * alone, with no per-match seed to separately mint or store.
+ * @param {number} seed the tournament's own 32-bit stored seed
+ * @param {number} round bracket round index (0-based)
+ * @param {number} position pairing index within that round (0-based; the
+ *   3rd-place decider uses position 1 at the final round's index — see the
+ *   header)
+ * @returns {number} a 32-bit seed
+ */
+export function derivePairingSeed(seed, round, position) {
+  return (seed ^ Math.imul(round * 4096 + position + 1, 0x9e3779b9)) >>> 0;
+}
+
+/**
+ * Rebuild bracket state from scratch by folding a durable log of decided
+ * pairings (`results`) back through generateBracket/nextRound/
+ * resolveThirdPlace — see the header for the full contract (no bracket is
+ * ever persisted as JSON; this is the one way one gets materialized, from
+ * entrantIds + seed + `tournament_matches` rows).
+ * @param {string[]} entrantIds same contract as generateBracket's own param
+ * @param {number} seed the tournament's stored seed
+ * @param {{round:number, position:number, winner:string}[]} results every
+ *   pairing decided so far, in any order — a pairing with no matching entry
+ *   here (and no bye) is simply not yet resolved
+ * @returns {{bracket:object, complete:boolean}} `complete` mirrors
+ *   placements()'s own readiness check, so a caller can gate a placements()
+ *   call on it directly.
+ */
+export function replayBracket(entrantIds, seed, results) {
+  const resultMap = new Map();
+  for (const r of results ?? []) {
+    if (r == null) continue;
+    resultMap.set(`${r.round}:${r.position}`, r.winner);
+  }
+
+  let bracket = generateBracket(entrantIds, seed);
+
+  // Walk rounds ascending, folding one fully-resolved round at a time into
+  // the bracket via nextRound() — stop the instant a round has a pairing
+  // with no result yet (bounded, deterministic; never "peeks ahead").
+  for (;;) {
+    const roundIdx = bracket.rounds.length - 1;
+    const current = bracket.rounds[roundIdx];
+    if (current.pairings.length === 1 && current.pairings[0].winner != null) break; // champion already decided
+
+    let allResolved = true;
+    const aligned = current.pairings.map((p, pos) => {
+      if (p.winner != null) return null; // a bye, already decided at generation time — nextRound ignores this slot
+      const w = resultMap.get(`${roundIdx}:${pos}`);
+      if (w === undefined) {
+        allResolved = false;
+        return null;
+      }
+      return w;
+    });
+    if (!allResolved) break;
+
+    bracket = nextRound(bracket, aligned);
+  }
+
+  // The 3rd-place decider (if it exists) can be resolved independently of
+  // whether the final itself is decided yet — its two sides are known the
+  // instant the semifinal round completes, which the loop above may already
+  // have folded in even if the final's own result isn't here yet.
+  const finalRoundIdx = bracket.rounds.length - 1;
+  if (
+    bracket.thirdPlace &&
+    bracket.thirdPlace.a != null &&
+    bracket.thirdPlace.b != null &&
+    bracket.thirdPlace.winner == null
+  ) {
+    const w = resultMap.get(`${finalRoundIdx}:1`);
+    if (w !== undefined) bracket = resolveThirdPlace(bracket, w);
+  }
+
+  const finalRound = bracket.rounds[bracket.rounds.length - 1];
+  const finalDecided = finalRound.pairings.length === 1 && finalRound.pairings[0].winner != null;
+  const thirdOk = !bracket.thirdPlace || bracket.thirdPlace.winner != null;
+
+  return { bracket, complete: finalDecided && thirdOk };
 }

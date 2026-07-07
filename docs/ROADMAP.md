@@ -861,32 +861,55 @@ everywhere (farm, match creation, adventure, marketplace listing);
 double-registration and post-window registration 409; withdraw and admin
 cancel both release locks and refund fees exactly once.
 
-### Phase 9.3 — Tournaments: lazy resolution, rewards, results ← NEXT UP
+### Phase 9.3 — Tournaments: lazy resolution, rewards, results ✅ CODE COMPLETE (2026-07-07)
 
-- `settleTournaments()` (`server/services/tournament.js`): on read, any
-  `registration` tournament past `reg_ends_at` advances — fewer than 2
-  entries ⇒ auto-cancel (release + refund, same path as admin cancel);
-  otherwise a claimed flip to `running` generates the bracket
-  (`generateBracket` off the stored seed) exactly once. Then ONE ROUND per
-  claimed settlement pass (bounded work per serverless invocation — a
-  128-entry bracket resolves over a few reads, not one giant one): each
-  pairing resolves via `resolveBattle()` with a seed derived from the
-  tournament seed + round + position (the `deriveNodeSeed` precedent),
-  persisted to `tournament_matches`. After the final + 3rd-place decider:
-  `placements()` → standings JSONB, reward payout via the pluggable grant
-  registry (gold credit / `grantItem` / mint per type) — each entrant's
-  payout one idempotent claimed statement (the `payoutSeason` `reward IS
-  NULL` precedent) — and every lock released. Admin cancel mid-`running`
-  still works: stop, release, no rewards.
-- Results: tournament detail read returns the bracket, per-round results,
-  standings, and each match's seed; any past match is replayable from its
-  stored seed + frozen snapshots (a future replay feature — the event log
-  is never persisted, CLAUDE.md §1.6). The 🏆 panel's history list gains a
-  detail view: bracket view, final standings with reward lines, cancelled
-  tournaments marked as such.
-- Tests: settlement state machine against a fake repo layer where feasible;
-  otherwise the service follows the untested-DB-service precedent
-  (`matches.js`/`pvp.js`) and the pure math stays covered by 9.1.
+Remaining (operator step): `npm run db:migrate` (015).
+
+- `015_tournament_rewards.sql`: ONE new column, `tournament_entries.reward`
+  (NULL until settlement stamps it — the `payoutSeason` `reward IS NULL`
+  precedent). Locked design decision: NO bracket JSONB column anywhere — a
+  tournament's bracket is re-derived on every read from (entry ids ordered
+  by id ASC, `tournaments.seed`, and 014's `tournament_matches` rows) via
+  `shared/rules/bracket.js`'s new `replayBracket()` (CLAUDE.md §1.6).
+- `shared/rules/bracket.js` gains two pure exports: `derivePairingSeed(seed,
+  round, position)` (the `deriveNodeSeed`-style per-pairing battle seed) and
+  `replayBracket(entrantIds, seed, results)` (folds a durable log of decided
+  pairings back through `generateBracket`/`nextRound`/`resolveThirdPlace`,
+  returning `{bracket, complete}`).
+- `settleTournaments()` (`server/services/tournament.js`), called at the top
+  of every tournament read: a bulk cosmetic `scheduled -> registration`
+  status walk, then per due tournament — `scheduled`/`registration` past
+  `reg_ends_at` with fewer than 2 entries auto-cancels (the exact admin-
+  cancel refund/release path, factored into a shared `cancelCore()`);
+  otherwise a claimed flip to `running` falls straight into settling it.
+  A `running` tournament resolves ONE round per pass (bounded work per
+  serverless invocation): every undecided real pairing in the replayed
+  bracket's current round gets `resolveBattle()` called directly (no
+  `matches` row — the adventure.js precedent) off `derivePairingSeed()`,
+  persisted via an exactly-once `insertTournamentMatch()` claim; a draw
+  breaks with one more roll (`makeRng(seed).chance(50)`) off that same
+  pairing seed. Resolving the final round also resolves the 3rd-place
+  decider in the same pass. Once the re-replayed bracket is `complete`:
+  `placements()` → `resolveRewards()` → one idempotent `claimEntryReward()`
+  per entry (`reward IS NULL` gate), granting through a pluggable
+  `REWARD_GRANTERS` registry (gold/item/equipment/rune/monster — the
+  `performSummon` REQUIREMENT_CHECKERS precedent) and releasing that
+  entry's party lock, THEN `claimCompleteTournament()` stamps the
+  standings JSONB and flips to `completed`. Admin cancel mid-`running`
+  still works unchanged: the guarded status flip wins the race either way.
+- Results: `GET /api/battle/tournament/detail?id=` (`getTournamentDetail()`)
+  returns the tournament summary, entrants (display only, never lanes),
+  the bracket re-derived round by round with each pairing's stored seed,
+  the 3rd-place pairing, the enriched standings (rank/trainer/reward), and
+  the caller's own entry summary. The 🏆 panel's every card/history row
+  gained a "Details" button swapping the body for this view: round labels
+  ("Round N" / "Semifinals" / "Final" / "3rd-place match"), byes shown as
+  "bye", unplayed pairings in a running bracket marked "pending".
+- Tests: `tests/bracket.test.mjs` extended with `derivePairingSeed`/
+  `replayBracket` coverage (determinism, partial results, the 2-entrant
+  field, the 3rd-place row convention, one-round-at-a-time resolution) —
+  the settlement service itself follows the untested-DB-service precedent
+  (`matches.js`/`pvp.js`).
 
 **Done when:** after `reg_ends_at`, a plain read advances the tournament
 round by round and two racing reads never double-resolve a round; positions
@@ -894,26 +917,52 @@ round by round and two racing reads never double-resolve a round; positions
 tier, each exactly once; all locks release; the bracket + standings are
 browsable later and every match's seed reproduces its result.
 
-### Phase 9.4 — Guilds: creation, membership, roles
+### Phase 9.4 — Guilds: creation, membership, roles ✅ CODE COMPLETE (2026-07-07)
 
-Unchanged in substance from this section's original draft.
+Remaining (operator step): `npm run db:migrate` (016).
 
-- `015_guilds.sql`: `guilds` (unique name, description/emblem, leader id,
+- ✅ `016_guilds.sql`: `guilds` (case-insensitively unique name via
+  `guilds_name_idx` on `lower(name)`, description/emblem, leader id,
   created_at), `guild_members` (guild, trainer UNIQUE — one guild per
   trainer, role `leader|officer|member`, joined_at), `guild_applications`
   (application flow, not invites — the user-described flow: player applies,
-  leader accepts/rejects; keep it thin). Guilds are player-created instance
-  data, not admin master data; creation costs gold (claim-first-then-pay).
-- New `api/guild/[...route].js` domain + `server/routers/guild.js` (the 8th
-  serverless function — the sanctioned reason to add one, CLAUDE.md §5):
-  create / apply / accept / reject / leave / kick / promote / transfer
-  leadership, plus guild profile + member list reads. Every write
-  re-validates the caller's role from the DB (leader-only accept/kick/
-  transfer; a leader can't leave without transferring first) — never trust
-  a role from the request body.
-- UI: 🏰 Guild panel — guildless view (browse/create/apply), member view
-  (roster, my application status), leader view (pending applications with
-  accept/reject, kick/promote/transfer). Pure display over the guild reads.
+  leader accepts/rejects; no status column at all — a pending application IS
+  a row's existence, accept/reject both just DELETE it, keeping this thin as
+  directed). Guilds are player-created instance data, not admin master data
+  (no `src/data/*.js` seed, no admin console tab); creation costs a flat 500
+  gold (`GUILD_CREATE_COST`, claim-first-then-pay + LIFO compensation, the
+  `performSummon` shape).
+- ✅ New `api/guild/[...route].js` domain + `server/routers/guild.js` (the
+  8th serverless function — the second sanctioned reason, after the
+  marketplace, to add one, CLAUDE.md §5): `browse`/`me`/`create`/`apply`/
+  `accept`/`reject`/`leave`/`kick`/`promote`/`transfer`
+  (`server/routes/guild.js` thin wire handlers over `server/services/
+  guild.js`). Every write re-derives the caller's role from
+  `guild_members` via `getMembership()` first (leader-only accept/reject/
+  kick/promote/transfer, 403 otherwise) — never trusts a role from the
+  request body. `leave`/`kick`/`updateMemberRole` are guarded statements
+  that exclude `role = 'leader'` from their WHERE
+  (`server/repos/guilds.js`) — a leader can never leave (409 "transfer
+  leadership first"; disbanding a guild outright is out of scope) or be
+  kicked/demoted directly; only `transfer`'s `claimTransferLeadership` (a
+  guarded `guilds.leader_id` UPDATE, the real claim, followed by swapping
+  both member rows' roles in one sequence) ever moves the `'leader'` role.
+  `UNIQUE(trainer_id)` on `guild_members` is the one-guild-per-trainer race
+  guard every join path (create, an accepted application) 23505s against.
+- ✅ UI: 🏰 Guild panel (`src/ui/guild.js`, same msgs+body, refresh-on-open
+  shell as Tournament/Summon/Adventure) — guildless view (my pending
+  applications, a browse list with per-guild Apply/Applied, a "Found a
+  guild" form labeled with the gold cost); member/officer view (guild
+  header, full roster with role badges, a Leave button; officers
+  additionally see the pending-application queue read-only, per the
+  server's `me()` role gate); leader view (all of the above plus per-
+  application Accept/Reject and per-member, non-self Kick/Promote/Demote/
+  "Make leader" — transfer confirm()-gated — controls, with Leave replaced
+  by a "transfer leadership first" hint). Pure display + action over
+  `src/services/content.js`'s new `fetchGuildBrowse()`/`fetchGuildMe()`/
+  `createGuild()`/`applyGuild()`/`acceptGuildApplication()`/
+  `rejectGuildApplication()`/`leaveGuild()`/`kickGuildMember()`/
+  `promoteGuildMember()`/`transferGuildLeadership()`.
 
 **Done when:** two real accounts form a guild (one creates and pays the
 gold cost, the other applies and is accepted); role checks hold (a member
