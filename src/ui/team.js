@@ -172,14 +172,20 @@ function monsterById(id) {
   return roster?.find((m) => m.id === id) ?? null;
 }
 
+/** Renders the 3 lane columns RIGHT-to-LEFT in data order (Lane 3, Lane 2,
+ *  Lane 1 left→right) so the row visually matches the battlefield, where
+ *  army A renders back→front with lane 1 (the front, first to fight)
+ *  rightmost, nearest the clash zone. `slots` stays index 0 = lane 1 = front
+ *  throughout — only the DOM append order flips, never the data. */
 function slotsRow() {
   const row = el("div", "team-slots");
-  for (let i = 0; i < PARTY_SIZE; i++) {
+  for (let i = PARTY_SIZE - 1; i >= 0; i--) {
     const id = slots[i];
     const slot = el("div", "team-slot" + (id == null ? " empty" : ""));
     slot.dataset.slot = String(i);
     if (id == null) {
-      slot.appendChild(el("span", "team-slot-empty", `Lane ${i + 1} — drop a monster`));
+      const label = i === 0 ? "Lane 1 (front) — drop a monster" : `Lane ${i + 1} — drop a monster`;
+      slot.appendChild(el("span", "team-slot-empty", label));
     } else {
       const m = monsterById(id);
       const card = m ? unitCardEl(laneView(m), String(i + 1)) : el("div", "team-slot-empty", `#${id}`);
@@ -308,8 +314,9 @@ function detailArea() {
   }
 
   const actions = el("div", "team-detail-actions");
-  for (let i = 0; i < PARTY_SIZE; i++) {
-    const btn = button(`Set lane ${i + 1}`, "btn ghost", () => {
+  for (let i = PARTY_SIZE - 1; i >= 0; i--) {
+    const label = i === 0 ? "Set lane 1 (front)" : `Set lane ${i + 1}`;
+    const btn = button(label, "btn ghost", () => {
       slots = assignToSlot(slots, i, m.id);
       render();
     });
