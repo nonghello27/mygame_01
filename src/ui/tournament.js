@@ -19,6 +19,7 @@
 import {
   fetchTournaments, registerTournament, withdrawTournament, loadFarm, fetchTournamentDetail,
 } from "../services/content.js";
+import { registerView } from "./views.js";
 
 const PARTY_SIZE = 3;
 const BUSY_LABEL = {
@@ -44,14 +45,7 @@ export function initTournament() {
     msgs: document.getElementById("tournamentMsgs"),
     body: document.getElementById("tournamentBody"),
   };
-  els.btn.addEventListener("click", toggle);
-}
-
-async function toggle() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "🏆 Close Tournament" : "🏆 Tournament";
-  if (opening) await refresh();
+  registerView("tournament", { button: els.btn, el: els.panel, onShow: refresh });
 }
 
 /** Re-read the tournament list and re-render; drops any in-progress party

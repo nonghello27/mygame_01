@@ -15,6 +15,7 @@ import {
 } from "../services/content.js";
 import { fetchMe } from "../services/auth.js";
 import { showProfile } from "./auth.js";
+import { registerView } from "./views.js";
 
 const TABS = [
   ["items", "🧰 Items"],
@@ -37,14 +38,7 @@ export function initInventory() {
     msgs: document.getElementById("inventoryMsgs"),
     body: document.getElementById("inventoryBody"),
   };
-  els.btn.addEventListener("click", toggle);
-}
-
-async function toggle() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "🎒 Close Inventory" : "🎒 Inventory";
-  if (opening) await refresh();
+  registerView("inventory", { button: els.btn, el: els.panel, onShow: refresh });
 }
 
 /** Re-read the whole inventory (cheap, one endpoint) + this trainer's

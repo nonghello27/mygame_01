@@ -31,8 +31,16 @@ export const TEAM_SIZE = 3;
  * @param {number[]} [monsterIds] optional (Phase 10.2 battlefield party
  *   picker) — see pickParty() below for its exact contract; omitted keeps
  *   today's first-3-available behavior byte-for-byte.
+ * @param {string} [keepEnemyMatchId] optional (Phase 10.4, "same enemy, new
+ *   lineup") — the id of the CALLER'S OWN free match whose frozen
+ *   `defender_snapshot` this new match reuses verbatim instead of picking a
+ *   fresh random-species defender. The seed is still minted fresh and the
+ *   attacker still assembles from `monsterIds` as usual — only the enemy
+ *   lane-up carries over. The source match may already be resolved (that's
+ *   the rematch case); only ownership and kind are gated. Omitted/null keeps
+ *   today's random-species-defender behavior byte-for-byte.
  */
-export async function createMatch(sql, trainerId, monsterIds) {
+export async function createMatch(sql, trainerId, monsterIds, keepEnemyMatchId) {
   // The trainer's own team — starters are granted on first need (lazy, like
   // everything else). Wire shape: idx is the lane identity the client and
   // server exchange; stats ride along for display but the DB copy is what
@@ -61,13 +69,29 @@ export async function createMatch(sql, trainerId, monsterIds) {
   );
 
   // Server-picked opponent: random species, random lane order, frozen in the
-  // snapshot. (Phase 6 swaps this for another trainer's defense formation.)
+  // snapshot — UNLESS the caller named a match of their own to keep the
+  // enemy from (Phase 10.4). Either way the client only ever supplies a
+  // CHOICE (an id it already owns, or nothing); the actual enemy stats
+  // always come from the DB, never the request body (CLAUDE.md §1.1).
   // Wild lanes never carry equipment or runes — .map((m, i) => toLane(m, i))
   // rather than the bare .map(toLane): Array#map also passes (index, array)
   // to its callback, and toLane's 3rd/4th params ARE equipment/runes, so a
   // bare `.map(toLane)` would leak the whole source array in as "equipment".
-  const species = await listSpecies(sql);
-  const defender = shuffle(species).slice(0, TEAM_SIZE).map((m, i) => toLane(m, i));
+  let defender;
+  if (keepEnemyMatchId != null) {
+    // "Same enemy, new lineup": reuse a prior free match's frozen defender
+    // verbatim, skipping the species query entirely — there's nothing to
+    // pick. Validate the source BEFORE any random-species fallback so a bad
+    // id never silently degrades into "well, here's a random enemy instead".
+    const source = await getMatch(sql, String(keepEnemyMatchId ?? ""));
+    // 404 for both "no such match" and "someone else's match": don't leak which.
+    if (!source || source.attackerId !== trainerId) throw httpError(404, "match not found");
+    if (source.kind !== "free") throw httpError(409, "only a free match's enemy can be kept — start a new one");
+    defender = source.defenderSnapshot;
+  } else {
+    const species = await listSpecies(sql);
+    defender = shuffle(species).slice(0, TEAM_SIZE).map((m, i) => toLane(m, i));
+  }
   if (attacker.length === 0 || defender.length === 0) {
     throw httpError(500, "no monsters available — is master data seeded?");
   }

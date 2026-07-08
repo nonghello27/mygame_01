@@ -10,6 +10,7 @@
 
 import { fetchLadder, fetchDefense, saveDefense, loadFarm } from "../services/content.js";
 import { fetchMe } from "../services/auth.js";
+import { registerView } from "./views.js";
 
 const TABS = [
   ["ladder", "🏆 Ladder"],
@@ -37,19 +38,7 @@ export function initPvp(rankedBattleCb) {
     msgs: document.getElementById("pvpMsgs"),
     body: document.getElementById("pvpBody"),
   };
-  els.btn.addEventListener("click", toggle);
-}
-
-async function toggle() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "⚔ Close Arena" : "⚔ Arena";
-  if (opening) await refresh();
-}
-
-function closePanel() {
-  els.panel.hidden = true;
-  els.btn.textContent = "⚔ Arena";
+  registerView("pvp", { button: els.btn, el: els.panel, onShow: refresh });
 }
 
 /** Reload whatever the current tab needs and re-render. */
@@ -151,8 +140,7 @@ function renderLadder() {
     rankedBtn.disabled = true;
     els.msgs.innerHTML = "";
     try {
-      await onRankedBattle();
-      closePanel();
+      await onRankedBattle(); // navigates to the playground view itself on success (main.js)
     } catch (e) {
       pushMsg(e.message, true);
     } finally {

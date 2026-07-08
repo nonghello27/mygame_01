@@ -1124,6 +1124,28 @@ so the battlefield's final control set is known; the grouped menu bar
 (10.3) is pure presentation over ids that already exist, so it goes last
 and re-homes every button exactly once.
 
+Three MORE sub-phases (10.4–10.6) were staged 2026-07-08 from playtest
+feedback on the Phase 10.2/10.3 battlefield controls: a match-creation
+option that keeps the current enemy (so re-fielding a party stops
+re-rolling the opponent), a "Me & Team" menu group with a drag-and-drop
+Setup Team panel replacing the battlefield party strip, and a
+monster-centric Setup Monster gear panel. Order rationale: 10.4 goes
+first because it's the one server change and both panels' Save action
+depends on it; 10.5 goes before 10.6 because it creates the menu group
+10.6's button lives in. 10.5 and 10.6 are client-only, 10.4 adds no new
+serverless function (rides the existing `battle` domain), and none of the
+three touches the engine.
+
+Two MORE sub-phases (10.7–10.8) were staged 2026-07-08 (same day, immediate
+feedback on 10.4–10.6's first playtest): the app moves from stacked,
+independently-toggled panels to ONE view at a time (a panel opens → the
+battlefield and every other panel hide), Playground becomes a direct menu
+button that IS the battlefield view with its battle controls returning to a
+row under the battlefield, and the Setup Team panel graduates from text
+chips to battlefield-style unit cards with a click-for-detail area. Order:
+10.7 first (the view switcher rehomes the battle controls 10.8's detail
+area assumes stay put); both are client-only, engine untouched.
+
 ### Phase 10.1 — Admin: edit a trainer's gold ✅ CODE COMPLETE (2026-07-07)
 
 The 👥 Trainers tab can already read every account and manage rosters, but
@@ -1222,6 +1244,194 @@ grouped bar with both mouse hover and touch press; nothing else changed —
 button ids resolve exactly once in `index.html`, `npm test` (197 passing)
 and `npm run build` both pass, and no file under `server/` or `shared/`
 changed.
+
+### Phase 10.4 — Keep the enemy: re-field your party without a re-roll ✅ CODE COMPLETE (2026-07-08)
+
+Context: today every party change opens a brand-new match via `POST
+/api/battle/match`, which always re-rolls the enemy team and order —
+"Field this party" (10.2) therefore shuffles the opponent as a side
+effect. The fix: an optional `keepEnemyMatchId` body field (free matches
+only). When present, the server validates the id names the CALLER'S OWN
+match (404 "match not found" otherwise, same wording as resolve's gate)
+of `kind='free'` (409 otherwise), and freezes the NEW match with that
+match's `defender_snapshot` verbatim instead of a fresh random species
+team — the attacker side, seed, and everything else assemble exactly as
+today. Still a pure choice per CLAUDE.md §1.1: the client only ever names
+a match id it already owns; stats stay server-frozen. `mode:"pvp"` +
+`keepEnemyMatchId` is 400 (a PVP defender comes from matchmaking, never by
+request).
+
+- ✅ `POST /api/battle/match` gains the optional `keepEnemyMatchId` field
+  (free mode only), validated and applied in `server/services/matches.js`.
+- ✅ Client: "Field this party" and Reset-after-a-battle both pass the
+  current match's id as `keepEnemyMatchId` (when the current match is a
+  free one), so both become "same enemy, new lineup / rematch"; a NEW
+  `🎲 New Enemy` button on the right side of the battlefield (in the enemy
+  army's label) re-rolls ONLY the enemy — it opens a fresh match WITHOUT
+  `keepEnemyMatchId`, sending the CURRENT board lane order as
+  `monsterIds` so your team and arrangement carry over. The Playground
+  menu's "New Opponent" stays as-is.
+
+**Done when:** fielding a different 3 monsters keeps the exact same enemy
+team and order; 🎲 New Enemy changes only the enemy; passing another
+trainer's match id (or a pvp match's) as keepEnemyMatchId gets 404/409
+and no match row; omitting the field behaves byte-for-byte as before. ✅
+Verified: `npm test` (197 passing — no new pure logic was introduced;
+`createMatch`'s keepEnemyMatchId gate is only exercised through an async
+DB-backed service, and no sql-stubbing test harness exists yet for it,
+same gap noted for `resolveMatch`) and `npm run build` both pass; no file
+under `shared/engine/` or any golden fixture changed.
+
+### Phase 10.5 — Me & Team: drag-and-drop Setup Team panel ✅ CODE COMPLETE (2026-07-08)
+
+Context: the 10.2 party strip lives ON the battlefield and is
+click-toggle only; team setup deserves its own home. A new LEFTMOST menu
+group "Me & Team" (before Playground) holds 🪖 Setup Team plus the
+relocated 🎒 Inventory button (10.6 adds Setup Monster between them). New
+`src/ui/team.js` + `src/styles/team.css` + a `#teamPanel` msgs+body panel
+shell (the Summon/Adventure precedent) REPLACE `src/ui/party.js` and the
+`#partyStrip` battlefield strip (module deleted, `.party-*` CSS removed
+from board.css).
+
+- ✅ Panel layout: a top row of 3 numbered slot drop-zones (the next match's
+  lane order), a bottom horizontally-scrollable row of EVERY owned
+  monster (busy ones disabled with their busyKind label, the 10.2 chip
+  data reused), pointer-event drag-and-drop in the dragdrop.js style
+  (roster card → slot assigns/replaces, slot → slot swaps, an ✕ clears a
+  slot; clicking a roster card drops it into the first empty slot as the
+  touch fallback), a sort bar over the roster (Order = acquisition/id,
+  Name, Power = str+agi+vit+int+dex since monsters have no level — each
+  asc/desc), and a footer with **Save team** (enabled at exactly 3 slots;
+  remembers the pick and opens a fresh match with `keepEnemyMatchId`,
+  10.4 — same-enemy, new lineup), **Reset** (clears all three slots
+  client-side only), and **Default party** (whenever a non-default pick
+  is remembered — reverts to the server's first-3, same as 10.2).
+- ✅ `getPartyIds()` moves to team.js so PVP/Ranked and every other
+  `openMatch()` caller keeps reading the remembered party unchanged.
+
+**Done when:** the team is assembled entirely by drag and drop, sorted
+every way, saved (battle board re-renders with the new lineup vs the SAME
+enemy) and reset; the old party strip is gone; ranked battle still uses
+the remembered party; `npm run build` passes with no server/ or shared/
+change. ✅ Verified: `grep -c 'id="inventoryBtn"'`/`'id="teamBtn"'` in
+index.html both return 1, `grep -rn "party.js|partyStrip|renderParty|
+initParty" src/ index.html` returns no hits, `npm test` (197 passing) and
+`npm run build` both pass, and `git diff --stat` for this round touches no
+file under `server/` or `shared/`.
+
+### Phase 10.6 — Me & Team: Setup Monster panel ✅ CODE COMPLETE (2026-07-08)
+
+Context: equipping today is item-centric (the 🎒 Inventory panel's
+Equipment/Runes tabs pick a monster per piece); a monster-centric view is
+the natural complement. A new 🐾 Setup Monster button in the Me & Team
+group + `#monsterSetupPanel` (msgs+body shell) + `src/ui/monsterSetup.js`
+(+ a small `src/styles/monsterSetup.css`): a chip row picks one owned
+monster; the view shows its attrs and TWO sections — "Equipped" (its
+monster-domain gear with Unequip, its socketed runes with charges and
+Unsocket) and "Bag" (unequipped monster-domain gear with
+Equip-onto-this-monster, unsocketed unbroken runes with Socket, honoring
+the species' rune_slots server-side). ZERO new endpoints: everything
+rides `fetchInventory`/`loadFarm` reads and the existing
+`equipMonsterEquipment`/`socketRune` actions, re-rendering from each
+response exactly like ui/inventory.js's runAction. Trainer-domain gear
+stays in the Inventory panel (it isn't a monster's).
+
+- ✅ Panel layout: a `.ms-picker` chip row over every owned monster
+  (click to select, kept across re-renders), a `.ms-head` with the
+  selected monster's emoji/name/class/element and an attrs line, and two
+  `.ms-section`s ("Equipped"/"Bag") of `.ms-row`s mirroring
+  `ui/inventory.js`'s `.inv-row` shape for equipment/rune display plus
+  one action button each (Equip/Unequip, Socket/Unsocket). A broken
+  unsocketed rune shows a BROKEN badge with no Socket button and a
+  "repair it in the 🎒 Inventory panel" hint instead.
+- ✅ Every action (`runAction`) disables its button, calls
+  `equipMonsterEquipment`/`socketRune`, and re-renders straight from the
+  refreshed inventory the server hands back — no gold moves here, so no
+  profile refresh is needed.
+
+**Done when:** a full gear/rune loadout can be assembled and stripped
+from one monster's screen alone; every failure (no free rune slot, broken
+rune) surfaces the server's message; client-only diff. ✅ Verified:
+`grep -c 'id="monsterSetupBtn"'` in index.html returns 1, `npm test` (197
+passing) and `npm run build` both pass, and `git diff --stat` for this
+round touches no file under `server/` or `shared/`.
+
+### Phase 10.7 — One view at a time: Playground button & exclusive panels ✅ CODE COMPLETE (2026-07-08)
+
+Context: 10.3's menu bar toggles each panel independently, so panels stack
+under the battlefield and it's unclear "where" you are; the Playground
+dropdown's four controls (Start Battle / Reset / New Opponent / Cinematic)
+also read oddly as menu items for what is really THE main screen. Changes:
+
+- ✅ A tiny new `src/ui/views.js` view registry: `registerView(name, {button,
+  el, onShow})` wires the menu button itself; `showView(name)` hides every
+  other registered view's element, shows the target, and runs its `onShow`
+  (each panel's existing refresh-on-open). Clicking an already-open view's
+  button just refreshes it; nothing "toggles closed" anymore — you leave a
+  view by entering another. Static button labels (the "Close X" text-flip
+  dies with the toggles).
+- ✅ All 12 panel modules (team, monsterSetup, inventory, farm, trainer,
+  adventure, pvp, tournament, guild, summon, marketplace, admin) swap their
+  private `toggle()` for one `registerView` call — same refresh behavior,
+  less code per module.
+- ✅ index.html: the Playground menu-group is replaced by a direct
+  `🏟 Playground` button (`#playgroundBtn`); a new `#playgroundView` wrapper
+  groups the battlefield (`.field-frame`), a NEW `#battleControls` row
+  placed UNDER the battlefield holding the four existing control buttons
+  (ids unchanged: startBtn/resetBtn/shuffleBtn/cineBtn — the pre-10.3 flat
+  controls row reborn, below the field this time), the drag hint, and the
+  battle log (relocated inside the wrapper). Registered as the `playground`
+  view; visible by default, shown again via the button or automatically
+  after actions that put a new match on the board from inside a panel
+  (Ranked Battle, Save team).
+
+**Done when:** entering any panel hides the battlefield and every other
+panel; entering Playground hides all panels and shows board + controls +
+log; Start/Reset/New Opponent/Cinematic all work from the new row; ranked
+battle from the Arena panel lands you on the battlefield; `npm run build`
+passes, no server/ or shared/ change. ✅ Verified: `grep -c 'id="startBtn"'`/
+`resetBtn`/`shuffleBtn`/`cineBtn`/`playgroundBtn`/`logLines` in index.html
+each return 1, `grep -rn 'addEventListener("click", toggle' src/ui/` returns
+0 hits, `npm test` (197 passing) and `npm run build` both pass, and
+`git diff --stat` for this round touches no file under `server/` or
+`shared/`.
+
+### Phase 10.8 — Setup Team: battlefield cards & unit detail ✅ CODE COMPLETE (2026-07-08)
+
+Context: the 10.5 panel renders monsters as text chips; the battlefield
+renders them as proper unit cards (sprite portrait, HP bar, ATK/SPD
+plate). The panel should speak the same visual language, and clicking a
+unit should tell you about it. Changes:
+
+- ✅ `src/ui/board.js` exports a new `unitCardEl(u, posLabel)` — the pure card
+  builder extracted verbatim from today's private `buildCard()` (markup +
+  portrait mount, no drag/dataset/front-marker concerns); `buildCard()`
+  becomes a thin decorator over it. Battle rendering byte-for-byte
+  unchanged.
+- ✅ `src/ui/team.js` renders BOTH the three lane slots and the roster row as
+  those unit cards. Display stats come from `deriveStats(m.base, m.attrs)`
+  imported from `shared/rules/formulas.js` — the SAME pure function the
+  server's snapshot uses (shared/ is importable by src/ by design, CLAUDE.md
+  §3); display-only, full HP, never sent anywhere.
+- ✅ Clicking any card (slot or roster; the drag threshold already separates
+  click from drag) opens a `.team-detail` area inside the panel: portrait,
+  name, class/element/attack kind/style/targeting, the derived stat line
+  (HP, ATK or MATK range, SPD, CRIT/EVA/ACC), attributes, the skill list
+  (name + level), busy state — plus action buttons ("Set as lane 1/2/3",
+  "Remove from team" when slotted), which REPLACE 10.5's tap-to-place as
+  the no-drag path (on touch, tap = detail, place from there). Drag-and-drop
+  keeps working exactly as in 10.5; roster cards override the unit card's
+  `touch-action:none` with `pan-x` so the row still scrolls horizontally on
+  touch while a vertical drag up to the slots stays a drag.
+
+**Done when:** slots and roster read like the battlefield; clicking a unit
+shows its full detail and can place/remove it; drag still assigns and
+swaps; the roster still scrolls; client-only diff. ✅ Verified: `npm test`
+(197 passing) and `npm run build` both pass; `grep -rn
+"team-slot-chip\|team-card-emoji\|onRosterCardClick" src/` returns 0 hits;
+`git diff --stat` for this round touches only `src/ui/board.js`,
+`src/ui/team.js`, `src/styles/team.css`, and docs (`CLAUDE.md`,
+`docs/ROADMAP.md`) — no `server/`/`shared/` change.
 
 ## Phase 11 — Chat, notifications & photo quest (later)
 

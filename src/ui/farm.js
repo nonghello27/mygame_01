@@ -6,6 +6,7 @@
 
 import { loadFarm, startJob } from "../services/content.js";
 import { showProfile } from "./auth.js";
+import { registerView } from "./views.js";
 
 const ATTR_LABEL = { str: "STR", agi: "AGI", vit: "VIT", int: "INT", dex: "DEX" };
 
@@ -20,20 +21,16 @@ export function initFarm() {
     msgs: document.getElementById("farmMsgs"),
     btn: document.getElementById("farmBtn"),
   };
-  els.btn.addEventListener("click", toggleFarm);
+  registerView("farm", { button: els.btn, el: els.panel, onShow: onShowFarm });
 }
 
-async function toggleFarm() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "🏕 Close Farm" : "🏕 Farm";
-  if (opening) {
-    await refresh();
-    timer = setInterval(tick, 1000);
-  } else {
-    clearInterval(timer);
-    timer = null;
-  }
+/** Entering this view refreshes AND (re)starts the countdown ticker — the
+ *  view registry (ui/views.js) has no "leaving" hook, only onShow, so the
+ *  ticker is guarded against being started twice rather than ever
+ *  explicitly stopped; it costs nothing to keep ticking while hidden. */
+async function onShowFarm() {
+  await refresh();
+  if (!timer) timer = setInterval(tick, 1000);
 }
 
 /** Re-read the farm (which settles finished jobs server-side) and re-render. */

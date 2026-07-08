@@ -53,9 +53,22 @@ The vision and plans live in `docs/` — treat them as part of this file:
   sub-phases 10.1–10.3 in the roadmap — 10.1 (admin: set any trainer's
   gold), 10.2 (battlefield party picker: choose which 3 owned monsters
   fight, free & PVP, with a live party strip), and 10.3 (a grouped
-  dropdown menu bar over the control buttons) are all code complete —
-  **Phase 10 is done**. Phase 11 (chat, notifications & the photo quest)
-  is next.
+  dropdown menu bar over the control buttons) are all code complete.
+  Phase 10 was EXTENDED 2026-07-08 with sub-phases 10.4–10.6, staged next
+  from playtest feedback: 10.4 (a keep-enemy option on match creation plus
+  a battlefield 🎲 New Enemy re-roll button), 10.5 (a leftmost "Me &
+  Team" menu group whose drag-and-drop 🪖 Setup Team panel replaces the
+  old battlefield party strip), and 10.6 (a monster-centric 🐾 Setup
+  Monster gear panel in that same menu group) are all code complete —
+  **Phase 10 (extended) is done**. Two more sub-phases, 10.7–10.8, were
+  staged 2026-07-08: 10.7 (one view at a time — a direct 🏟 Playground
+  button replacing the Playground dropdown, its battle controls moved to a
+  row under the battlefield, and every panel exclusive of the battlefield
+  and each other, via a small new `src/ui/views.js` registry) and 10.8 (the
+  Setup Team panel's text chips become battlefield-style unit cards, shared
+  with the battlefield via `ui/board.js`'s new `unitCardEl()`, with a
+  click-for-detail area) are both code complete — **Phase 10 (10.4–10.8) is
+  done**. Phase 11 (chat, notifications & the photo quest) is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -256,7 +269,7 @@ per roadmap phase, don't big-bang rename.)
     ├── config.js           # COLORS, accentFor(), cutscene timings
     ├── styles/             # base.css (tokens) | board | menu | cutscene | sprite | auth | farm
     │                       # | admin | pvp | trainer | inventory | summon | adventure | market
-    │                       # | tournament | guild
+    │                       # | tournament | guild | team | monsterSetup
     ├── data/               # seed content: classes, sprites, units, skills, jobs, expertises,
     │                       # items, equipment, runes, summons, adventures
     ├── services/           # I/O boundary: content.js, auth.js, firebase.js, storage.js, admin.js
@@ -264,7 +277,9 @@ per roadmap phase, don't big-bang rename.)
     │   ├── units.js        # makeUnit(), cloneRoster()
     │   ├── state.js        # shared state + initContent()/resetState()
     │   └── battle.js       # client REPLAYER: requestBattle() + animate events
-    ├── ui/                 # board, sprite, dragdrop, log, chroma, auth, farm, admin,
+    ├── ui/                 # board (exports unitCardEl(), Phase 10.8's shared battlefield-
+    │                       # style card builder, besides its own battle rendering), sprite,
+    │                       # dragdrop, log, chroma, auth, farm, admin,
     │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
     │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),
     │                       # summon (✨ Summon Hall panel: banner cards + pull), adventure
@@ -281,10 +296,34 @@ per roadmap phase, don't big-bang rename.)
     │                       # per-team lineup-order editor and register-guild button, and
     │                       # (Phase 9.7) a per-event "Details" war-bracket/standings view
     │                       # off the same section, mirroring the tournament panel's own),
-    │                       # party (🪖 party strip: pick which 3 owned monsters fight, Phase 10.2),
+    │                       # team (🪖 Setup Team panel, Phase 10.5: a "Me & Team" menu-group
+    │                       # panel — 3 drag-and-drop lane slots over a sortable
+    │                       # (order/name/power, asc/desc), horizontally scrollable
+    │                       # owned-monster row; Save fields the party against the SAME
+    │                       # enemy via keepEnemyMatchId, and the module still owns the
+    │                       # remembered party ids for every openMatch() caller; Phase 10.8:
+    │                       # both the lane slots and the roster row render as
+    │                       # board.js's shared unitCardEl() over a display-only
+    │                       # deriveStats(m.base, m.attrs) lane — full HP, never sent
+    │                       # anywhere — and clicking any card opens a click-for-detail
+    │                       # area (stats/attrs/skills/busy state plus "Set lane
+    │                       # 1/2/3"/"Remove from team" actions, the no-drag placement
+    │                       # path tap-to-place used to be),
+    │                       # monsterSetup (🐾 Setup Monster panel, Phase 10.6: pick one owned
+    │                       # monster, equip/unequip its gear and socket/unsocket its runes over
+    │                       # the existing inventory endpoints),
     │                       # menubar (Phase 10.3: a grouped dropdown menu bar over the existing
-    │                       # button ids — Playground/Activities/Battlefield dropdowns plus a few
-    │                       # direct top-level buttons)
+    │                       # button ids — Me & Team (Phase 10.5's leftmost group, holding
+    │                       # Setup Team, Setup Monster (10.6), and the relocated Inventory
+    │                       # button)/Activities/Battlefield dropdowns plus a few direct
+    │                       # top-level buttons; Playground is now (Phase 10.7) a direct
+    │                       # 🏟 Playground button — its four battle controls live in a
+    │                       # #battleControls row under the battlefield, inside
+    │                       # #playgroundView),
+    │                       # views (Phase 10.7: the one-view-at-a-time registry —
+    │                       # registerView(name,{button,el,onShow})/showView(name); every
+    │                       # panel module registers itself here instead of wiring its own
+    │                       # show/hide toggle, so entering any view hides every other one)
     ├── cutscene/           # cutscene.js, portraits.js (SVG), effects.js
     └── utils/helpers.js
 ```
@@ -307,7 +346,9 @@ always via `services/content.js`.
 Flow: login → `POST /api/battle/match` (server assembles YOUR team from
 `monsters` — the first 3 available, or the exact 3 the optional
 `monsterIds` picks, in that order (Phase 10.2) — picks + freezes the enemy
-team/order, mints + stores the seed in
+team/order (or, given an optional `keepEnemyMatchId` naming the caller's
+own prior free match, re-freezes THAT match's enemy verbatim instead —
+"same enemy, new lineup", Phase 10.4), mints + stores the seed in
 `matches`) → drag your lanes only → `POST /api/battle/resolve {matchId,
 playerOrder}` (permutation
 gate `applyOrder()` in `server/services/matches.js`; each match resolves

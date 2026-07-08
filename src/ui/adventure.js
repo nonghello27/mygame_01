@@ -17,6 +17,7 @@ import {
   fetchAdventureState, startAdventure, moveAdventure, abandonAdventure,
   loadFarm, fetchInventory,
 } from "../services/content.js";
+import { registerView } from "./views.js";
 
 const NODE_ICON = { battle: "⚔", chest: "🎁", gather: "🌿" };
 const NODE_LABEL = { battle: "Battle", chest: "Chest", gather: "Gather" };
@@ -39,14 +40,7 @@ export function initAdventure() {
     msgs: document.getElementById("adventureMsgs"),
     body: document.getElementById("adventureBody"),
   };
-  els.btn.addEventListener("click", toggle);
-}
-
-async function toggle() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "🗺 Close Adventure" : "🗺 Adventure";
-  if (opening) await refresh();
+  registerView("adventure", { button: els.btn, el: els.panel, onShow: refresh });
 }
 
 /** Re-read routes + the current session (and, only while picking a party,

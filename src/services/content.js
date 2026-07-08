@@ -47,12 +47,17 @@ export async function loadSprites() {
  * @param {number[]} [monsterIds] exactly 3 distinct owned, non-busy monster
  *   ids choosing WHICH monsters fight and their initial lane order; omit for
  *   the server's default (first 3 available).
+ * @param {string} [keepEnemyMatchId] (Phase 10.4, free matches only) the id
+ *   of the caller's OWN prior free match whose frozen enemy this new match
+ *   reuses verbatim ("same enemy, new lineup"); omit for the server's
+ *   default (a fresh random-species enemy).
  * @returns {Promise<{matchId:string, you:object[], enemy:object[], opponent?:{name:string,rating:number}}>}
  */
-export async function createMatch(mode, monsterIds) {
+export async function createMatch(mode, monsterIds, keepEnemyMatchId) {
   return postJson("/api/battle/match", {
     ...(mode ? { mode } : {}),
     ...(monsterIds ? { monsterIds } : {}),
+    ...(keepEnemyMatchId ? { keepEnemyMatchId } : {}),
   });
 }
 

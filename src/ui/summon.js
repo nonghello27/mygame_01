@@ -10,6 +10,7 @@
 import { fetchSummonHall, performSummon, fetchInventory } from "../services/content.js";
 import { fetchMe } from "../services/auth.js";
 import { showProfile } from "./auth.js";
+import { registerView } from "./views.js";
 
 let els = null;
 let banners = null;  // last fetchSummonHall() result's `summons`
@@ -23,14 +24,7 @@ export function initSummon() {
     msgs: document.getElementById("summonMsgs"),
     body: document.getElementById("summonBody"),
   };
-  els.btn.addEventListener("click", toggle);
-}
-
-async function toggle() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "✨ Close Summon" : "✨ Summon";
-  if (opening) await refresh();
+  registerView("summon", { button: els.btn, el: els.panel, onShow: refresh });
 }
 
 /** Re-read the banner list + owned items (for cost-name display only), and re-render. */

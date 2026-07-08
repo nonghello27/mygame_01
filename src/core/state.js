@@ -37,9 +37,12 @@ export async function initContent() {
  * @param {number[]} [monsterIds] exactly 3 owned, non-busy monster ids
  *   choosing WHICH monsters fight (Phase 10.2); omit for the server's
  *   default (first 3 available) — passed straight through to createMatch().
+ * @param {string} [keepEnemyMatchId] (Phase 10.4) the caller's own prior
+ *   free match id whose frozen enemy to reuse; passed straight through to
+ *   createMatch().
  */
-export async function newMatch(mode, monsterIds) {
-  const match = await createMatch(mode, monsterIds);
+export async function newMatch(mode, monsterIds, keepEnemyMatchId) {
+  const match = await createMatch(mode, monsterIds, keepEnemyMatchId);
   state.matchId = match.matchId;
   state.opponent = match.opponent ?? null;
   defs = { you: match.you, enemy: match.enemy };

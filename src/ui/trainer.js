@@ -8,6 +8,7 @@
 
 import { fetchProgression, chooseExpertise, learnTrainerSkill } from "../services/content.js";
 import { TRAINER_SKILL_SLOTS } from "../../shared/rules/progression.js";
+import { registerView } from "./views.js";
 
 let els = null;
 let data = null;          // last progression state from the server
@@ -20,14 +21,7 @@ export function initTrainer() {
     msgs: document.getElementById("trainerMsgs"),
     body: document.getElementById("trainerBody"),
   };
-  els.btn.addEventListener("click", toggle);
-}
-
-async function toggle() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "🎓 Close Trainer" : "🎓 Trainer";
-  if (opening) await refresh();
+  registerView("trainer", { button: els.btn, el: els.panel, onShow: refresh });
 }
 
 async function refresh() {

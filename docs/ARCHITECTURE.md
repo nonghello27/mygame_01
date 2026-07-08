@@ -502,15 +502,22 @@ POST /api/trainer/summon      { summonId } → pull one banner: pays its cost
                               materials" when a cost leg can't be paid
 
 # battle domain — api/battle/[...route].js
-POST /api/battle/match        { mode?, monsterIds? } → create match session
-                              ('free', default: server picks a random defender
-                              + seed | 'pvp': matched against another
-                              trainer's defense formation); monsterIds
-                              (Phase 10.2, optional, both modes) is exactly 3
-                              owned, non-busy monster ids choosing WHICH
-                              monsters fight and their initial lane order —
-                              400/409 on a bad pick, omitted = first 3
-                              available (pre-10.2 behavior)
+POST /api/battle/match        { mode?, monsterIds?, keepEnemyMatchId? } →
+                              create match session ('free', default: server
+                              picks a random defender + seed | 'pvp': matched
+                              against another trainer's defense formation);
+                              monsterIds (Phase 10.2, optional, both modes) is
+                              exactly 3 owned, non-busy monster ids choosing
+                              WHICH monsters fight and their initial lane
+                              order — 400/409 on a bad pick, omitted = first 3
+                              available (pre-10.2 behavior); keepEnemyMatchId
+                              (Phase 10.4, optional, free mode only) is the id
+                              of the caller's OWN prior free match whose
+                              frozen defender_snapshot this match reuses
+                              verbatim instead of picking a fresh random
+                              defender — "same enemy, new lineup"; 404 for a
+                              missing/not-owned match id, 409 for a non-free
+                              source match, 400 if combined with mode:"pvp"
 POST /api/battle/resolve      { matchId, playerOrder } → persisted result + events;
                               a pvp match's result also carries
                               pvp: { yourDelta, theirDelta, yourRating };

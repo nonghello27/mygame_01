@@ -33,15 +33,22 @@ function renderArmy(container, visualOrder, sourceArr, side, labelNode) {
   if (container.firstChild !== labelNode) container.insertBefore(labelNode, container.firstChild);
 }
 
-function buildCard(u, side, lane) {
+/**
+ * Build one battlefield-style unit card: portrait + info plate (pos badge,
+ * name, class/element, HP bar, ATK/SPD stats). Pure markup — no dataset, no
+ * drag, no front-lane marker; `buildCard()` below layers those battlefield
+ * concerns on top. Shared with ui/team.js (Phase 10.8) so the Setup Team
+ * panel renders the same cards the battlefield does.
+ * @param {object} u a unit (live battle unit, or any display lane shaped the
+ *   same way: hp/maxHp/name/cls/element/atk range/matk range/spd/alive)
+ * @param {string} posLabel badge text, e.g. "A1"/"B2" — pass "" for none
+ */
+export function unitCardEl(u, posLabel) {
   const card = document.createElement("div");
-  card.className = "unit-card" + (state.phase !== "setup" ? " no-drag" : "");
-  card.dataset.id = u.id;
-  card.dataset.side = side;
+  card.className = "unit-card";
   if (!u.alive) card.classList.add("dead");
 
   const ratio = u.hp / u.maxHp;
-  const posLabel = (side === "a" ? "A" : "B") + lane;
 
   card.innerHTML = `
     <div class="unit-portrait-top"></div>
@@ -69,6 +76,17 @@ function buildCard(u, side, lane) {
   // Mount the unit's portrait (or emoji fallback) above the info plate. The
   // card is built on the front lane idle by default; combat can swap actions.
   card.querySelector(".unit-portrait-top").appendChild(spriteEl(u, u.alive ? "idle" : "dead"));
+  return card;
+}
+
+function buildCard(u, side, lane) {
+  const posLabel = (side === "a" ? "A" : "B") + lane;
+  const card = unitCardEl(u, posLabel);
+  // Insert "no-drag" right after "unit-card" (not appended after "dead") so
+  // the className string matches pre-extraction byte-for-byte.
+  if (state.phase !== "setup") card.className = card.className.replace("unit-card", "unit-card no-drag");
+  card.dataset.id = u.id;
+  card.dataset.side = side;
 
   // Only YOUR army is arrangeable — the enemy's lane order is part of the
   // server's match snapshot (rearranging it client-side would be a lie).

@@ -20,6 +20,7 @@ import {
 } from "../services/content.js";
 import { fetchMe } from "../services/auth.js";
 import { showProfile } from "./auth.js";
+import { registerView } from "./views.js";
 
 const TABS = [
   ["browse", "🔍 Browse"],
@@ -70,14 +71,7 @@ export function initMarketplace() {
     msgs: document.getElementById("marketMsgs"),
     body: document.getElementById("marketBody"),
   };
-  els.btn.addEventListener("click", toggle);
-}
-
-async function toggle() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "🏪 Close Marketplace" : "🏪 Marketplace";
-  if (opening) await refresh();
+  registerView("marketplace", { button: els.btn, el: els.panel, onShow: refresh });
 }
 
 /** Re-read browse (from offset 0, current filters) + the caller's own

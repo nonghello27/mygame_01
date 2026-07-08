@@ -25,16 +25,15 @@
 
     <nav class="menubar" id="menubar">
       <div class="menu-group">
-        <button type="button" class="btn ghost menu-trigger" aria-haspopup="true" aria-expanded="false">Playground ▾</button>
+        <button type="button" class="btn ghost menu-trigger" aria-haspopup="true" aria-expanded="false">Me &amp; Team ▾</button>
         <div class="menu-drop">
-          <button class="btn primary" id="startBtn">Start Battle</button>
-          <button class="btn ghost" id="resetBtn" disabled>Reset</button>
-          <button class="btn ghost" id="shuffleBtn">New Opponent</button>
-          <button class="btn ghost" id="cineBtn">Cinematic: On</button>
+          <button class="btn ghost" id="teamBtn">🪖 Setup Team</button>
+          <button class="btn ghost" id="monsterSetupBtn">🐾 Setup Monster</button>
+          <button class="btn ghost" id="inventoryBtn">🎒 Inventory</button>
         </div>
       </div>
 
-      <button class="btn ghost" id="inventoryBtn">🎒 Inventory</button>
+      <button class="btn ghost" id="playgroundBtn">🏟 Playground</button>
 
       <div class="menu-group">
         <button type="button" class="btn ghost menu-trigger" aria-haspopup="true" aria-expanded="false">Activities ▾</button>
@@ -59,26 +58,50 @@
       <button class="btn ghost" id="adminBtn" hidden>⚙ Admin</button>
     </nav>
 
-    <div class="field-frame">
-      <div class="battlefield">
-        <div class="army army-a" id="armyA">
-          <div class="army-label"><span class="dot"></span>Your Army</div>
-        </div>
+    <div id="playgroundView">
+      <div class="field-frame">
+        <div class="battlefield">
+          <div class="army army-a" id="armyA">
+            <div class="army-label"><span class="dot"></span>Your Army</div>
+          </div>
 
-        <div class="clash" id="clash">
-          <div class="vs-badge" id="vsBadge">⚔ VS</div>
-          <div class="status" id="status">Front line: lane 1</div>
-        </div>
+          <div class="clash" id="clash">
+            <div class="vs-badge" id="vsBadge">⚔ VS</div>
+            <div class="status" id="status">Front line: lane 1</div>
+          </div>
 
-        <div class="army army-b" id="armyB">
-          <div class="army-label"><span class="dot"></span>Enemy</div>
+          <div class="army army-b" id="armyB">
+            <div class="army-label"><span class="dot"></span>Enemy <button class="btn ghost enemy-reroll" id="newEnemyBtn" type="button">🎲 New Enemy</button></div>
+          </div>
         </div>
+      </div>
+
+      <div class="controls" id="battleControls">
+        <button class="btn primary" id="startBtn">Start Battle</button>
+        <button class="btn ghost" id="resetBtn" disabled>Reset</button>
+        <button class="btn ghost" id="shuffleBtn">New Opponent</button>
+        <button class="btn ghost" id="cineBtn">Cinematic: On</button>
+      </div>
+
+      <div class="hint" id="hint">✋ Drag your units to swap their lane positions — the enemy's order is locked in</div>
+
+      <div class="log">
+        <h3>⚔ Battle Log</h3>
+        <div class="lines" id="logLines"></div>
       </div>
     </div>
 
-    <div class="party-strip" id="partyStrip" hidden></div>
+    <div class="team" id="teamPanel" hidden>
+      <h3>🪖 Setup Team</h3>
+      <div class="team-msgs" id="teamMsgs"></div>
+      <div class="team-body" id="teamBody"></div>
+    </div>
 
-    <div class="hint" id="hint">✋ Drag your units to swap their lane positions — the enemy's order is locked in</div>
+    <div class="monster-setup" id="monsterSetupPanel" hidden>
+      <h3>🐾 Setup Monster</h3>
+      <div class="ms-msgs" id="monsterSetupMsgs"></div>
+      <div class="ms-body" id="monsterSetupBody"></div>
+    </div>
 
     <div class="farm" id="farmPanel" hidden>
       <h3>🏕 Monster HQ — work &amp; training</h3>
@@ -142,11 +165,6 @@
       <h3>🏰 Guild</h3>
       <div class="guild-msgs" id="guildMsgs"></div>
       <div class="guild-body" id="guildBody"></div>
-    </div>
-
-    <div class="log">
-      <h3>⚔ Battle Log</h3>
-      <div class="lines" id="logLines"></div>
     </div>
   </div>
 

@@ -24,6 +24,7 @@ import {
 } from "../services/admin.js";
 import { SPRITES } from "../data/sprites.js";
 import { chromaKeyed } from "./chroma.js";
+import { registerView } from "./views.js";
 
 const TABS = [
   ["species", "🐲 Species"],
@@ -63,19 +64,12 @@ export function initAdmin() {
     msgs: document.getElementById("adminMsgs"),
     body: document.getElementById("adminBody"),
   };
-  els.btn.addEventListener("click", toggle);
+  registerView("admin", { button: els.btn, el: els.panel, onShow: refresh });
 }
 
 /** Called by ui/auth.js whenever the trainer profile is (re)shown. */
 export function setAdminVisible(isAdmin) {
   if (els) els.btn.hidden = !isAdmin;
-}
-
-async function toggle() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "⚙ Close Admin" : "⚙ Admin";
-  if (opening) await refresh();
 }
 
 async function refresh() {

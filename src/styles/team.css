@@ -1,0 +1,107 @@
+/* Setup Team panel (src/ui/team.js, Phase 10.5) — 3 drag-and-drop lane
+   slots over a sortable, horizontally-scrollable owned-monster row. Same
+   chrome family as the inventory/summon/adventure panels: header, msgs, body.
+   Phase 10.8: slots and roster render as board.js's battlefield-style
+   unit cards, decorated with the overlays below, plus a click-for-detail
+   area. */
+
+.team{
+  margin-top:18px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.team h3{
+  margin:0;font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.14em;
+  text-transform:uppercase;font-size:12px;color:var(--muted);
+  padding:11px 14px;border-bottom:1px solid var(--line);
+}
+
+.team-msgs{padding:0 14px}
+.team-msgs p{margin:9px 0 0;font-size:13px;color:var(--hp-good)}
+.team-msgs p.err{color:var(--hp-low)}
+
+.team-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:12px}
+
+/* --- lane slots --- */
+.team-slots{display:flex;gap:10px;flex-wrap:wrap}
+.team-slot{
+  flex:1 1 170px;min-width:170px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:11px;
+  padding:12px 10px;
+}
+.team-slot.empty{border-style:dashed;border-color:var(--line-strong)}
+.team-slot.drop-target{border-color:var(--a);border-style:solid}
+.team-slot-empty{font-size:12px;color:var(--muted);text-align:center}
+
+/* the slot's unit-card is the drag source; ✕ sits absolute top-right,
+   above the card's plate (z-index 4 clears badge-pos's 3). */
+.team-slot .unit-card{cursor:grab}
+.team-slot-clear{
+  position:absolute;top:-8px;right:-8px;z-index:4;
+  background:var(--bg-2);border:1px solid var(--line);color:var(--muted);
+  border-radius:50%;width:20px;height:20px;line-height:1;font-size:11px;
+  cursor:pointer;flex:none;
+}
+.team-slot-clear:hover{color:var(--hp-low);border-color:var(--hp-low)}
+
+/* --- sort bar --- */
+.team-sortbar{display:flex;align-items:center;gap:8px}
+.team-sort{
+  background:var(--bg-2);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:6px 8px;font-size:12.5px;
+}
+.team-dir{padding:6px 11px;font-size:12px;border-radius:8px}
+
+/* --- roster row --- */
+.team-roster{
+  display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;padding-bottom:6px;
+}
+/* Roster cards override board.css's touch-action:none with pan-x: the row
+   must stay horizontally touch-scrollable (a vertical drag up toward the
+   slots still starts a pointer drag; a horizontal swipe scrolls instead —
+   the existing pointercancel cleanup in ui/team.js handles either way this
+   resolves). Slot cards keep the inherited touch-action:none. */
+.team-roster .unit-card{flex:0 0 auto;touch-action:pan-x}
+.team-roster .unit-card.busy{opacity:.55;cursor:default}
+.team-card-busy-tag{
+  display:block;text-align:center;font-size:10.5px;color:var(--clash);
+  margin-top:4px;
+}
+.team-card-badge{
+  position:absolute;top:-6px;right:-6px;z-index:4;
+  display:flex;align-items:center;justify-content:center;width:18px;height:18px;
+  border-radius:50%;background:var(--a-deep);color:#06150f;font-weight:700;font-size:11px;
+}
+.team-roster .unit-card.slotted .unit-plate{border-color:var(--a-deep)}
+
+/* --- detail area --- */
+.team-detail{
+  background:var(--bg-2);border:1px solid var(--line);border-radius:11px;
+  padding:12px 14px;display:flex;flex-direction:column;gap:10px;
+}
+.team-detail-header{display:flex;align-items:flex-start;gap:10px}
+.team-detail-emoji{font-size:30px;line-height:1}
+.team-detail-head{flex:1;min-width:0}
+.team-detail-name{font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px}
+.team-detail-sub{font-size:12px;color:var(--muted);margin-top:1px}
+.team-detail-kind{font-size:11px;color:var(--muted);margin-top:1px}
+.team-detail-close{position:static;top:auto;right:auto}
+
+.team-detail-stats,.team-detail-actions{display:flex;flex-wrap:wrap;gap:6px}
+.team-detail-badge{
+  background:var(--panel-2);color:var(--muted);border:1px solid var(--line);
+  border-radius:99px;padding:3px 9px;font-size:11.5px;font-weight:600;
+}
+.team-detail-attrs{font-size:12px;color:var(--muted)}
+.team-detail-skills{display:flex;flex-direction:column;gap:2px}
+.team-detail-skill{font-size:12.5px}
+.team-detail-hint{font-size:12px;color:var(--muted)}
+.team-detail-busy{font-size:12px;color:var(--clash)}
+
+/* --- footer --- */
+.team-bar{display:flex;gap:8px;flex-wrap:wrap}
+
+/* --- drag clone (mirrors board.css's .drag-clone precedent) --- */
+.team-drag-clone{
+  position:fixed;z-index:1000;pointer-events:none;opacity:0.9;
+}

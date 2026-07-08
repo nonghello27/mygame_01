@@ -45,6 +45,7 @@ import {
   fetchGvgEvents, submitGvgTeam, withdrawGvgTeam, setGvgLineup, registerGvgGuild,
   fetchGvgDetail, loadFarm,
 } from "../services/content.js";
+import { registerView } from "./views.js";
 
 const CREATE_COST_LABEL = "500 🪙"; // mirrors GUILD_CREATE_COST server/services/guild.js
 
@@ -75,14 +76,7 @@ export function initGuild() {
     msgs: document.getElementById("guildMsgs"),
     body: document.getElementById("guildBody"),
   };
-  els.btn.addEventListener("click", toggle);
-}
-
-async function toggle() {
-  const opening = els.panel.hidden;
-  els.panel.hidden = !opening;
-  els.btn.textContent = opening ? "🏰 Close Guild" : "🏰 Guild";
-  if (opening) await refresh();
+  registerView("guild", { button: els.btn, el: els.panel, onShow: refresh });
 }
 
 async function refresh() {
