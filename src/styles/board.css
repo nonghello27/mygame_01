@@ -66,6 +66,16 @@
 .unit-portrait-top .sprite{transform:scale(.9)}
 .army-b .unit-portrait-top .sprite{transform:scale(.9) scaleX(-1)}
 
+/* status-icon row: fills left->right in the order gained, along the top of
+   the portrait. pointer-events:auto is required despite the parent
+   .unit-portrait-top being pointer-events:none — otherwise each icon's
+   native title tooltip would never fire. */
+.unit-status-row{position:absolute;top:0;left:2px;display:flex;gap:2px;z-index:3;pointer-events:auto}
+.status-icon-img{
+  width:28px;height:28px;object-fit:contain;display:block;padding:2px;
+  border-radius:6px;background:rgba(0,0,0,0.35);border:1px solid var(--line);
+}
+
 /* the info "plate": the bordered box, now shorter without the portrait inside */
 .unit-plate{
   position:relative;z-index:1;min-height:170px;

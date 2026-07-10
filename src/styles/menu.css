@@ -7,7 +7,7 @@
 .menu-group{position:relative}
 
 .menubar > .btn,
-.menu-trigger{white-space:nowrap;font-size:12px;padding:6px 10px}
+.menubar .menu-trigger{white-space:nowrap;font-size:12px;padding:6px 10px}
 
 .menu-drop{
   display:none;flex-direction:column;gap:4px;
@@ -27,4 +27,6 @@
 .menu-drop .btn{
   width:100%;text-align:left;border:0;border-radius:8px;
   padding:10px 14px;box-shadow:none;
+  /* match the top-level items' 12px so the whole menu is uniform */
+  font-size:12px;
 }

@@ -12,7 +12,8 @@ import { state } from "./state.js";
 import { requestBattle } from "../services/content.js";
 import { sleep } from "../utils/helpers.js";
 import { log, nameSpan } from "../ui/log.js";
-import { renderBoard, cardEl, updateCardHp, floatDamage } from "../ui/board.js";
+import { renderBoard, cardEl, updateCardHp, updateCardStatuses, floatDamage } from "../ui/board.js";
+import { skillIconHtml } from "../ui/skillMedia.js";
 import { playCutscene } from "../cutscene/cutscene.js";
 
 /**
@@ -91,7 +92,9 @@ async function replayTurn(ev, setStatus) {
 
 function replaySkill(ev) {
   const u = unitByRef(ev);
-  if (u) log(`${nameSpan(u, ev.side)} uses <b>${ev.name}</b>!`, true);
+  if (!u) return;
+  const found = u.skills?.find((s) => s.id === ev.skill);
+  log(`${skillIconHtml(found ?? {})}${nameSpan(u, ev.side)} uses <b>${ev.name}</b>!`, true);
 }
 
 /** A trainer skill fires (battle_start or after_ally_turns) — announce it;
@@ -134,12 +137,15 @@ function replayStatus(ev) {
   const u = unitByRef(ev);
   if (!u) return;
   if (!u.statuses.includes(ev.status)) u.statuses.push(ev.status);
+  updateCardStatuses(u);
   log(`${nameSpan(u, ev.side)} is afflicted: <b>${ev.status}</b> (${ev.turns} turns).`);
 }
 
 function replayStatusEnd(ev) {
   const u = unitByRef(ev);
-  if (u) u.statuses = u.statuses.filter((s) => s !== ev.status);
+  if (!u) return;
+  u.statuses = u.statuses.filter((s) => s !== ev.status);
+  updateCardStatuses(u);
 }
 
 async function replayHeal(ev) {

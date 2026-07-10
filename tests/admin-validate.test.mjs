@@ -22,8 +22,23 @@ const rejects = (fn, why) => assert.throws(fn, (e) => e.status === 400, why);
 
 test("every seed class validates", () => {
   for (const [cls, m] of Object.entries(CLASS_META)) {
-    assert.deepEqual(validateClass({ cls, attackName: m.attackName, fx: m.fx }).cls, cls);
+    const v = validateClass({ cls, attackName: m.attackName, fx: m.fx, icon: m.icon });
+    assert.deepEqual(v.cls, cls);
+    assert.equal(v.icon, m.icon);
   }
+});
+
+test("validateClass's icon is optional: absent -> null, a valid id round-trips, a bad one rejects", () => {
+  assert.equal(validateClass({ cls: "Knight", attackName: "Blade Arc", fx: "slash" }).icon, null);
+  assert.equal(
+    validateClass({ cls: "Knight", attackName: "Blade Arc", fx: "slash", icon: "" }).icon, null);
+  assert.equal(
+    validateClass({ cls: "Knight", attackName: "Blade Arc", fx: "slash", icon: "knight-2" }).icon,
+    "knight-2");
+  rejects(() => validateClass({ cls: "Knight", attackName: "Blade Arc", fx: "slash", icon: "Knight" }),
+    "icon must be lowercase");
+  rejects(() => validateClass({ cls: "Knight", attackName: "Blade Arc", fx: "slash", icon: "1knight" }),
+    "icon must start with a letter");
 });
 
 test("every seed skill validates and round-trips its data", () => {
@@ -31,7 +46,24 @@ test("every seed skill validates and round-trips its data", () => {
     const v = validateSkill(sk);
     assert.equal(v.id, sk.id);
     assert.deepEqual(v.data, sk.data, `${sk.id}: data changed in validation`);
+    assert.equal(v.icon, sk.icon ?? null);
+    assert.equal(v.animation, sk.animation ?? null);
   }
+});
+
+test("validateSkill's icon/animation are optional: absent -> null, valid values round-trip, bad ones reject", () => {
+  const base = { id: "sk_x", name: "X", slot: "normal", cooldown: 0,
+    data: { power: { scale: "phys", pct: 100 } } };
+  assert.equal(validateSkill(base).icon, null);
+  assert.equal(validateSkill(base).animation, null);
+  assert.equal(validateSkill({ ...base, icon: "" }).icon, null);
+  assert.equal(validateSkill({ ...base, animation: "" }).animation, null);
+  assert.equal(validateSkill({ ...base, icon: "slash-2" }).icon, "slash-2");
+  assert.equal(validateSkill({ ...base, animation: "x.svg" }).animation, "x.svg");
+  assert.equal(validateSkill({ ...base, animation: "x.png" }).animation, "x.png");
+  rejects(() => validateSkill({ ...base, icon: "Slash" }), "icon must be lowercase");
+  rejects(() => validateSkill({ ...base, animation: "x" }), "animation needs an extension");
+  rejects(() => validateSkill({ ...base, animation: "x.gif" }), "animation extension must be svg or png");
 });
 
 test("every seed species validates against the seed classes + skills", () => {

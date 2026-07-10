@@ -9,18 +9,19 @@
 
 export async function listClassesAdmin(sql) {
   const rows = await sql`
-    SELECT c.cls, c.attack_name, c.fx,
+    SELECT c.cls, c.attack_name, c.fx, c.icon,
       (SELECT count(*)::int FROM monster_species s WHERE s.cls = c.cls) AS species_count
     FROM classes c ORDER BY c.cls`;
   return rows.map((r) => ({
-    cls: r.cls, attackName: r.attack_name, fx: r.fx, speciesCount: r.species_count,
+    cls: r.cls, attackName: r.attack_name, fx: r.fx, icon: r.icon, speciesCount: r.species_count,
   }));
 }
 
-export async function upsertClass(sql, { cls, attackName, fx }) {
+export async function upsertClass(sql, { cls, attackName, fx, icon }) {
   await sql`
-    INSERT INTO classes (cls, attack_name, fx) VALUES (${cls}, ${attackName}, ${fx})
-    ON CONFLICT (cls) DO UPDATE SET attack_name = EXCLUDED.attack_name, fx = EXCLUDED.fx`;
+    INSERT INTO classes (cls, attack_name, fx, icon) VALUES (${cls}, ${attackName}, ${fx}, ${icon})
+    ON CONFLICT (cls) DO UPDATE SET
+      attack_name = EXCLUDED.attack_name, fx = EXCLUDED.fx, icon = EXCLUDED.icon`;
 }
 
 export async function classUsage(sql, cls) {
@@ -34,23 +35,25 @@ export const deleteClass = (sql, cls) => sql`DELETE FROM classes WHERE cls = ${c
 
 export async function listSkillsAdmin(sql) {
   const rows = await sql`
-    SELECT k.id, k.name, k.slot, k.cooldown, k.data,
+    SELECT k.id, k.name, k.slot, k.cooldown, k.data, k.icon, k.animation,
       (SELECT count(*)::int FROM species_skills ss WHERE ss.skill_id = k.id) AS species_uses,
       (SELECT count(*)::int FROM monster_skills ms WHERE ms.skill_id = k.id) AS monster_uses
     FROM skills k ORDER BY k.slot, k.id`;
   return rows.map((r) => ({
     id: r.id, name: r.name, slot: r.slot, cooldown: r.cooldown, data: r.data,
+    icon: r.icon, animation: r.animation,
     speciesUses: r.species_uses, monsterUses: r.monster_uses,
   }));
 }
 
-export async function upsertSkill(sql, { id, name, slot, cooldown, data }) {
+export async function upsertSkill(sql, { id, name, slot, cooldown, data, icon, animation }) {
   await sql`
-    INSERT INTO skills (id, name, slot, cooldown, data)
-    VALUES (${id}, ${name}, ${slot}, ${cooldown}, ${JSON.stringify(data)}::jsonb)
+    INSERT INTO skills (id, name, slot, cooldown, data, icon, animation)
+    VALUES (${id}, ${name}, ${slot}, ${cooldown}, ${JSON.stringify(data)}::jsonb, ${icon}, ${animation})
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name, slot = EXCLUDED.slot,
-      cooldown = EXCLUDED.cooldown, data = EXCLUDED.data`;
+      cooldown = EXCLUDED.cooldown, data = EXCLUDED.data,
+      icon = EXCLUDED.icon, animation = EXCLUDED.animation`;
 }
 
 export async function skillUsage(sql, id) {

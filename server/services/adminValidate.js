@@ -103,12 +103,15 @@ function onlyKeys(obj, allowed, label) {
 
 // --- classes -----------------------------------------------------------------
 
-/** @returns {{cls:string, attackName:string, fx:string}} */
+/** @returns {{cls:string, attackName:string, fx:string, icon:string|null}} */
 export function validateClass(input) {
   return {
     cls: str(input.cls, "class name", { pattern: /^[A-Za-z][A-Za-z0-9 ]*$/ }),
     attackName: str(input.attackName, "attack name"),
     fx: str(input.fx, "fx id", { pattern: /^[a-z][a-z0-9_]*$/ }),
+    // optional: a base filename under public/icons/classes/, no extension.
+    // Absent/empty falls back to the class name lowercased (classIconEl()).
+    icon: input.icon ? str(input.icon, "icon id", { pattern: /^[a-z][a-z0-9_-]*$/ }) : null,
   };
 }
 
@@ -252,7 +255,7 @@ export function validateRuneEffects(list, label) {
   });
 }
 
-/** @returns {{id:string, name:string, slot:string, cooldown:number, data:object}} */
+/** @returns {{id:string, name:string, slot:string, cooldown:number, data:object, icon:?string, animation:?string}} */
 export function validateSkill(input) {
   const skill = {
     id: str(input.id, "skill id", { pattern: /^sk_[a-z0-9_]+$/ }),
@@ -260,6 +263,14 @@ export function validateSkill(input) {
     slot: oneOf(input.slot, SKILL_SLOTS, "slot"),
     cooldown: int(input.cooldown ?? 0, "cooldown", { min: 0, max: 20 }),
     data: validateSkillData(input.data),
+    // optional: a base filename under public/icons/skills/, no extension.
+    // Absent/empty falls back to the skill's slot placeholder, then default.png.
+    icon: input.icon ? str(input.icon, "icon id", { pattern: /^[a-z][a-z0-9_-]*$/ }) : null,
+    // optional: a full filename (extension included) under public/anim/skills/.
+    // Absent/empty means no animation yet — see that folder's README.
+    animation: input.animation
+      ? str(input.animation, "animation filename", { pattern: /^[a-z0-9][a-z0-9_-]*\.(svg|png)$/ })
+      : null,
   };
   if (skill.slot === "passive" && !skill.data.passive) throw bad("a passive skill needs data.passive");
   if (skill.slot !== "passive" && skill.data.passive) throw bad(`a ${skill.slot} skill cannot have data.passive`);

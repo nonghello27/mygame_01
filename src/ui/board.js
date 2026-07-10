@@ -7,6 +7,8 @@ import { hpColor } from "../utils/helpers.js";
 import { enableDragSwap } from "./dragdrop.js";
 import { spriteEl } from "./sprite.js";
 import { powerScore } from "../../shared/rules/formulas.js";
+import { STATUS_ICONS } from "../data/statusIcons.js";
+import { STATUSES } from "../../shared/rules/statuses.js";
 
 let elA, elB;
 
@@ -77,7 +79,7 @@ export function unitCardEl(u, posLabel) {
   const nameSizeClass = nameLen > 18 ? "name-xxs" : nameLen > 14 ? "name-xs" : nameLen > 10 ? "name-sm" : "";
 
   card.innerHTML = `
-    <div class="unit-portrait-top"></div>
+    <div class="unit-portrait-top"><div class="unit-status-row"></div></div>
     <div class="unit-plate">
       <span class="badge-pos">${posLabel}</span>
       <span class="front-flag">FRONT</span>
@@ -109,6 +111,7 @@ export function unitCardEl(u, posLabel) {
   // card is built on the front lane idle by default; combat can swap actions.
   card.querySelector(".unit-portrait-top").appendChild(spriteEl(u, u.alive ? "idle" : "dead"));
   card.querySelector(".unit-class-icon").appendChild(classIconEl(u.cls));
+  fillStatusRow(card.querySelector(".unit-status-row"), u.statuses ?? []);
   return card;
 }
 
@@ -145,28 +148,58 @@ function elementLabel(el) {
 
 /**
  * Build the class-icon tile's `<img>` (Phase 10.9) — its `title`/`alt` is
- * the class name (a native tooltip replaces the old text label). Tries
- * `<class>.png`, then `.svg`, then a shared `default.svg`, so a user can
- * drop in replacement art under public/icons/classes/ without touching
- * code (see that dir's README.md) — same public-asset path style as
- * ui/sprite.js's `/sprites/...` references.
+ * the class name (a native tooltip replaces the old text label). Resolves
+ * the PNG's base filename via the classes MASTER TABLE's `icon` column
+ * (Phase 10.12 follow-up, server-loaded into `state.classes` at init via
+ * GET /api/trainer/classes — admin-editable live, ui/admin.js's 🎭 Classes
+ * tab), falling back to the class name lowercased when that's absent (a
+ * class missing an explicit icon, or one not in state.classes at all — e.g.
+ * an admin-created live class read before a refresh), then to a single
+ * fallback, `default.png`, if that art is missing too — so a user can drop
+ * in replacement art under public/icons/classes/ without touching code (see
+ * that dir's README.md) — same public-asset path style as ui/sprite.js's
+ * `/sprites/...` references.
  */
 function classIconEl(cls) {
-  const lower = String(cls || "").toLowerCase();
+  const base = state.classes[cls]?.icon || String(cls || "").toLowerCase();
   const img = document.createElement("img");
   img.className = "unit-class-icon-img";
   img.alt = cls || "";
   img.title = cls || "";
   img.draggable = false;
-  img.src = `/icons/classes/${lower}.png`;
+  img.src = `/icons/classes/${base}.png`;
   img.onerror = () => {
-    img.onerror = () => {
-      img.onerror = null; // guard: a missing default.svg must not loop
-      img.src = "/icons/classes/default.svg";
-    };
-    img.src = `/icons/classes/${lower}.svg`;
+    img.onerror = null; // guard: a missing default.png must not loop
+    img.src = "/icons/classes/default.png";
   };
   return img;
+}
+
+/**
+ * (Re)fill a `.unit-status-row` element from a statuses array (status-id
+ * strings, left->right in the order gained). Resolves each PNG's base
+ * filename via `STATUS_ICONS[id]` (the authoritative map), falling back to
+ * the status id itself for a status not in the map, then to a single
+ * fallback, `default.png`, if that art is missing too — same lookup chain
+ * as `classIconEl()` (see public/icons/statuses/README.md).
+ */
+function fillStatusRow(row, statuses) {
+  if (!row) return;
+  row.innerHTML = "";
+  for (const id of statuses) {
+    const base = STATUS_ICONS[id] || id;
+    const img = document.createElement("img");
+    img.className = "status-icon-img";
+    img.alt = STATUSES[id]?.label || id;
+    img.title = STATUSES[id]?.label || id;
+    img.draggable = false;
+    img.src = `/icons/statuses/${base}.png`;
+    img.onerror = () => {
+      img.onerror = null; // guard: a missing default.png must not loop
+      img.src = "/icons/statuses/default.png";
+    };
+    row.appendChild(img);
+  }
 }
 
 /** "34–38" for v2 lanes (magic attackers show their MATK roll); plain atk otherwise. */
@@ -197,6 +230,13 @@ export function updateCardHp(unit) {
   if (fill) { fill.style.width = ratio * 100 + "%"; fill.style.background = hpColor(ratio); }
   if (now) now.textContent = Math.round(unit.hp);
   setTimeout(() => card.classList.remove("hit"), 340);
+}
+
+/** Update a unit's on-card status-icon row (top of the portrait, left→right in order gained). */
+export function updateCardStatuses(unit) {
+  const card = cardEl(unit.id);
+  if (!card) return;
+  fillStatusRow(card.querySelector(".unit-status-row"), unit.statuses);
 }
 
 /** Floating "-N" (or a word like MISS) over a card. */

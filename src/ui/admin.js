@@ -1,11 +1,16 @@
 // Admin console (Phase 5): sub-menu tabs over the master tables — Species,
-// Skills, Classes, Jobs, Items, Equipment, Runes, Summons, Adventures — plus
-// a Trainers roster browser (browse accounts, view/mint into any trainer's
-// monster roster) and a read-only Sprites gallery. Pure presentation over
-// /api/admin/*: every dropdown is built from the enums the SERVER sent
-// (so options can't drift from the engine), every save posts a proposed row
-// and re-renders the fresh masterState the server responds with, and every
-// image (sprite portrait, sheet frame, emoji fallback) is shown as an image.
+// Skills, Classes (whose `icon` field, Phase 10.12 follow-up, is a live
+// admin-editable pointer into public/icons/classes/ with a preview), Jobs,
+// Items, Equipment, Runes, Summons, Adventures — plus a Trainers roster
+// browser (browse accounts, view/mint into any trainer's monster roster), a
+// read-only Sprites gallery, and a read-only Statuses reference tab (the
+// engine's closed status registry, shared/rules/statuses.js, is never DB
+// rows — this tab just surfaces the id/label/icon-file mapping). Pure
+// presentation over /api/admin/*: every dropdown is built from the enums
+// the SERVER sent (so options can't drift from the engine), every save
+// posts a proposed row and re-renders the fresh masterState the server
+// responds with, and every image (sprite portrait, sheet frame, emoji
+// fallback, class/status icon) is shown as an image.
 //
 // The ⚙ button only appears for admins (ui/auth.js toggles it from the
 // trainer's isAdmin flag) — but visibility is cosmetic; the API re-checks
@@ -26,8 +31,11 @@ import {
 import { fetchMe } from "../services/auth.js";
 import { showProfile } from "./auth.js";
 import { SPRITES } from "../data/sprites.js";
+import { STATUS_ICONS } from "../data/statusIcons.js";
+import { STATUSES } from "../../shared/rules/statuses.js";
 import { chromaKeyed } from "./chroma.js";
 import { registerView } from "./views.js";
+import { skillAnimationEl } from "./skillMedia.js";
 
 const TABS = [
   ["species", "🐲 Species"],
@@ -43,6 +51,7 @@ const TABS = [
   ["gvg", "⚔ GVG"],
   ["trainers", "👥 Trainers"],
   ["sprites", "🖼 Sprites"],
+  ["statuses", "💫 Statuses"],
 ];
 
 const ATTR_LABEL = { str: "STR", agi: "AGI", vit: "VIT", int: "INT", dex: "DEX" };
@@ -228,7 +237,7 @@ function renderBody() {
     species: speciesTab, skills: skillsTab, classes: classesTab, jobs: jobsTab,
     items: itemsTab, equipment: equipmentTab, runes: runesTab,
     summons: summonsTab, adventures: adventuresTab, tournaments: tournamentsTab,
-    gvg: gvgTab, trainers: trainersTab, sprites: spritesTab,
+    gvg: gvgTab, trainers: trainersTab, sprites: spritesTab, statuses: statusesTab,
   })[tab]();
 }
 
@@ -366,12 +375,14 @@ function skillsTab() {
   els.body.appendChild(toolbar("＋ New skill", () => ({
     id: "", name: "", slot: "normal", cooldown: 0,
     data: { power: { scale: "phys", pct: 120, perLevel: 5 } },
+    icon: null, animation: null,
     speciesUses: 0, monsterUses: 0, isNew: true,
   })));
 
   for (const k of data.skills) {
     const row = el("div", "adm-row");
     const id = el("div", "adm-id");
+    id.append(iconImg("skills", k.icon || k.slot || "default", k.name, 26));
     const txt = el("span");
     txt.append(el("b", null, k.name), el("small", null, `${k.id} · cooldown ${k.cooldown} · ${summarizeSkill(k.data)}`));
     id.append(txt);
@@ -408,6 +419,8 @@ function skillForm(k) {
     name: textInput(k.name),
     slot: selectInput(data.enums.skillSlots, k.slot),
     cooldown: numInput(k.cooldown, 0, 20),
+    icon: textInput(k.icon ?? "", "normal"),
+    animation: textInput(k.animation ?? "", "sample_slash.svg"),
     data: el("textarea"),
   };
   f.id.disabled = !k.isNew;
@@ -415,14 +428,50 @@ function skillForm(k) {
   f.data.spellcheck = false;
   f.data.value = JSON.stringify(k.data, null, 2);
 
+  // Live icon preview — the classForm paintPreview pattern, repaints on
+  // icon/slot input (empty icon falls back to the slot placeholder).
+  const iconPreview = el("div", "adm-preview");
+  const paintIconPreview = () => {
+    iconPreview.innerHTML = "";
+    const base = f.icon.value.trim() || f.slot.value || "default";
+    iconPreview.append(iconImg("skills", base, f.name.value, 64), el("small", null, `/icons/skills/${base}.png`));
+  };
+  f.icon.addEventListener("input", paintIconPreview);
+  f.slot.addEventListener("change", paintIconPreview);
+  paintIconPreview();
+
+  // Live animation preview — extension picks the renderer (ui/skillMedia.js).
+  const animPreview = el("div", "adm-preview");
+  const paintAnimPreview = () => {
+    animPreview.innerHTML = "";
+    const file = f.animation.value.trim();
+    if (!file) {
+      animPreview.append(el("small", null, "no animation"));
+      return;
+    }
+    const media = skillAnimationEl(file);
+    if (media) animPreview.append(media);
+    animPreview.append(el("small", null, `/anim/skills/${file}`));
+  };
+  f.animation.addEventListener("input", paintAnimPreview);
+  paintAnimPreview();
+
   const grid = el("div", "adm-grid");
   grid.append(field("Id (permanent)", f.id), field("Name", f.name),
-    field("Slot", f.slot), field("Cooldown (turns)", f.cooldown));
+    field("Slot", f.slot), field("Cooldown (turns)", f.cooldown),
+    field("Icon id", f.icon), field("Animation file", f.animation));
 
   const dataField = field("Data (JSON — the engine's closed grammar)", f.data);
   dataField.classList.add("adm-wide");
 
-  form.append(grid, dataField, el("p", "adm-hint", SKILL_DATA_HINT),
+  form.append(iconPreview, animPreview, grid, dataField, el("p", "adm-hint", SKILL_DATA_HINT),
+    el("p", "adm-hint",
+      "Icon art lives in public/icons/skills/ (see that folder's README) — leave " +
+      "blank to fall back to the skill's slot placeholder, then default.png."),
+    el("p", "adm-hint",
+      "Animation is a filename in public/anim/skills/ (see that folder's README) — " +
+      ".svg renders as a self-animating SVG, .png as a CSS sprite strip of square " +
+      "frames; leave blank for none."),
     formButtons(() => {
       let parsed;
       try {
@@ -433,6 +482,7 @@ function skillForm(k) {
       return saveSkill({
         id: f.id.value.trim(), name: f.name.value.trim(),
         slot: f.slot.value, cooldown: +f.cooldown.value, data: parsed,
+        icon: f.icon.value.trim() || null, animation: f.animation.value.trim() || null,
       });
     }, "Skill saved"));
   els.body.appendChild(form);
@@ -442,11 +492,12 @@ function skillForm(k) {
 
 function classesTab() {
   if (editing) return classForm(editing);
-  els.body.appendChild(toolbar("＋ New class", () => ({ cls: "", attackName: "", fx: "", speciesCount: 0, isNew: true })));
+  els.body.appendChild(toolbar("＋ New class", () => ({ cls: "", attackName: "", fx: "", icon: null, speciesCount: 0, isNew: true })));
 
   for (const c of data.classes) {
     const row = el("div", "adm-row");
     const id = el("div", "adm-id");
+    id.append(iconImg("classes", c.icon || c.cls.toLowerCase(), c.cls, 26));
     const txt = el("span");
     txt.append(el("b", null, c.cls), el("small", null, `attack “${c.attackName}” · fx ${c.fx}`));
     id.append(txt);
@@ -462,6 +513,25 @@ function classesTab() {
   }
 }
 
+/** A `/icons/<dir>/<base>.png` image with the standard default.png fallback
+ *  (the onerror is re-armed each time src changes so a repeated bad value
+ *  still falls back cleanly — used by both list rows and live form previews).
+ *  Shared by the Classes tab (`dir:"classes"`) and Skills tab
+ *  (`dir:"skills"`, Phase 10.13). */
+function iconImg(dir, base, title, size = 44) {
+  const img = el("img", "adm-thumb");
+  img.width = size;
+  img.height = size;
+  img.alt = title || "";
+  img.title = title || "";
+  img.src = `/icons/${dir}/${base}.png`;
+  img.onerror = () => {
+    img.onerror = null; // guard: a missing default.png must not loop
+    img.src = `/icons/${dir}/default.png`;
+  };
+  return img;
+}
+
 function classForm(c) {
   const form = el("div", "adm-form");
   form.appendChild(el("h4", null, c.isNew ? "New class" : `Edit class — ${c.cls}`));
@@ -469,16 +539,36 @@ function classForm(c) {
     cls: textInput(c.cls, "Knight"),
     attackName: textInput(c.attackName, "Blade Arc"),
     fx: textInput(c.fx, "slash"),
+    icon: textInput(c.icon ?? "", "knight"),
   };
   f.cls.disabled = !c.isNew;
+
+  // Live visual preview: the icon this class will render with on the board.
+  const preview = el("div", "adm-preview");
+  const paintPreview = () => {
+    preview.innerHTML = "";
+    const base = f.icon.value.trim() || f.cls.value.trim().toLowerCase() || "default";
+    preview.append(iconImg("classes", base, f.cls.value, 64), el("small", null, `/icons/classes/${base}.png`));
+  };
+  f.icon.addEventListener("input", paintPreview);
+  f.cls.addEventListener("input", paintPreview);
+  paintPreview();
+
   const grid = el("div", "adm-grid");
-  grid.append(field("Class (permanent)", f.cls), field("Attack name", f.attackName), field("Fx id", f.fx));
-  form.append(grid,
+  grid.append(
+    field("Class (permanent)", f.cls), field("Attack name", f.attackName),
+    field("Fx id", f.fx), field("Icon id", f.icon),
+  );
+  form.append(preview, grid,
     el("p", "adm-hint",
       "A brand-new fx id also needs a portrait case in cutscene/portraits.js and " +
       "keyframes in styles/cutscene.css — until then the cutscene falls back to a plain hit."),
+    el("p", "adm-hint",
+      "Icon art lives in public/icons/classes/ (see that folder's README) — leave " +
+      "blank to fall back to the class name lowercased."),
     formButtons(() => saveClass({
       cls: f.cls.value.trim(), attackName: f.attackName.value.trim(), fx: f.fx.value.trim(),
+      icon: f.icon.value.trim() || null,
     }), "Class saved"));
   els.body.appendChild(form);
 }
@@ -1547,6 +1637,42 @@ function spritesTab() {
     gallery.appendChild(card);
   }
   els.body.appendChild(gallery);
+}
+
+// ---------- statuses (read-only reference) ----------
+
+/** Statuses are the engine's CLOSED registry (shared/rules/statuses.js) —
+ *  unlike every other tab here, this one is never editable: a new status
+ *  needs an engine-side rules entry, not a DB row. This tab exists purely so
+ *  an admin can see the id/label/icon-file mapping in one place. */
+function statusesTab() {
+  els.body.appendChild(el("p", "adm-hint",
+    "Statuses are the engine's closed registry (shared/rules/statuses.js) — they are " +
+    "never DB rows, so there is nothing to edit here. Their icon filenames are mapped " +
+    "in src/data/statusIcons.js and the art lives in public/icons/statuses/: swap art by " +
+    "replacing the PNG, repoint a status at different art by editing that map."));
+
+  for (const [id, s] of Object.entries(STATUSES)) {
+    const row = el("div", "adm-row");
+    const idCol = el("div", "adm-id");
+    const base = STATUS_ICONS[id] || id;
+    const img = el("img", "adm-thumb");
+    img.width = 28;
+    img.height = 28;
+    img.alt = s.label;
+    img.title = s.label;
+    img.src = `/icons/statuses/${base}.png`;
+    img.onerror = () => {
+      img.onerror = null; // guard: a missing default.png must not loop
+      img.src = "/icons/statuses/default.png";
+    };
+    idCol.append(img);
+    const txt = el("span");
+    txt.append(el("b", null, s.label), el("small", null, `${id} · icon file ${base}.png`));
+    idCol.append(txt);
+    row.append(idCol);
+    els.body.appendChild(row);
+  }
 }
 
 // ---------- shared form plumbing ----------

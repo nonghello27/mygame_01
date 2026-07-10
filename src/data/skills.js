@@ -10,8 +10,17 @@
 //   passive:[{ when:'battle_start', op:'perm_stat', stat, pct?|flat? }]
 //
 // Slots: 'passive' | 'normal' | 'ultimate'. Ultimates start ON cooldown.
+//
+// Two OPTIONAL per-skill media fields (Phase 10.12's class-icon idea,
+// applied to skills): `icon` (a base filename under public/icons/skills/,
+// no extension — absent/null falls back to the skill's `slot` placeholder,
+// then default.png) and `animation` (a full filename under
+// public/anim/skills/, extension included — absent/null means no
+// animation yet; see that folder's README for the .svg/.png renderer
+// split). Neither is set on any seed skill below — null is correct, the
+// slot fallback already covers display.
 
-/** @type {Array<{id:string,name:string,slot:string,cooldown:number,data:object}>} */
+/** @type {Array<{id:string,name:string,slot:string,cooldown:number,data:object,icon?:string,animation?:string}>} */
 export const SKILLS = [
   // --- normals ------------------------------------------------------------
   { id: "sk_power_strike", name: "Power Strike", slot: "normal", cooldown: 0,

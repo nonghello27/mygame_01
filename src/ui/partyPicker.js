@@ -16,6 +16,7 @@
 // globally via styles/team.css — see that file's header comment.
 
 import { unitCardEl } from "./board.js";
+import { skillIconEl } from "./skillMedia.js";
 import { deriveStats, powerScore, applyGearStats } from "../../shared/rules/formulas.js";
 
 const BUSY_LABEL = {
@@ -286,7 +287,9 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
       skillsBox.append(el("div", "team-detail-hint", "No skills."));
     } else {
       for (const sk of m.skills) {
-        skillsBox.append(el("div", "team-detail-skill", `${sk.name} (Lv ${sk.level})`));
+        const row = el("div", "team-detail-skill");
+        row.append(skillIconEl(sk, 16), el("span", null, `${sk.name} (Lv ${sk.level})`));
+        skillsBox.append(row);
       }
     }
     box.append(skillsBox);

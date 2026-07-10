@@ -97,8 +97,25 @@ The vision and plans live in `docs/` — treat them as part of this file:
   ("My Units" over "Enemy Units" with the VS clash zone between) at every
   width instead of the old side-by-side desktop layout, with both armies'
   front-line units rendered rightmost so lane 1 stays aligned across the
-  stack — **Phase 10.11 is done**. Phase 11 (chat, notifications & the
-  photo quest) is next.
+  stack — **Phase 10.11 is done**. Phase 10.12 (graphics), staged
+  2026-07-10, is also code complete: class icons are now PNG-first (an
+  explicit `icon` filename map on `CLASS_META`, art under
+  `public/icons/classes/`) and battle now shows a per-unit status-icon row
+  along the top of the portrait, filling left→right in the order gained,
+  fed by the replayer's `status`/`status_end` events, with filenames mapped
+  in `src/data/statusIcons.js` and art under `public/icons/statuses/` —
+  **Phase 10.12 is done**, EXTENDED same-day with a playtest follow-up: a
+  uniform 12px menu font, 28px status icons, the class→icon map promoted
+  from `CLASS_META` to a live, admin-editable `classes.icon` column
+  (migration `020_class_icon.sql`, with an image preview), and a read-only
+  💫 Statuses reference tab in the admin console. Phase 10.13 (skill media),
+  staged 2026-07-11, is also code complete: `skills.icon`/`skills.animation`
+  columns (migration `021_skill_media.sql`) ride every monster read into a
+  new `ui/skillMedia.js` renderer seam (an icon lookup chain plus an
+  extension-picks-the-renderer animation chain), surfaced in the
+  party-picker detail, the battle log, and the admin ⚔ Skills tab's two new
+  fields with live previews. Phase 11 (chat, notifications & the photo
+  quest) is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -270,7 +287,7 @@ per roadmap phase, don't big-bang rename.)
 │                           # bracket/standings read)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
-│   │                       # up to 018_gvg_rewards.sql as of Phase 9.7)
+│   │                       # up to 021_skill_media.sql)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
@@ -324,7 +341,13 @@ per roadmap phase, don't big-bang rename.)
     │                       # through size tiers by length instead; Phase 10.11 stacked the two
     │                       # army rows — renderBoard() renders BOTH armies back-to-front so each
     │                       # front-line unit sits rightmost, keeping lane 1 aligned across the
-    │                       # "My Units"/"Enemy Units" stack), sprite,
+    │                       # "My Units"/"Enemy Units" stack; Phase 10.12 added a status-icon row
+    │                       # atop the portrait, rendered by unitCardEl() and kept live by the
+    │                       # replayer's status/status_end events via the new updateCardStatuses()
+    │                       # export, filenames mapped in data/statusIcons.js), sprite,
+    │                       # skillMedia (Phase 10.13: skill icon lookup — icon||slot||"default" —
+    │                       # plus an extension-picks-the-renderer skill animation renderer,
+    │                       # surfaced in the party-picker detail and the battle log),
     │                       # dragdrop, log, chroma, auth, farm, admin,
     │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
     │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),
@@ -483,7 +506,20 @@ monster persists unassigned with its grown attributes/skills intact, and its
 equipped gear/socketed runes return to the trainer's bag; the server refuses
 the detach with 409 while the monster is busy or still sits in that trainer's
 saved PVP defense formation (`GET /api/admin/trainers`, `GET/POST/DELETE
-/api/admin/monsters`).
+/api/admin/monsters`). The 🎭 Classes tab's form (Phase 10.12 follow-up)
+carries an `icon` field with a live image preview, naming a base filename
+under `public/icons/classes/` (empty = the class name lowercased) — the
+classes master table's own column, served to the client via `GET
+/api/trainer/classes` and consumed by `ui/board.js`'s `classIconEl()`. A
+💫 Statuses tab is read-only reference only — statuses are the engine's
+CLOSED registry (`shared/rules/statuses.js`) and are never DB rows, so the
+tab just surfaces the id/label/icon-file mapping (`src/data/statusIcons.js`)
+for an admin to check. The ⚔ Skills tab's form (Phase 10.13) carries the
+same pattern one level down: `icon` (base filename under
+`public/icons/skills/`, empty = the skill's slot placeholder, then
+`default.png`) and `animation` (a filename under `public/anim/skills/`,
+extension picks the renderer) fields, each with a live preview, via
+`ui/skillMedia.js`.
 
 PVP (Phase 6): `expertises` + `trainer_skill_defs` (master, seeded from
 `src/data/expertises.js`) → `trainer_skills` (instance; 2 fixed learn slots,

@@ -1670,6 +1670,112 @@ front-liner is now leftmost rather than rightmost — `ui/board.js`'s
 so the two fronts (A1, B1) sit diagonally opposite across the VS row
 instead of vertically aligned.
 
+## Phase 10.12 — Graphics: PNG class icons + battle status icons ✅ CODE COMPLETE (2026-07-10)
+
+Two client-only art slices, staged together:
+
+- **Class icons go PNG-first.** `src/data/classes.js`'s `CLASS_META` gains
+  an explicit `icon` field per class, naming a base filename under the new
+  `public/icons/classes/` (64×64 transparent PNGs, one editable `.svg`
+  source per icon kept alongside). `ui/board.js`'s `unitCardEl()` header row
+  renders that PNG in the class-icon tile (via the new `classIconEl()`),
+  falling back to the class name lowercased for a class not in the map,
+  then to `default.png` if that art is missing too — a user can now swap
+  class art by dropping in a same-named PNG, no code change.
+- **Battle status icons.** A per-unit row of small PNGs along the TOP of the
+  portrait, one per active status, filling left→right in the order gained.
+  `src/data/statusIcons.js` (new) maps each status id from the closed
+  registry in `shared/rules/statuses.js` to an icon base filename, mirroring
+  `CLASS_META`'s `icon` field; art lives in the new
+  `public/icons/statuses/` (same 64×64-PNG-plus-editable-`.svg` convention,
+  same README shape, as the class icons). `unitCardEl()` renders a
+  `.unit-status-row` inside `.unit-portrait-top` from `u.statuses ?? []`
+  (guarded — non-battle callers like the party picker/Setup Team/farm never
+  pass a `statuses` field, and render exactly as before); the replayer
+  (`src/core/battle.js`) is the only thing that ever fills it live, via the
+  new `updateCardStatuses()` export called from `replayStatus`/
+  `replayStatusEnd` right after each event mutates `u.statuses` — pure
+  display over state the replayer already tracked, no new math, engine
+  untouched.
+
+**Done when:** both icon sets render (a class-icon tile per unit card, a
+top-of-portrait status row that grows/shrinks live as `status`/`status_end`
+events replay); a missing icon file falls back to `default.png` for its set
+without a broken image; `npm test` (engine goldens unmoved — this round
+never touches `shared/engine/`) and `npm run build` both pass. ✅ Done.
+**Phase 10.12 is done.**
+
+Playtest follow-up (2026-07-10): a uniform 12px menu font (the dropdown
+items now match the top-level buttons' size instead of the browser
+default), status icons doubled to 28px for legibility, the class→icon
+filename map promoted from client-only data (`CLASS_META.icon`) to a live
+`classes.icon` column on the classes master table (migration
+`020_class_icon.sql`, admin-editable with an image preview in the 🎭
+Classes tab, served to the client via the existing `GET
+/api/trainer/classes` read), and a read-only 💫 Statuses reference tab in
+the admin console surfacing the engine's closed status registry's
+id/label/icon-file mapping (statuses themselves stay engine data, never DB
+rows).
+
+## Phase 10.13 — Skill media: icons + the animation column ✅ CODE COMPLETE (2026-07-11)
+
+Two new columns on the `skills` MASTER TABLE (migration `021_skill_media.sql`):
+`icon` (a base filename under `public/icons/skills/`, the same class-icon-tile
+idea applied per skill, with placeholder art for the three `normal`/
+`ultimate`/`passive` slots plus a `default`) and `animation` (a full filename,
+extension included, under `public/anim/skills/` — sample fixtures
+`sample_slash.svg`/`sample_slash.png` demonstrate both branches). Both ride
+every monster read's `skills[]` `json_agg` (party/farm/match snapshots
+alike) and the admin `listSkillsAdmin`/`upsertSkill`/`validateSkill` path,
+landing in a prior server round; this round is entirely client:
+
+- **`src/ui/skillMedia.js` (new)** — the one owner of skill media
+  rendering, mirroring `ui/board.js`'s `classIconEl()`/`fillStatusRow()`
+  seam. Two independent lookup chains: the ICON chain
+  (`skill.icon || skill.slot || "default"` → `/icons/skills/<base>.png`,
+  the standard onerror-to-`default.png` loop-guarded fallback) via
+  `skillIconEl()` (a DOM `<img>`) and `skillIconHtml()` (the same chain as
+  an inline HTML string, for callers building log lines as raw HTML); and
+  the ANIMATION chain, where the FILENAME'S EXTENSION picks the renderer —
+  `.svg` → a self-animating `<img>` (the motion is authored inside the
+  file), `.png` → a CSS sprite strip of square frames played via
+  `steps(cols)` (the `ui/sprite.js` unit-sheet idiom, single row) — via
+  `skillAnimationEl()`. New CSS in `styles/sprite.css`: `.skill-anim`
+  (the sprite-strip idiom, `--cell`/`--sheet`/`--cols` custom props set by
+  `skillAnimationEl()`) and `.skill-anim-svg` (a fixed size for the SVG
+  case).
+- **Party-picker detail.** `ui/partyPicker.js`'s `team-detail-skill` rows
+  (the click-for-detail area shared by Setup Team and the Adventure party
+  picker) now prepend `skillIconEl(sk, 16)` before the name/level text;
+  `styles/team.css`'s `.team-detail-skill` picked up the minimal flex/gap
+  to lay the icon and text side by side.
+- **Battle log.** `core/battle.js`'s `replaySkill()` resolves the firing
+  skill off the live unit's `skills[]` (`u.skills?.find(s => s.id ===
+  ev.skill)`, present because `makeUnit()`'s spread already preserves
+  every lane field) and prepends `skillIconHtml()`'s inline `<img>` to the
+  log line — string building only, the replayer stays math-free. A new
+  `.log-skill-icon` rule sits next to the rest of the log's styles in
+  `styles/base.css`.
+- **Admin ⚔ Skills tab.** List rows gain a small icon (26px, the
+  icon/slot/default chain) via a generalized `iconImg(dir, base, title,
+  size)` helper in `ui/admin.js` — refactored out of the Classes tab's
+  former `classIconImg()` so both tabs share one image-with-fallback
+  builder (`dir:"classes"` / `dir:"skills"`). The skill edit form gains
+  two text inputs, `icon` and `animation`, each with a live preview: the
+  icon preview repaints on icon/slot input through the same `iconImg()`
+  helper; the animation preview repaints on input, showing "no animation"
+  when empty or `skillAnimationEl()`'s rendered element plus its resolved
+  `/anim/skills/<file>` path otherwise. Two `adm-hint` lines document both
+  fields' folders and the extension rule. The new-skill template gains
+  `icon: null, animation: null`.
+
+**Done when:** a monster's skills render icons in the party-picker detail
+and the battle log narrates each skill cast with its icon; a missing icon
+file falls back to `default.png` without a broken image; the admin Skills
+tab can set/preview both fields live; `npm test` and `npm run build` both
+pass (this round never touches `shared/engine/` or the server — no golden
+regen needed). ✅ Done. **Phase 10.13 is done.**
+
 ## Phase 11 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants

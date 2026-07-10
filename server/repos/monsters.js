@@ -43,7 +43,8 @@ export async function listMonstersByTrainer(sql, trainerId) {
            COALESCE(
              (SELECT json_agg(json_build_object(
                        'id', sk.id, 'name', sk.name, 'slot', sk.slot,
-                       'cooldown', sk.cooldown, 'data', sk.data, 'level', ms.level)
+                       'cooldown', sk.cooldown, 'data', sk.data, 'level', ms.level,
+                       'icon', sk.icon, 'animation', sk.animation)
                      ORDER BY ms.slot)
               FROM monster_skills ms JOIN skills sk ON sk.id = ms.skill_id
               WHERE ms.monster_id = m.id),
@@ -89,7 +90,8 @@ export async function listUnassignedMonsters(sql) {
            COALESCE(
              (SELECT json_agg(json_build_object(
                        'id', sk.id, 'name', sk.name, 'slot', sk.slot,
-                       'cooldown', sk.cooldown, 'data', sk.data, 'level', ms.level)
+                       'cooldown', sk.cooldown, 'data', sk.data, 'level', ms.level,
+                       'icon', sk.icon, 'animation', sk.animation)
                      ORDER BY ms.slot)
               FROM monster_skills ms JOIN skills sk ON sk.id = ms.skill_id
               WHERE ms.monster_id = m.id),
@@ -174,7 +176,8 @@ export async function getMonsterById(sql, trainerId, monsterId) {
            COALESCE(
              (SELECT json_agg(json_build_object(
                        'id', sk.id, 'name', sk.name, 'slot', sk.slot,
-                       'cooldown', sk.cooldown, 'data', sk.data, 'level', ms.level)
+                       'cooldown', sk.cooldown, 'data', sk.data, 'level', ms.level,
+                       'icon', sk.icon, 'animation', sk.animation)
                      ORDER BY ms.slot)
               FROM monster_skills ms JOIN skills sk ON sk.id = ms.skill_id
               WHERE ms.monster_id = m.id),

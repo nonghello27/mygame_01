@@ -39,23 +39,24 @@ async function main() {
   // 2. Classes (upsert so re-running keeps the table in sync).
   for (const [cls, m] of Object.entries(CLASS_META)) {
     await pool.query(
-      `INSERT INTO classes (cls, attack_name, fx)
-       VALUES ($1, $2, $3)
+      `INSERT INTO classes (cls, attack_name, fx, icon)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (cls) DO UPDATE
-         SET attack_name = EXCLUDED.attack_name, fx = EXCLUDED.fx`,
-      [cls, m.attackName, m.fx]
+         SET attack_name = EXCLUDED.attack_name, fx = EXCLUDED.fx, icon = EXCLUDED.icon`,
+      [cls, m.attackName, m.fx, m.icon ?? null]
     );
   }
 
   // 3. Skills (master data; upsert so balance edits land on re-run).
   for (const sk of SKILLS) {
     await pool.query(
-      `INSERT INTO skills (id, name, slot, cooldown, data)
-       VALUES ($1, $2, $3, $4, $5::jsonb)
+      `INSERT INTO skills (id, name, slot, cooldown, data, icon, animation)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name, slot = EXCLUDED.slot,
-         cooldown = EXCLUDED.cooldown, data = EXCLUDED.data`,
-      [sk.id, sk.name, sk.slot, sk.cooldown, JSON.stringify(sk.data)]
+         cooldown = EXCLUDED.cooldown, data = EXCLUDED.data,
+         icon = EXCLUDED.icon, animation = EXCLUDED.animation`,
+      [sk.id, sk.name, sk.slot, sk.cooldown, JSON.stringify(sk.data), sk.icon ?? null, sk.animation ?? null]
     );
   }
 

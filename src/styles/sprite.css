@@ -33,3 +33,26 @@
 
 /* Enemy army faces left: flip horizontally (art is authored facing right). */
 .army-b .sprite{ transform:scaleX(-1); }
+
+/* Skill animation media (Phase 10.13, ui/skillMedia.js). A .skill-anim is a
+   single-row CSS sprite strip of SQUARE frames, the same steps() idiom as
+   .sprite above minus --row-y (there's only one row). Custom props (set by
+   skillAnimationEl()): --cell frame size, --sheet url(...) of the strip,
+   --cols frame count. A .skill-anim-svg is a self-animating SVG file played
+   via a plain <img> — sized fixed since the file authors its own motion. */
+.skill-anim{
+  width:var(--cell);
+  height:var(--cell);
+  background-image:var(--sheet);
+  background-repeat:no-repeat;
+  background-position:0 0;
+  background-size:calc(var(--cell) * var(--cols)) var(--cell);
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+  animation:skill-anim-play 0.9s steps(var(--cols)) infinite;
+}
+@keyframes skill-anim-play{
+  from{ background-position-x:0; }
+  to  { background-position-x:calc(-1 * var(--cell) * var(--cols)); }
+}
+.skill-anim-svg{ width:64px; height:64px; }

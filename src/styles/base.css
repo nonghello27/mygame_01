@@ -99,6 +99,7 @@ button.btn.ghost{background:transparent}
 .log .lines p .a{color:var(--a);font-weight:600}
 .log .lines p .b{color:var(--b);font-weight:600}
 .log .lines p.sys{color:var(--clash)}
+.log-skill-icon{width:15px;height:15px;vertical-align:-3px;margin-right:4px;object-fit:contain}
 .log .lines:empty::after{content:"Arrange your units, then start the battle.";color:var(--muted)}
 
 @media (prefers-reduced-motion:reduce){
