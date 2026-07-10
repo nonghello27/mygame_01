@@ -51,9 +51,12 @@ export async function saveDefenseFormation(sql, trainerId, monsterIds, name = "D
  * slot-position order — what services/matches.js `toLane` expects as input.
  */
 export async function getFormationMonsters(sql, trainerId, purpose = "defense") {
+  // Note: no equipment_count/rune_count subselects here — shapeMonster()'s
+  // `?? 0` fallback covers their absence, and this row never needs to
+  // display gear counts (it only ever feeds toLane()'s battle snapshot).
   const rows = await sql`
     SELECT m.id, m.species_id, m.nickname, m.hp, m.atk, m.spd,
-           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind,
+           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind, m.rank,
            s.name AS species_name, s.cls, s.emoji, s.sprite,
            s.element, s.attack_kind, s.attack_style, s.targeting,
            COALESCE(

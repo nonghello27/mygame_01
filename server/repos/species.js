@@ -16,6 +16,7 @@ function shape(r) {
     base: { hp: r.hp, atk: r.atk, spd: r.spd },
     attrs: { str: r.str, agi: r.agi, vit: r.vit, int: r.intl, dex: r.dex },
     skills: r.skills,
+    rank: r.rank,
   };
 }
 

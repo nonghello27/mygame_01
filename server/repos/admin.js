@@ -73,7 +73,7 @@ export async function listSpeciesAdmin(sql) {
     FROM monster_species s ORDER BY s.starter DESC, s.id`;
   return rows.map((r) => ({
     id: r.id, name: r.name, cls: r.cls, emoji: r.emoji, sprite: r.sprite,
-    starter: r.starter, element: r.element, attackKind: r.attack_kind,
+    starter: r.starter, element: r.element, rank: r.rank, attackKind: r.attack_kind,
     attackStyle: r.attack_style, targeting: r.targeting,
     base: { hp: r.hp, atk: r.atk, spd: r.spd },
     attrs: { str: r.str, agi: r.agi, vit: r.vit, int: r.intl, dex: r.dex },
@@ -89,11 +89,11 @@ export async function upsertSpecies(sql, s) {
   await sql`
     INSERT INTO monster_species
       (id, name, cls, emoji, hp, atk, spd, sprite, starter,
-       element, attack_kind, attack_style, targeting, str, agi, vit, intl, dex, rune_slots)
+       element, attack_kind, attack_style, targeting, str, agi, vit, intl, dex, rune_slots, rank)
     VALUES (${s.id}, ${s.name}, ${s.cls}, ${s.emoji}, ${s.base.hp}, ${s.base.atk},
             ${s.base.spd}, ${s.sprite}, ${s.starter}, ${s.element}, ${s.attackKind},
             ${s.attackStyle}, ${s.targeting}, ${s.attrs.str}, ${s.attrs.agi},
-            ${s.attrs.vit}, ${s.attrs.int}, ${s.attrs.dex}, ${s.runeSlots})
+            ${s.attrs.vit}, ${s.attrs.int}, ${s.attrs.dex}, ${s.runeSlots}, ${s.rank})
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name, cls = EXCLUDED.cls, emoji = EXCLUDED.emoji,
       hp = EXCLUDED.hp, atk = EXCLUDED.atk, spd = EXCLUDED.spd,
@@ -101,7 +101,8 @@ export async function upsertSpecies(sql, s) {
       element = EXCLUDED.element, attack_kind = EXCLUDED.attack_kind,
       attack_style = EXCLUDED.attack_style, targeting = EXCLUDED.targeting,
       str = EXCLUDED.str, agi = EXCLUDED.agi, vit = EXCLUDED.vit,
-      intl = EXCLUDED.intl, dex = EXCLUDED.dex, rune_slots = EXCLUDED.rune_slots`;
+      intl = EXCLUDED.intl, dex = EXCLUDED.dex, rune_slots = EXCLUDED.rune_slots,
+      rank = EXCLUDED.rank`;
   await sql`DELETE FROM species_skills WHERE species_id = ${s.id}`;
   for (let slot = 0; slot < s.skills.length; slot++) {
     if (!s.skills[slot]) continue;

@@ -98,6 +98,14 @@ export const attachMonsterTo = (body) => request("/api/admin/monsters", "POST", 
  */
 export const detachMonsterFrom = (body) => request("/api/admin/monsters", "DELETE", body);
 
+/**
+ * Set one owned monster's rank directly (Phase 10.9) — the per-monster
+ * counterpart to saveSpecies()'s rank field.
+ * @param {{trainerId:number, monsterId:number, rank:string}} body
+ * @returns {Promise<{trainer:object, monsters:object[], unassigned:object[]}>}
+ */
+export const updateMonster = (body) => request("/api/admin/monsters/update", "POST", body);
+
 // --- tournaments (Phase 9.2) -------------------------------------------------
 // Unlike the master-table CRUD above, this reads its OWN endpoint rather than
 // folding into loadMaster()'s masterState — tournaments are admin-created

@@ -10,7 +10,7 @@ import { getTrainerById, setGold } from "../repos/trainers.js";
 import {
   listMonstersByTrainer, mintMonster, getMonsterById,
   listUnassignedMonsters, detachMonster, returnMonsterGearToBag, attachMonster,
-  getMonsterDetachDiagnostic, isMonsterEscrowed,
+  getMonsterDetachDiagnostic, isMonsterEscrowed, setMonsterRank,
 } from "../repos/monsters.js";
 import { getSpeciesById } from "../repos/species.js";
 import {
@@ -30,6 +30,7 @@ import {
   validateItem, validateEquipment, validateRune, validateSummon, validateAdventure,
 } from "./adminValidate.js";
 import { grant as grantInventory } from "./inventory.js";
+import { RANKS } from "../../shared/rules/ranks.js";
 
 /** Is this email on the ADMIN_EMAILS allowlist? (Promotion happens at login.) */
 export function isAdminEmail(email) {
@@ -385,6 +386,36 @@ export async function detachMonsterFromTrainer(sql, { trainerId, monsterId }) {
   }
 
   await returnMonsterGearToBag(sql, mId);
+
+  return {
+    trainer,
+    monsters: await listMonstersByTrainer(sql, id),
+    unassigned: await listUnassignedMonsters(sql),
+  };
+}
+
+/**
+ * Set one owned monster's rank directly (Phase 10.9) — the per-monster
+ * counterpart to a species' rank baseline (saveSpecies() above). Only
+ * trainerId/monsterId/rank are trusted from the request body; everything
+ * else (whether the pair actually exists/matches) is re-derived from the DB
+ * via setMonsterRank()'s guarded UPDATE (CLAUDE.md §1.1). Responds with the
+ * same {trainer, monsters, unassigned} shape detachMonsterFromTrainer() does,
+ * so the console's Manage view can just re-render from whatever comes back.
+ */
+export async function updateMonsterRank(sql, { trainerId, monsterId, rank }) {
+  const id = Number(trainerId);
+  if (!Number.isInteger(id) || id <= 0) throw httpError(400, "trainerId must be a trainer's id");
+  const trainer = await getTrainerById(sql, id);
+  if (!trainer) throw httpError(404, "unknown trainer");
+
+  const mId = Number(monsterId);
+  if (!Number.isInteger(mId) || mId <= 0) throw httpError(400, "monsterId must be a monster's id");
+
+  if (!RANKS.includes(rank)) throw httpError(400, `rank must be one of: ${RANKS.join(", ")}`);
+
+  const claimed = await setMonsterRank(sql, id, mId, rank);
+  if (!claimed) throw httpError(404, "monster not found");
 
   return {
     trainer,

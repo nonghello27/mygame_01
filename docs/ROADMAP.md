@@ -1433,6 +1433,85 @@ swaps; the roster still scrolls; client-only diff. ✅ Verified: `npm test`
 `src/ui/team.js`, `src/styles/team.css`, and docs (`CLAUDE.md`,
 `docs/ROADMAP.md`) — no `server/`/`shared/` change.
 
+## Phase 10.9 — Monster rank, power & the redesigned unit card + Adventure picker parity ✅ CODE COMPLETE (2026-07-10)
+
+Staged 2026-07-10 from playtest feedback: the unit card (battlefield,
+Setup Team, Adventure/Tournament/Guild party pickers) shows raw derived
+stats and nothing about how "good" a monster is at a glance. Three slices,
+each independently shippable:
+
+- **Foundation (this round, server + shared + data + admin only):** a
+  closed, ascending RANK ladder (`shared/rules/ranks.js`, D → C → B → A →
+  S → SR → SSR) on both `monster_species` (the master baseline) and
+  `monsters` (an owned instance's own, admin-editable, meant to become
+  player-upgradeable later); a display-only `powerScore()`
+  (`shared/rules/formulas.js`) derived from `deriveStats()` output — a
+  placeholder formula to rebalance later, never an engine input; every
+  monster/species read now also carries `equipmentCount`/`runeCount` so a
+  future card can show gear-at-a-glance without a second round trip. Admin
+  console: species get a rank field, and the Trainers tab's per-monster row
+  gets a rank editor (`POST /api/admin/monsters/update`).
+- ✅ **The redesigned unit card (client-only round, 2026-07-10):**
+  `ui/board.js`'s `unitCardEl()` plate is now a header row (a
+  `classIconEl()`-built class-icon tile with a native `title` tooltip,
+  replacing the old text class label, sourced from
+  `public/icons/classes/<class>.png|svg` with a `default.svg` fallback —
+  swappable art, no code change, see that dir's README), a centered name,
+  and — only when the lane carries a `rank` — a rank badge + `powerScore()`
+  number (imported from `shared/rules/formulas.js`); an HP row; and a 2x2
+  stat-tile grid (atk range, SPD, socketed-rune count, equipped-gear count,
+  reading `runes`/`equipment` arrays on battle lanes or
+  `runeCount`/`equipmentCount` on roster rows). A `rank-<tier>` modifier
+  class drives a per-rank `--rank-color` (`src/styles/board.css`) on the
+  card's border/badge/power text, with a glow on S/SR/SSR; unranked lanes
+  (old snapshots) render with no rank block and the prior default border.
+  `ui/team.js`'s Power sort now reuses the identical `powerScore()` number
+  the card shows. Client-only — no `server/`/`shared/` change this round.
+- ✅ **Adventure picker parity (client-only round, 2026-07-10):** the Setup
+  Team panel's slots-over-roster widget (drag-and-drop lane slots, the
+  sortable card row, the click-for-detail area, and the pointer-drag
+  machinery) is EXTRACTED out of `ui/team.js` into a new
+  `ui/partyPicker.js` — a `createPartyPicker({monsters, initialSlots,
+  onChange})` factory returning `{el, getSlots, setSlots, setMonsters}` so
+  two panels can each host an independent instance. `ui/team.js` becomes a
+  thin host: it still owns the roster read, the remembered party ids, and
+  the Save team / Reset / Default party footer, but builds a fresh picker
+  instance every `refresh()` and reads `getSlots()` at save time.
+  `ui/adventure.js` hosts a second instance in `renderSetup()` in place of
+  the old plain-row `partyPicker()`/`togglePick()` — the SAME picker
+  instance persists across `renderBody()` re-renders (its `onChange` only
+  toggles each route's "Set out" button, never recreates the widget), and
+  "Set out" sends `getSlots()` (lane order = pick order, front first,
+  unchanged from the endpoint's perspective). CSS classes stayed `team-*`
+  (styles/team.css is global, so the Adventure panel gets them for free);
+  the now-dead `.adv-mon-*`/`.adv-pick-badge` rules in styles/adventure.css
+  were removed. Client-only — no `server/`/`shared/` change this round.
+
+**Done when (foundation round):** `shared/rules/ranks.js` exports the
+closed RANKS list; `powerScore()` is covered by a golden-value test off a
+known `deriveStats()` output; every monster/species repo read carries
+`rank` (and owned-monster reads carry `equipmentCount`/`runeCount`);
+`toLane()` freezes `rank` into the battle snapshot as display metadata only
+(no engine branch reads it); the admin console can set a species' rank and,
+per trainer, an individual monster's rank; `npm test` and `npm run build`
+both pass with no golden-log diff (the engine itself is untouched). ✅ Done.
+
+**Done when (redesigned-card round):** the card header shows a tooltipped
+class icon, a centered name, and — when ranked — a rank-colored
+badge/power/border/glow; the HP row and a 2x2 stat grid (atk/spd/runes/
+gear) replace the old two-stat row; Setup Team's Power sort matches the
+card's number; `npm test` (no diff) and `npm run build` both pass;
+`git diff --stat` for this round touches only `src/`, `public/`, and docs.
+✅ Done.
+
+**Done when (Adventure-picker-parity round):** `ui/partyPicker.js` exports
+`createPartyPicker()`; `ui/team.js`'s public exports/behavior are
+byte-identical from the user's perspective; the Adventure panel's party
+picker is the same drag-and-drop unit-card experience as Setup Team's, with
+"Set out" gated on all 3 lanes filled; `npm test` (no diff) and `npm run
+build` both pass; `git diff --stat` for this round touches only `src/` and
+docs. ✅ Done. **Phase 10.9 is done.**
+
 ## Phase 11 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants

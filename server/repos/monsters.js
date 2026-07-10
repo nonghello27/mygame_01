@@ -22,6 +22,9 @@ export function shapeMonster(r) {
     busyUntil: r.busy_until ?? null,
     busyKind: r.busy_kind ?? null,
     skills: r.skills,
+    rank: r.rank,
+    equipmentCount: Number(r.equipment_count ?? 0),
+    runeCount: Number(r.rune_count ?? 0),
   };
 }
 const shape = shapeMonster;
@@ -29,7 +32,7 @@ const shape = shapeMonster;
 export async function listMonstersByTrainer(sql, trainerId) {
   const rows = await sql`
     SELECT m.id, m.species_id, m.nickname, m.hp, m.atk, m.spd,
-           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind,
+           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind, m.rank,
            s.name AS species_name, s.cls, s.emoji, s.sprite,
            s.element, s.attack_kind, s.attack_style, s.targeting,
            COALESCE(
@@ -39,7 +42,9 @@ export async function listMonstersByTrainer(sql, trainerId) {
                      ORDER BY ms.slot)
               FROM monster_skills ms JOIN skills sk ON sk.id = ms.skill_id
               WHERE ms.monster_id = m.id),
-             '[]'::json) AS skills
+             '[]'::json) AS skills,
+           (SELECT count(*)::int FROM monster_equipment me WHERE me.monster_id = m.id) AS equipment_count,
+           (SELECT count(*)::int FROM runes rn WHERE rn.monster_id = m.id) AS rune_count
     FROM monsters m JOIN monster_species s ON s.id = m.species_id
     WHERE m.trainer_id = ${trainerId}
     ORDER BY m.id`;
@@ -59,7 +64,7 @@ export async function listMonstersByTrainer(sql, trainerId) {
 export async function listUnassignedMonsters(sql) {
   const rows = await sql`
     SELECT m.id, m.species_id, m.nickname, m.hp, m.atk, m.spd,
-           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind,
+           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind, m.rank,
            s.name AS species_name, s.cls, s.emoji, s.sprite,
            s.element, s.attack_kind, s.attack_style, s.targeting,
            COALESCE(
@@ -69,7 +74,9 @@ export async function listUnassignedMonsters(sql) {
                      ORDER BY ms.slot)
               FROM monster_skills ms JOIN skills sk ON sk.id = ms.skill_id
               WHERE ms.monster_id = m.id),
-             '[]'::json) AS skills
+             '[]'::json) AS skills,
+           (SELECT count(*)::int FROM monster_equipment me WHERE me.monster_id = m.id) AS equipment_count,
+           (SELECT count(*)::int FROM runes rn WHERE rn.monster_id = m.id) AS rune_count
     FROM monsters m JOIN monster_species s ON s.id = m.species_id
     WHERE m.trainer_id IS NULL
       AND NOT EXISTS (
@@ -92,9 +99,10 @@ export async function listUnassignedMonsters(sql) {
  */
 export async function mintMonster(sql, trainerId, species) {
   const rows = await sql`
-    INSERT INTO monsters (trainer_id, species_id, hp, atk, spd, str, agi, vit, intl, dex)
+    INSERT INTO monsters (trainer_id, species_id, hp, atk, spd, str, agi, vit, intl, dex, rank)
     VALUES (${trainerId}, ${species.id}, ${species.base.hp}, ${species.base.atk}, ${species.base.spd},
-            ${species.attrs.str}, ${species.attrs.agi}, ${species.attrs.vit}, ${species.attrs.int}, ${species.attrs.dex})
+            ${species.attrs.str}, ${species.attrs.agi}, ${species.attrs.vit}, ${species.attrs.int}, ${species.attrs.dex},
+            ${species.rank ?? "D"})
     RETURNING id`;
   const monsterId = Number(rows[0].id);
   await sql`
@@ -141,7 +149,7 @@ export async function grantStarters(sql, trainerId, starterSpecies) {
 export async function getMonsterById(sql, trainerId, monsterId) {
   const rows = await sql`
     SELECT m.id, m.species_id, m.nickname, m.hp, m.atk, m.spd,
-           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind,
+           m.str, m.agi, m.vit, m.intl, m.dex, m.busy_until, m.busy_kind, m.rank,
            s.name AS species_name, s.cls, s.emoji, s.sprite,
            s.element, s.attack_kind, s.attack_style, s.targeting,
            COALESCE(
@@ -151,7 +159,9 @@ export async function getMonsterById(sql, trainerId, monsterId) {
                      ORDER BY ms.slot)
               FROM monster_skills ms JOIN skills sk ON sk.id = ms.skill_id
               WHERE ms.monster_id = m.id),
-             '[]'::json) AS skills
+             '[]'::json) AS skills,
+           (SELECT count(*)::int FROM monster_equipment me WHERE me.monster_id = m.id) AS equipment_count,
+           (SELECT count(*)::int FROM runes rn WHERE rn.monster_id = m.id) AS rune_count
     FROM monsters m JOIN monster_species s ON s.id = m.species_id
     WHERE m.id = ${monsterId} AND m.trainer_id = ${trainerId}`;
   return rows[0] ? shape(rows[0]) : null;
@@ -260,5 +270,22 @@ export async function isMonsterEscrowed(sql, monsterId) {
   const rows = await sql`
     SELECT 1 FROM marketplace_listings ml
     WHERE ml.kind = 'monster' AND ml.ref_id = ${monsterId} AND ml.status = 'open'`;
+  return rows.length > 0;
+}
+
+/**
+ * Admin-only (Phase 10.9): set one owned monster's rank directly — unlike
+ * the species' rank (its baseline), an owned monster's rank lives its own
+ * life from mint time on. ONE guarded UPDATE, same claim shape as
+ * detachMonster/attachMonster: trainer_id is part of the WHERE so this can
+ * never touch another trainer's monster even given a guessable id. Returns
+ * true when the claim won, false when the id/owner pair didn't match (the
+ * service turns that into a 404).
+ */
+export async function setMonsterRank(sql, trainerId, monsterId, rank) {
+  const rows = await sql`
+    UPDATE monsters SET rank = ${rank}
+    WHERE id = ${monsterId} AND trainer_id = ${trainerId}
+    RETURNING id`;
   return rows.length > 0;
 }

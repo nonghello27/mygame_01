@@ -3,7 +3,11 @@
    chrome family as the inventory/summon/adventure panels: header, msgs, body.
    Phase 10.8: slots and roster render as board.js's battlefield-style
    unit cards, decorated with the overlays below, plus a click-for-detail
-   area. */
+   area. Phase 10.9: the widget itself (everything styled by the `team-*`
+   classes below) moved into src/ui/partyPicker.js, a reusable module hosted
+   by BOTH this panel and the Adventure panel's party picker — the classes
+   stayed `team-*` and this file stays their one global stylesheet, so
+   either host gets them for free. */
 
 .team{
   margin-top:18px;background:var(--panel);border:1px solid var(--line);
@@ -20,6 +24,12 @@
 .team-msgs p.err{color:var(--hp-low)}
 
 .team-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:12px}
+
+/* the party-picker widget (ui/partyPicker.js) is one wrapping div hosted
+   inside either panel's own body — give its direct children (slots row,
+   sort bar, roster row, detail area) the same flex-column rhythm .team-body
+   already used before the widget was extracted. */
+.party-picker{display:flex;flex-direction:column;gap:12px}
 
 /* --- lane slots --- */
 .team-slots{display:flex;gap:10px;flex-wrap:wrap}

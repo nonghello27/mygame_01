@@ -122,6 +122,12 @@
 //   deleted. Its equipped gear/socketed runes return to the trainer's bag.
 //   409 while busy or while a member of the trainer's saved PVP defense
 //   formation (remove it there first). Admin only.
+//
+// POST /api/admin/monsters/update { trainerId, monsterId, rank } -> { trainer, monsters, unassigned }
+//   Sets one owned monster's rank directly (Phase 10.9) — the per-monster
+//   counterpart to a species' rank (POST /api/admin/species above). 404
+//   when the trainerId/monsterId pair doesn't match an owned monster. Admin
+//   only.
 
 import { db } from "../db.js";
 import { sendJson, readJson, httpError } from "../http.js";
@@ -154,6 +160,7 @@ import {
   mintMonsterForTrainer,
   attachMonsterToTrainer,
   detachMonsterFromTrainer,
+  updateMonsterRank,
 } from "../services/admin.js";
 import { getInventory } from "../services/inventory.js";
 import { adminCreate as createTournament, adminCancel as cancelTournament, adminList as listTournamentsAdmin } from "../services/tournament.js";
@@ -247,6 +254,14 @@ export async function monsters(req, res) {
   sendJson(res, 200, monsterId !== undefined
     ? await attachMonsterToTrainer(sql, body)
     : await mintMonsterForTrainer(sql, body));
+}
+
+/** POST /api/admin/monsters/update — set one owned monster's rank (Phase 10.9). */
+export async function monsterUpdate(req, res) {
+  const sql = db();
+  await requireAdmin(sql, trainerIdFromRequest(req));
+  const body = await readJson(req);
+  sendJson(res, 200, await updateMonsterRank(sql, body));
 }
 
 // --- tournaments (Phase 9.2) --------------------------------------------------

@@ -2,10 +2,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deriveStats, hitChance } from "../shared/rules/formulas.js";
+import { deriveStats, hitChance, powerScore } from "../shared/rules/formulas.js";
 import { elementMultiplier } from "../shared/rules/elements.js";
 import { selectTargets } from "../shared/rules/targeting.js";
 import { statMod, hasFlag } from "../shared/rules/statuses.js";
+import { RANKS } from "../shared/rules/ranks.js";
 import { makeRng } from "../shared/engine/rng.js";
 
 test("deriveStats maps attributes onto battle stats", () => {
@@ -55,4 +56,21 @@ test("stat modifiers stack additively and expire with the status list", () => {
   assert.equal(statMod({ statuses: [] }, "atk"), 1);
   assert.ok(hasFlag({ statuses: [{ id: "stun" }] }, "control"));
   assert.ok(!hasFlag({ statuses: [{ id: "burn" }] }, "control"));
+});
+
+test("RANKS is the closed, ascending D..SSR ladder", () => {
+  assert.deepEqual(RANKS, ["D", "C", "B", "A", "S", "SR", "SSR"]);
+  assert.equal(RANKS.length, 7);
+});
+
+test("powerScore is a display-only number derived from deriveStats() output", () => {
+  // Sile: base {hp:80, atk:36, spd:9}, attrs {str:6, agi:9, vit:4, int:3, dex:10}
+  const d = deriveStats({ hp: 80, atk: 36, spd: 9 }, { str: 6, agi: 9, vit: 4, int: 3, dex: 10 });
+  assert.equal(d.maxHp, 112);
+  assert.equal(d.atkMin, 42);
+  assert.equal(d.atkMax, 47);
+  assert.equal(d.matkMin, 6);
+  assert.equal(d.matkMax, 9);
+  assert.equal(d.spd, 18);
+  assert.equal(powerScore(d), 992); // 112 + (42+47)*5 + (6+9)*5 + 18*20
 });

@@ -6,6 +6,7 @@ import { firstAlive } from "../core/units.js";
 import { hpColor } from "../utils/helpers.js";
 import { enableDragSwap } from "./dragdrop.js";
 import { spriteEl } from "./sprite.js";
+import { powerScore } from "../../shared/rules/formulas.js";
 
 let elA, elB, labelA, labelB;
 
@@ -35,20 +36,31 @@ function renderArmy(container, visualOrder, sourceArr, side, labelNode) {
 
 /**
  * Build one battlefield-style unit card: portrait + info plate (pos badge,
- * name, class/element, HP bar, ATK/SPD stats). Pure markup — no dataset, no
- * drag, no front-lane marker; `buildCard()` below layers those battlefield
- * concerns on top. Shared with ui/team.js (Phase 10.8) so the Setup Team
- * panel renders the same cards the battlefield does.
+ * a header row — class-icon tile, name, rank badge/power — an HP bar, and a
+ * 2x2 stat-tile grid). Pure markup — no dataset, no drag, no front-lane
+ * marker; `buildCard()` below layers those battlefield concerns on top.
+ * Shared with ui/team.js (Phase 10.8) so the Setup Team panel renders the
+ * same cards the battlefield does.
  * @param {object} u a unit (live battle unit, or any display lane shaped the
- *   same way: hp/maxHp/name/cls/element/atk range/matk range/spd/alive)
+ *   same way: hp/maxHp/name/cls/element/atk range/matk range/spd/alive,
+ *   optionally rank + equipment[]/equipmentCount + runes[]/runeCount)
  * @param {string} posLabel badge text, e.g. "A1"/"B2" — pass "" for none
  */
 export function unitCardEl(u, posLabel) {
   const card = document.createElement("div");
   card.className = "unit-card";
   if (!u.alive) card.classList.add("dead");
+  if (u.rank != null) card.classList.add(`rank-${String(u.rank).toLowerCase()}`);
 
   const ratio = u.hp / u.maxHp;
+  const runeCount = u.runes?.length ?? u.runeCount ?? 0;
+  const equipCount = u.equipment?.length ?? u.equipmentCount ?? 0;
+  // Display-only "power" number (Phase 10.9) — the same powerScore() the
+  // rank badge sits under; never sent anywhere. Battle/display lanes both
+  // already carry the deriveStats() fields powerScore() reads.
+  const rankBlock = u.rank != null
+    ? `<span class="unit-rank-badge">${u.rank}</span><span class="unit-rank-power">${powerScore(u)}</span>`
+    : "";
 
   card.innerHTML = `
     <div class="unit-portrait-top"></div>
@@ -56,12 +68,13 @@ export function unitCardEl(u, posLabel) {
       <span class="badge-pos">${posLabel}</span>
       <span class="front-flag">FRONT</span>
       <div class="unit-head">
-        <div class="unit-name">${u.name}</div>
-        <div class="unit-class">${u.cls}${elementIcon(u.element)}</div>
+        <div class="unit-class-icon"></div>
+        <div class="unit-name">${u.name}${elementIcon(u.element)}</div>
+        <div class="unit-rank">${rankBlock}</div>
       </div>
       <div class="hp-wrap">
         <div class="hp-top">
-          <span class="lbl">HP</span>
+          <span class="lbl">❤️ HP</span>
           <span class="val"><span class="hp-now">${Math.max(0, Math.round(u.hp))}</span>/${u.maxHp}</span>
         </div>
         <div class="hp-bar"><div class="hp-fill" style="width:${ratio * 100}%;background:${hpColor(ratio)}"></div></div>
@@ -69,6 +82,8 @@ export function unitCardEl(u, posLabel) {
       <div class="stats">
         <div class="stat" title="Attack"><span class="s-ico">⚔️</span><span class="s-val">${atkLabel(u)}</span></div>
         <div class="stat" title="Speed"><span class="s-ico">⚡</span><span class="s-val">${u.spd}</span></div>
+        <div class="stat" title="Runes"><span class="s-ico">🔮</span><span class="s-val">${runeCount}</span></div>
+        <div class="stat" title="Equipment"><span class="s-ico">🛡️</span><span class="s-val">${equipCount}</span></div>
       </div>
     </div>
   `;
@@ -76,6 +91,7 @@ export function unitCardEl(u, posLabel) {
   // Mount the unit's portrait (or emoji fallback) above the info plate. The
   // card is built on the front lane idle by default; combat can swap actions.
   card.querySelector(".unit-portrait-top").appendChild(spriteEl(u, u.alive ? "idle" : "dead"));
+  card.querySelector(".unit-class-icon").appendChild(classIconEl(u.cls));
   return card;
 }
 
@@ -98,6 +114,32 @@ const ELEMENT_ICONS = {
   fire: "🔥", water: "💧", wind: "🌪️", earth: "⛰️", holy: "✨", dark: "🌑",
 };
 const elementIcon = (el) => (ELEMENT_ICONS[el] ? ` ${ELEMENT_ICONS[el]}` : "");
+
+/**
+ * Build the class-icon tile's `<img>` (Phase 10.9) — its `title`/`alt` is
+ * the class name (a native tooltip replaces the old text label). Tries
+ * `<class>.png`, then `.svg`, then a shared `default.svg`, so a user can
+ * drop in replacement art under public/icons/classes/ without touching
+ * code (see that dir's README.md) — same public-asset path style as
+ * ui/sprite.js's `/sprites/...` references.
+ */
+function classIconEl(cls) {
+  const lower = String(cls || "").toLowerCase();
+  const img = document.createElement("img");
+  img.className = "unit-class-icon-img";
+  img.alt = cls || "";
+  img.title = cls || "";
+  img.draggable = false;
+  img.src = `/icons/classes/${lower}.png`;
+  img.onerror = () => {
+    img.onerror = () => {
+      img.onerror = null; // guard: a missing default.svg must not loop
+      img.src = "/icons/classes/default.svg";
+    };
+    img.src = `/icons/classes/${lower}.svg`;
+  };
+  return img;
+}
 
 /** "34–38" for v2 lanes (magic attackers show their MATK roll); plain atk otherwise. */
 function atkLabel(u) {

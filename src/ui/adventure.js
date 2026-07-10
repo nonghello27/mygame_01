@@ -3,8 +3,8 @@
 // pick an option at each step, come home with loot (and maybe a caught
 // monster). Same tab-less panel shell as ui/summon.js (a msgs div + a body
 // div, one refresh() that re-reads and re-renders); the party picker
-// borrows ui/pvp.js's defense-editor approach directly (loadFarm() ->
-// {monsters}, click to toggle a pick, order = pick order).
+// (Phase 10.9) hosts ui/partyPicker.js's shared 3-lane drag-and-drop widget
+// — the same card-based experience as the Setup Team panel.
 //
 // Pure presentation + action layer: the map, every roll, the enemy team,
 // and the catch are ALL decided server-side (CLAUDE.md §1.1). This module
@@ -18,18 +18,17 @@ import {
   loadFarm, fetchInventory,
 } from "../services/content.js";
 import { registerView } from "./views.js";
+import { createPartyPicker } from "./partyPicker.js";
 
 const NODE_ICON = { battle: "⚔", chest: "🎁", gather: "🌿" };
 const NODE_LABEL = { battle: "Battle", chest: "Chest", gather: "Gather" };
-const BUSY_LABEL = { work: "Working", training: "Training", adventure: "On adventure" };
-const PARTY_SIZE = 3;
 
 let els = null;
 let adventures = [];  // last fetchAdventureState() result's `adventures`
 let session = null;   // the active session view, or null
 let lastTerminal = null; // most recent completed/failed/abandoned session, kept for the summary
 let roster = null;    // loadFarm() result, only loaded while picking a party
-let picks = [];        // in-progress party picks, in pick order
+let picker = null;     // the current createPartyPicker() instance, while picking a party
 let items = [];        // owned item stacks, for loot-name lookup only
 let busy = false;      // true while a start/move/abandon request is in flight
 
@@ -57,7 +56,7 @@ async function refresh() {
     items = inventory?.items ?? items;
     if (!session && !lastTerminal) {
       roster = await loadFarm();
-      picks = [];
+      picker = createPartyPicker({ monsters: roster.monsters, onChange: updateSetOutButtons });
     }
   } catch (e) {
     adventures = [];
@@ -105,42 +104,39 @@ function renderBody() {
 
 // ---------- no session: route list + party picker ----------
 
+let setOutButtons = []; // this render's "Set out" buttons — kept in sync by updateSetOutButtons()
+
 function renderSetup() {
   if (!roster) {
     els.body.appendChild(el("p", "adv-hint", "Loading…"));
     return;
   }
 
-  els.body.appendChild(el("h4", "adv-subhead", `Choose your party (${PARTY_SIZE}, in order — front first)`));
-  els.body.appendChild(partyPicker());
+  els.body.appendChild(el(
+    "h4", "adv-subhead",
+    "Choose your party — drag 3 monsters into the lanes (lane 1 = front)"
+  ));
+  // The SAME picker instance persists across renderBody() calls — it's
+  // never recreated here, only re-appended (its own DOM subtree, and the
+  // slot picks inside it, survive being detached/reattached by
+  // renderBody()'s `els.body.innerHTML = ""`).
+  els.body.appendChild(picker.el);
 
   if (adventures.length === 0) {
     els.body.appendChild(el("p", "adv-hint", "No routes are open right now — check back later."));
     return;
   }
+  setOutButtons = [];
   for (const a of adventures) els.body.appendChild(routeCard(a));
 }
 
-function partyPicker() {
-  const list = el("div", "adv-mon-list");
-  for (const m of roster.monsters) {
-    const isBusy = m.busyUntil && new Date(m.busyUntil) > new Date();
-    const pickIdx = picks.indexOf(m.id);
-    const row = el("div", "adv-mon" + (pickIdx !== -1 ? " picked" : "") + (isBusy ? " busy" : ""));
-    row.append(el("span", "adv-mon-emoji", m.emoji), el("span", "adv-mon-name", m.name));
-    if (isBusy) row.append(el("span", "adv-mon-busy-tag", BUSY_LABEL[m.busyKind] ?? m.busyKind ?? "Busy"));
-    if (pickIdx !== -1) row.append(el("span", "adv-pick-badge", String(pickIdx + 1)));
-    if (!isBusy) row.addEventListener("click", () => togglePick(m.id));
-    list.appendChild(row);
-  }
-  return list;
-}
-
-function togglePick(monsterId) {
-  const i = picks.indexOf(monsterId);
-  if (i !== -1) picks.splice(i, 1);
-  else if (picks.length < PARTY_SIZE) picks.push(monsterId);
-  renderBody();
+/** The picker's onChange — deliberately does NOT call renderBody() (that
+ *  would recreate the picker and lose the in-progress slot picks); it only
+ *  keeps every route's "Set out" button in sync with whether all 3 lanes
+ *  are filled. */
+function updateSetOutButtons(slots) {
+  const full = slots.every((id) => id != null);
+  for (const btn of setOutButtons) btn.disabled = !full;
 }
 
 function routeCard(a) {
@@ -152,11 +148,11 @@ function routeCard(a) {
     setOutBtn.disabled = true;
     els.msgs.innerHTML = "";
     try {
-      const result = await startAdventure(a.id, picks);
+      const result = await startAdventure(a.id, picker.getSlots());
       session = result.session;
       lastTerminal = null;
       roster = null;
-      picks = [];
+      picker = null;
       pushMsg(`Setting out on ${a.name}…`);
       renderBody();
     } catch (e) {
@@ -164,8 +160,9 @@ function routeCard(a) {
       setOutBtn.disabled = false;
     }
   });
-  setOutBtn.disabled = picks.length !== PARTY_SIZE;
+  setOutBtn.disabled = !picker.getSlots().every((id) => id != null);
   card.append(setOutBtn);
+  setOutButtons.push(setOutBtn);
   return card;
 }
 

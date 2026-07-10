@@ -68,7 +68,17 @@ The vision and plans live in `docs/` — treat them as part of this file:
   Setup Team panel's text chips become battlefield-style unit cards, shared
   with the battlefield via `ui/board.js`'s new `unitCardEl()`, with a
   click-for-detail area) are both code complete — **Phase 10 (10.4–10.8) is
-  done**. Phase 11 (chat, notifications & the photo quest) is next.
+  done**. Phase 10.9 (monster rank, power & the redesigned unit card +
+  Adventure picker parity), staged 2026-07-10, is also code complete: a
+  closed RANK ladder + display-only `powerScore()` (server + shared +
+  admin), the redesigned `unitCardEl()` (a tooltipped class-icon header, a
+  centered name, a rank badge/power/border/glow when ranked, an HP row, and
+  a 2x2 atk/spd/runes/gear stat grid), and — the third and final slice — the
+  Adventure panel's party picker now hosts the exact same drag-and-drop
+  widget the Setup Team panel does, via a new `src/ui/partyPicker.js`
+  extracted out of `team.js` so both panels share one
+  `createPartyPicker()` instance factory. Phase 11 (chat, notifications &
+  the photo quest) is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -154,8 +164,9 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # (tournaments list, register, withdraw, detail — rides the
 │   │                       # battle domain), admin.js (master + classes/skills/species/jobs/
 │   │                       # items/equipment/runes/summons/adventures CRUD + grant +
-│   │                       # trainers list/gold-set/monsters read+mint/attach/detach +
-│   │                       # tournaments create/cancel/list, Phase 9.5's gvg/gvgCancel),
+│   │                       # trainers list/gold-set/monsters read+mint/attach/detach/
+│   │                       # rank-set + tournaments create/cancel/list, Phase 9.5's
+│   │                       # gvg/gvgCancel),
 │   │                       # guild.js (browse, me, create, apply, accept, reject, leave,
 │   │                       # kick, promote, transfer), gvg.js (Phase 9.5: events, submit,
 │   │                       # withdraw, lineup, register — rides the guild domain)
@@ -278,12 +289,21 @@ per roadmap phase, don't big-bang rename.)
     │   ├── state.js        # shared state + initContent()/resetState()
     │   └── battle.js       # client REPLAYER: requestBattle() + animate events
     ├── ui/                 # board (exports unitCardEl(), Phase 10.8's shared battlefield-
-    │                       # style card builder, besides its own battle rendering), sprite,
+    │                       # style card builder, besides its own battle rendering — Phase
+    │                       # 10.9 redesigned its plate: a header row (class-icon tile with a
+    │                       # native title tooltip, via the new classIconEl()/public/icons/
+    │                       # classes/, centered name, and a rank-<tier> modifier class driving
+    │                       # a rank-colored border/glow plus a rank badge + powerScore() number
+    │                       # from shared/rules/formulas.js), an HP row, and a 2x2 stat-tile
+    │                       # grid (atk range/spd/socketed-rune count/equipped-gear count) —
+    │                       # client-display-only, never sent anywhere), sprite,
     │                       # dragdrop, log, chroma, auth, farm, admin,
     │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
     │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),
     │                       # summon (✨ Summon Hall panel: banner cards + pull), adventure
-    │                       # (🗺 panel: route list + party picker, step options, run log),
+    │                       # (🗺 panel: route list + a Phase 10.9 partyPicker.js party picker
+    │                       # (the same card-based drag-and-drop widget Setup Team hosts),
+    │                       # step options, run log),
     │                       # marketplace (🏪 panel: browse + my listings + list-a-good picker),
     │                       # tournament (🏆 panel: open/upcoming cards with a register flow +
     │                       # party picker, my-entry + withdraw, a past-tournaments history list,
@@ -296,19 +316,27 @@ per roadmap phase, don't big-bang rename.)
     │                       # per-team lineup-order editor and register-guild button, and
     │                       # (Phase 9.7) a per-event "Details" war-bracket/standings view
     │                       # off the same section, mirroring the tournament panel's own),
+    │                       # partyPicker (Phase 10.9: the shared 3-lane drag-and-drop party
+    │                       # picker EXTRACTED out of the Setup Team panel — a
+    │                       # createPartyPicker({monsters, initialSlots, onChange}) factory
+    │                       # returning {el, getSlots, setSlots, setMonsters} so team.js and
+    │                       # adventure.js can each host an independent instance; the slots
+    │                       # row, sort bar (order/name/power, asc/desc), horizontally
+    │                       # scrollable owned-monster row, click-for-detail area, and pointer
+    │                       # drag-and-drop are all still styled by styles/team.css's
+    │                       # team-*/party-picker classes, global; both lane slots and roster
+    │                       # cards render via board.js's shared unitCardEl() over a
+    │                       # display-only deriveStats(m.base, m.attrs) lane — full HP, never
+    │                       # sent anywhere — and clicking any card opens the click-for-detail
+    │                       # area, stats/attrs/skills/busy state plus "Set lane 1/2/3"/
+    │                       # "Remove from team" actions, the no-drag placement path
+    │                       # tap-to-place used to be),
     │                       # team (🪖 Setup Team panel, Phase 10.5: a "Me & Team" menu-group
-    │                       # panel — 3 drag-and-drop lane slots over a sortable
-    │                       # (order/name/power, asc/desc), horizontally scrollable
-    │                       # owned-monster row; Save fields the party against the SAME
-    │                       # enemy via keepEnemyMatchId, and the module still owns the
-    │                       # remembered party ids for every openMatch() caller; Phase 10.8:
-    │                       # both the lane slots and the roster row render as
-    │                       # board.js's shared unitCardEl() over a display-only
-    │                       # deriveStats(m.base, m.attrs) lane — full HP, never sent
-    │                       # anywhere — and clicking any card opens a click-for-detail
-    │                       # area (stats/attrs/skills/busy state plus "Set lane
-    │                       # 1/2/3"/"Remove from team" actions, the no-drag placement
-    │                       # path tap-to-place used to be),
+    │                       # panel — now just a HOST (Phase 10.9) over partyPicker.js's
+    │                       # widget, built fresh from a loadFarm() roster read on every
+    │                       # refresh(); Save fields the party against the SAME enemy via
+    │                       # keepEnemyMatchId, and the module still owns the remembered
+    │                       # party ids for every openMatch() caller),
     │                       # monsterSetup (🐾 Setup Monster panel, Phase 10.6: pick one owned
     │                       # monster, equip/unequip its gear and socket/unsocket its runes over
     │                       # the existing inventory endpoints),

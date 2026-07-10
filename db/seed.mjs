@@ -69,8 +69,8 @@ async function main() {
     await pool.query(
       `INSERT INTO monster_species
          (id, name, cls, emoji, hp, atk, spd, sprite, starter,
-          element, attack_kind, attack_style, targeting, str, agi, vit, intl, dex, rune_slots)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+          element, attack_kind, attack_style, targeting, str, agi, vit, intl, dex, rune_slots, rank)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name, cls = EXCLUDED.cls, emoji = EXCLUDED.emoji,
          hp = EXCLUDED.hp, atk = EXCLUDED.atk, spd = EXCLUDED.spd,
@@ -78,10 +78,11 @@ async function main() {
          element = EXCLUDED.element, attack_kind = EXCLUDED.attack_kind,
          attack_style = EXCLUDED.attack_style, targeting = EXCLUDED.targeting,
          str = EXCLUDED.str, agi = EXCLUDED.agi, vit = EXCLUDED.vit,
-         intl = EXCLUDED.intl, dex = EXCLUDED.dex, rune_slots = EXCLUDED.rune_slots`,
+         intl = EXCLUDED.intl, dex = EXCLUDED.dex, rune_slots = EXCLUDED.rune_slots,
+         rank = EXCLUDED.rank`,
       [s.id, s.name, s.cls, s.emoji, s.hp, s.atk, s.spd, s.sprite ?? null, s.starter,
        s.element, s.attackKind, s.attackStyle, s.targeting,
-       s.attrs.str, s.attrs.agi, s.attrs.vit, s.attrs.int, s.attrs.dex, s.runeSlots ?? 1]
+       s.attrs.str, s.attrs.agi, s.attrs.vit, s.attrs.int, s.attrs.dex, s.runeSlots ?? 1, s.rank ?? "D"]
     );
     await pool.query(`DELETE FROM species_skills WHERE species_id = $1`, [s.id]);
     for (let slot = 0; slot < s.skills.length; slot++) {

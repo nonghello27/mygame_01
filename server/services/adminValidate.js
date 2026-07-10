@@ -7,6 +7,7 @@
 // the engine (shared/rules) actually interprets.
 
 import { ELEMENTS } from "../../shared/rules/elements.js";
+import { RANKS } from "../../shared/rules/ranks.js";
 import { TARGETING } from "../../shared/rules/targeting.js";
 import { STATUSES } from "../../shared/rules/statuses.js";
 import { EVENT_REWARD_TYPES, validatePercentileCoverage } from "../../shared/rules/rewards.js";
@@ -50,6 +51,7 @@ export { EVENT_REWARD_TYPES };
 export function enums() {
   return {
     elements: ELEMENTS,
+    ranks: RANKS,
     targeting: TARGET_RULES,
     statuses: STATUS_IDS,
     skillSlots: SKILL_SLOTS,
@@ -283,6 +285,7 @@ export function validateSpecies(input, { classNames, skillsById }) {
     sprite: input.sprite ? str(input.sprite, "sprite id", { pattern: /^[a-z0-9_-]+$/i }) : null,
     starter: input.starter === true,
     element: oneOf(input.element, ELEMENTS, "element"),
+    rank: oneOf(input.rank ?? "D", RANKS, "rank"),
     attackKind: oneOf(input.attackKind, ATTACK_KINDS, "attack kind"),
     attackStyle: oneOf(input.attackStyle, ATTACK_STYLES, "attack style"),
     targeting: oneOf(input.targeting, TARGET_RULES, "targeting"),

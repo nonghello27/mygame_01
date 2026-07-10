@@ -19,6 +19,7 @@ import {
   saveAdventure, deleteAdventure,
   grant,
   loadTrainers, loadTrainerMonsters, mintMonsterFor, attachMonsterTo, detachMonsterFrom, updateTrainer,
+  updateMonster,
   loadTournaments, createTournament, cancelTournament,
   loadGvgEvents, createGvgEvent, cancelGvgEvent,
 } from "../services/admin.js";
@@ -236,7 +237,7 @@ function speciesTab() {
   if (editing) return speciesForm(editing);
   els.body.appendChild(toolbar("＋ New species", () => ({
     id: "", name: "", cls: data.classes[0]?.cls ?? "", emoji: "❔", sprite: null,
-    starter: false, element: "neutral", attackKind: "melee", attackStyle: "phys",
+    starter: false, element: "neutral", rank: "D", attackKind: "melee", attackStyle: "phys",
     targeting: "front", base: { hp: 100, atk: 20, spd: 6 },
     attrs: { str: 5, agi: 5, vit: 5, int: 5, dex: 5 }, skills: [null, null, null, null],
     runeSlots: 1, monsterCount: 0, isNew: true,
@@ -253,6 +254,7 @@ function speciesTab() {
     id.append(txt);
 
     const side = el("div", "adm-actions");
+    side.append(badge(s.rank ?? "D"));
     if (s.starter) side.append(badge("starter"));
     if (s.monsterCount > 0) side.append(badge(`${s.monsterCount} owned`));
     side.append(
@@ -278,6 +280,7 @@ function speciesForm(s) {
     sprite: selectInput([["", "— emoji only —"], ...Object.keys(SPRITES)], s.sprite ?? ""),
     starter: el("input"),
     element: selectInput(E.elements, s.element),
+    rank: selectInput(E.ranks, s.rank ?? "D"),
     attackKind: selectInput(E.attackKinds, s.attackKind),
     attackStyle: selectInput(E.attackStyles, s.attackStyle),
     targeting: selectInput(E.targeting, s.targeting),
@@ -312,7 +315,7 @@ function speciesForm(s) {
   grid.append(
     field("Id (permanent)", f.id), field("Name", f.name), field("Class", f.cls),
     field("Emoji", f.emoji), field("Sprite", f.sprite), field("Starter", f.starter),
-    field("Element", f.element), field("Attack kind", f.attackKind),
+    field("Element", f.element), field("Rank", f.rank), field("Attack kind", f.attackKind),
     field("Attack style", f.attackStyle), field("Targeting", f.targeting),
     field("Base HP", f.hp), field("Base ATK", f.atk), field("Base SPD", f.spd),
     ...E.attrs.map((a) => field(ATTR_LABEL[a] ?? a, f.attrs[a])),
@@ -328,6 +331,7 @@ function speciesForm(s) {
     sprite: f.sprite.value || null,
     starter: f.starter.checked,
     element: f.element.value,
+    rank: f.rank.value,
     attackKind: f.attackKind.value,
     attackStyle: f.attackStyle.value,
     targeting: f.targeting.value,
@@ -1448,6 +1452,26 @@ function trainerDetail({ trainer, monsters, unassigned }) {
       ...Object.keys(ATTR_LABEL).map((a) => badge(`${ATTR_LABEL[a]} ${m.attrs[a]}`)),
     );
     if (m.busyUntil && new Date(m.busyUntil) > new Date()) side.append(badge(`busy: ${m.busyKind}`));
+
+    // Inline rank editor (Phase 10.9): changes post straight to
+    // /api/admin/monsters/update and re-render from the fresh payload, same
+    // idiom as the header's gold editor.
+    const rankSelect = selectInput(data.enums.ranks, m.rank ?? "D");
+    rankSelect.addEventListener("change", async () => {
+      pendingRemove = null;
+      els.msgs.innerHTML = "";
+      try {
+        const res = await updateMonster({
+          trainerId: trainer.id, monsterId: m.id, rank: rankSelect.value,
+        });
+        managing = { trainer: res.trainer, monsters: res.monsters, unassigned: res.unassigned };
+        renderBody();
+        pushMsg(`Set "${m.name}"'s rank to ${rankSelect.value}.`);
+      } catch (e) {
+        pushMsg(e.message, true);
+      }
+    });
+    side.append(rankSelect);
 
     // Detach ("Remove"): an inline two-step confirm, same idiom as
     // ui/trainer.js's expertise-switch warning — first click arms it and

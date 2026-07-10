@@ -602,6 +602,12 @@ POST /api/admin/trainers/update  { trainerId, gold } → { trainer } set that
                               trainer's gold to an absolute amount (integer
                               >= 0) — the admin states the balance, unlike
                               /api/admin/grant's relative credit (Phase 10.1)
+POST /api/admin/monsters/update  { trainerId, monsterId, rank } → { trainer,
+                              monsters, unassigned } set one owned monster's
+                              rank directly — the per-monster counterpart to
+                              POST /api/admin/species's rank field; 404 when
+                              the trainerId/monsterId pair doesn't match an
+                              owned monster (Phase 10.9)
 
 # adventure domain — api/adventure/[...route].js (Phase 7.4 step B; the 6th
 # domain, anticipated by the "not yet built" note this section used to carry)

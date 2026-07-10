@@ -95,25 +95,71 @@
 }
 .unit-card.front .front-flag{display:inline-block}
 
-.unit-head{text-align:center}
-.unit-name{font-family:Rajdhani,sans-serif;font-weight:600;letter-spacing:0.04em;font-size:16px;line-height:1.05}
-.unit-class{font-size:11px;color:var(--muted);margin-top:1px}
+/* header row: class-icon tile (left) | name (centered) | rank badge+power (right) */
+.unit-head{display:flex;align-items:center;gap:6px}
+.unit-class-icon{
+  flex:none;width:26px;height:26px;border-radius:7px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,0.35);border:1px solid var(--line);
+}
+.unit-class-icon-img{width:17px;height:17px;object-fit:contain;display:block}
+.unit-name{
+  flex:1;min-width:0;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:Rajdhani,sans-serif;font-weight:700;letter-spacing:0.03em;font-size:18px;line-height:1.1;
+}
+/* rank badge/power (Phase 10.9): only populated when the unit carries a
+   rank — kept as an empty flex item either way so the name stays centered
+   between the class-icon tile and this slot. */
+.unit-rank{flex:none;min-width:28px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.unit-rank-badge{
+  font-family:Rajdhani,sans-serif;font-weight:800;font-size:10.5px;letter-spacing:0.03em;
+  background:var(--rank-color,var(--line-strong));color:#12141c;
+  border-radius:6px;padding:1px 7px;line-height:1.35;
+}
+.unit-rank-power{
+  font-family:Rajdhani,sans-serif;font-weight:700;font-size:10px;
+  color:var(--rank-color,var(--muted));font-variant-numeric:tabular-nums;
+}
 
 .hp-wrap{display:flex;flex-direction:column;gap:4px}
 .hp-top{display:flex;justify-content:space-between;align-items:baseline}
-.hp-top .lbl{font-size:10px;letter-spacing:0.14em;color:var(--muted);font-weight:600}
+.hp-top .lbl{font-size:10px;letter-spacing:0.1em;color:var(--muted);font-weight:600}
 .hp-top .val{font-family:Rajdhani,sans-serif;font-weight:600;font-size:13px;font-variant-numeric:tabular-nums}
 .hp-bar{height:9px;border-radius:6px;background:rgba(255,255,255,0.07);overflow:hidden;border:1px solid var(--line)}
 .hp-fill{height:100%;width:100%;border-radius:6px;transition:width .45s cubic-bezier(.2,.7,.2,1), background-color .45s}
 
-.stats{display:flex;gap:7px}
+/* 2x2 stat-tile grid: atk range / spd / socketed runes / equipped gear */
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .stat{
-  flex:1;display:flex;align-items:center;justify-content:center;gap:4px;
+  display:flex;align-items:center;justify-content:center;gap:4px;
   background:rgba(255,255,255,0.04);border:1px solid var(--line);
   border-radius:8px;padding:5px 4px;
 }
 .stat .s-ico{font-size:12px;opacity:.9}
 .stat .s-val{font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums}
+
+/* rank tiers (Phase 10.9): --rank-color scoped on .unit-plate so the badge/
+   power text (both descendants) can read it via inheritance. Unranked
+   cards get no .rank-* class and keep the default border above untouched. */
+.unit-card.rank-d .unit-plate{--rank-color:#9ca3af}
+.unit-card.rank-c .unit-plate{--rank-color:#4ade80}
+.unit-card.rank-b .unit-plate{--rank-color:#60a5fa}
+.unit-card.rank-a .unit-plate{--rank-color:#c084fc}
+.unit-card.rank-s .unit-plate{--rank-color:#fbbf24}
+.unit-card.rank-sr .unit-plate{--rank-color:#fb923c}
+.unit-card.rank-ssr .unit-plate{--rank-color:#f87171}
+.unit-card.rank-d .unit-plate,
+.unit-card.rank-c .unit-plate,
+.unit-card.rank-b .unit-plate,
+.unit-card.rank-a .unit-plate,
+.unit-card.rank-s .unit-plate,
+.unit-card.rank-sr .unit-plate,
+.unit-card.rank-ssr .unit-plate{
+  border-color:var(--rank-color);
+}
+.unit-card.rank-s .unit-plate{box-shadow:0 0 10px 0 rgba(251,191,36,0.35)}
+.unit-card.rank-sr .unit-plate{box-shadow:0 0 14px 1px rgba(251,146,60,0.45)}
+.unit-card.rank-ssr .unit-plate{box-shadow:0 0 20px 2px rgba(248,113,113,0.6)}
 
 /* states */
 .unit-card.dragging-src{opacity:.35}

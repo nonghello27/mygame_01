@@ -102,6 +102,22 @@ test("species loadout enforces slot types and known relations", () => {
   rejects(() => validateSpecies({ ...ok, id: "TestSpecies" }, context), "id must be sp_*");
 });
 
+test("species rank accepts a valid rank, defaults to D when absent, rejects unknowns", () => {
+  const context = {
+    classNames: ["Knight"],
+    skillsById: new Map(SKILLS.map((k) => [k.id, k])),
+  };
+  const ok = {
+    id: "sp_test", name: "Test", cls: "Knight", emoji: "🧪", sprite: null, starter: false,
+    element: "fire", attackKind: "melee", attackStyle: "phys", targeting: "front",
+    base: { hp: 100, atk: 20, spd: 6 }, attrs: { str: 1, agi: 1, vit: 1, int: 1, dex: 1 },
+    skills: ["sk_tough", null, "sk_power_strike", "sk_inferno"],
+  };
+  assert.equal(validateSpecies({ ...ok, rank: "SSR" }, context).rank, "SSR");
+  assert.equal(validateSpecies(ok, context).rank, "D", "defaults to D when absent");
+  rejects(() => validateSpecies({ ...ok, rank: "X" }, context), "unknown rank");
+});
+
 test("job rewards must match the kind exactly", () => {
   const work = { id: "job_x", kind: "work", name: "X", durationS: 60 };
   const train = { id: "train_x", kind: "training", name: "X", durationS: 60 };
@@ -116,6 +132,7 @@ test("enums expose exactly what the dropdowns need", () => {
   const e = enums();
   assert.deepEqual(e.loadoutSlotTypes, ["passive", "passive", "normal", "ultimate"]);
   assert.ok(e.elements.includes("fire") && e.targeting.includes("front") && e.statuses.includes("burn"));
+  assert.deepEqual(e.ranks, ["D", "C", "B", "A", "S", "SR", "SSR"]);
   assert.deepEqual(e.itemKinds, ["material", "consumable"]);
   assert.deepEqual(e.equipDomains, ["trainer", "monster"]);
   assert.deepEqual(e.equipSlots.monster, ["weapon", "armor", "accessory"]);

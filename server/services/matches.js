@@ -233,6 +233,10 @@ export const toLane = (m, i, equipment = [], runes = []) => ({
   cls: m.cls,
   emoji: m.emoji,
   sprite: m.sprite,
+  // Display metadata frozen into the snapshot, never an engine input — same
+  // "identity + traits" bucket as cls/emoji/sprite above. Owned monsters and
+  // species-built wild lanes both carry one (Phase 10.9).
+  rank: m.rank ?? null,
   element: m.element,
   attackKind: m.attackKind,
   attackStyle: m.attackStyle,

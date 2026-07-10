@@ -40,3 +40,10 @@ export function hitChance(attacker, target, targetFrozen) {
   const evade = targetFrozen ? 0 : target.evade;
   return Math.max(50, Math.min(100, attacker.acc - evade));
 }
+
+/** Display-only "power" score for one lane/monster, derived from
+ *  deriveStats() output. A UI number, never an engine input — the formula
+ *  is a deliberate placeholder to be rebalanced later. */
+export function powerScore(d) {
+  return Math.round(d.maxHp + (d.atkMin + d.atkMax) * 5 + (d.matkMin + d.matkMax) * 5 + d.spd * 20);
+}
