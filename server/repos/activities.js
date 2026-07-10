@@ -25,10 +25,58 @@ export async function getJobDef(sql, jobId) {
   return rows[0] ? shapeJob(rows[0]) : null;
 }
 
-export async function insertActivity(sql, { trainerId, monsterId, jobId, endsAt }) {
-  await sql`
+/**
+ * Insert the activity ONLY while the trainer has a free farm slot: the
+ * INSERT..SELECT's WHERE folds the cap check into the same statement, so
+ * two simultaneous starts can't both squeeze into the last slot. Returns
+ * true when the row was inserted (the claim won).
+ */
+export async function insertActivityCapped(sql, { trainerId, monsterId, jobId, endsAt }, maxSlots) {
+  const rows = await sql`
     INSERT INTO activities (trainer_id, monster_id, job_id, ends_at)
-    VALUES (${trainerId}, ${monsterId}, ${jobId}, ${endsAt})`;
+    SELECT ${trainerId}, ${monsterId}, ${jobId}, ${endsAt}
+    WHERE (SELECT count(*) FROM activities
+           WHERE trainer_id = ${trainerId} AND NOT resolved) < ${maxSlots}
+    RETURNING id`;
+  return rows.length > 0;
+}
+
+/**
+ * Compensation only: release the busy lock startActivity just claimed when
+ * its capped activity INSERT loses the slot race (LIFO, the performSummon
+ * precedent). The WHERE pins the exact claim (same owner, same kind, same
+ * busy_until) so it can never wipe a lock some other job holds.
+ */
+export async function releaseMonsterLock(sql, trainerId, monsterId, kind, busyUntil) {
+  await sql`
+    UPDATE monsters
+    SET busy_until = NULL, busy_kind = NULL
+    WHERE id = ${monsterId} AND trainer_id = ${trainerId}
+      AND busy_kind = ${kind} AND busy_until = ${busyUntil}`;
+}
+
+/**
+ * Cancel a still-running (not yet due) activity: claim the row as resolved
+ * with an outcome that pays nothing, and in the same statement free the
+ * monster it was holding — the claim itself proves this activity owns the
+ * still-active lock (a monster runs at most one job at a time). `ends_at >
+ * now()` stays in the WHERE so a job already past its end belongs to lazy
+ * settlement instead — it EARNED its reward, cancel must never race it out
+ * of the payout. Returns true when the claim won.
+ */
+export async function cancelActivity(sql, trainerId, activityId) {
+  const rows = await sql`
+    WITH claimed AS (
+      UPDATE activities SET resolved = true, outcome = '{"cancelled":true}'::jsonb
+      WHERE id = ${activityId} AND trainer_id = ${trainerId}
+        AND NOT resolved AND ends_at > now()
+      RETURNING monster_id
+    )
+    UPDATE monsters m SET busy_until = NULL, busy_kind = NULL
+    FROM claimed c
+    WHERE m.id = c.monster_id AND m.busy_until > now()
+    RETURNING m.id`;
+  return rows.length > 0;
 }
 
 /** Unresolved assignments for the farm screen (running or awaiting collect). */

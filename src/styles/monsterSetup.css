@@ -1,6 +1,12 @@
 /* Setup Monster panel (src/ui/monsterSetup.js, Phase 10.6) — a monster
-   picker chip row over an Equipped/Bag pair of gear+rune sections. Same
-   chrome family as the team/inventory panels: header, msgs, body. */
+   picker over an Equipped/Bag pair of gear+rune sections. Same chrome
+   family as the team/inventory panels: header, msgs, body. Phase 10.10:
+   the picker is now a horizontally scrollable row of battlefield-style
+   unit cards (board.js's unitCardEl(), styles/board.css owns the card
+   itself — this file only adds the selected-card accent) and gear/rune
+   changes are staged locally behind a Save/Discard footer bar. Phase
+   10.10 round 2: the Bag section grew an Items | Equipment | Runes tab
+   bar (mirrors ui/inventory.js's .inv-tab shape, ms-prefixed). */
 
 .monster-setup{
   margin-top:18px;background:var(--panel);border:1px solid var(--line);
@@ -18,14 +24,15 @@
 
 .ms-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:12px}
 
-/* --- monster picker --- */
-.ms-picker{display:flex;flex-wrap:wrap;gap:8px}
-.ms-chip{
-  display:flex;align-items:center;gap:8px;
-  background:var(--bg-2);border:1px solid var(--line);border-radius:11px;
-  padding:8px 12px;font-size:12.5px;cursor:pointer;color:var(--text);
+/* --- monster picker (Phase 10.10: shared unit-card row) --- */
+.ms-cards{
+  display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;
+  padding-top:2px;padding-bottom:6px;
 }
-.ms-chip.active{border-color:var(--a-deep);background:var(--a-soft)}
+.ms-cards .unit-card{flex:0 0 auto;cursor:pointer;touch-action:pan-x}
+.ms-cards .unit-card.ms-card-active .unit-plate{
+  border-color:var(--a-deep);box-shadow:0 0 12px 1px rgba(56,189,248,0.45);
+}
 
 /* --- header --- */
 .ms-head{display:flex;align-items:center;gap:10px}
@@ -56,6 +63,7 @@
   color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:3px 9px;
 }
 .ms-broken{color:var(--hp-low);border-color:var(--hp-low)}
+.ms-pending{color:var(--clash);border-color:var(--clash)}
 .ms-charges{font-family:Rajdhani,sans-serif;font-weight:700;font-size:13.5px;color:var(--text)}
 .ms-loc{font-size:12px;color:var(--muted)}
 
@@ -63,3 +71,15 @@
 .ms-small:disabled{opacity:0.5;cursor:default}
 
 .ms-hint{margin:0;font-size:12.5px;color:var(--muted)}
+
+/* --- bag tabs (Phase 10.10 round 2: Items | Equipment | Runes) --- */
+.ms-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.ms-tab{
+  background:var(--bg-2);color:var(--muted);border:1px solid var(--line);
+  border-radius:9px;padding:7px 13px;font-size:12.5px;cursor:pointer;
+}
+.ms-tab.active{color:var(--text);border-color:var(--line-strong);background:var(--panel-2)}
+.ms-bag-list{display:flex;flex-direction:column;gap:8px}
+
+/* --- save/discard footer (Phase 10.10) --- */
+.ms-savebar{display:flex;gap:8px;flex-wrap:wrap}

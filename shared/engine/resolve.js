@@ -414,8 +414,9 @@ function applyEffect(source, fallbackTarget, fx, skill, events, rng, pool = []) 
         target.maxHp = Math.round(target.maxHp * (1 + fx.pct / 100));
         target.hp = target.maxHp;
       } else if (fx.stat === "atk") {
-        target.atkMin = Math.round(target.atkMin * (1 + (fx.pct ?? 0) / 100));
-        target.atkMax = Math.round(target.atkMax * (1 + (fx.pct ?? 0) / 100));
+        // pct applies first, then flat is added; result clamped at 0.
+        target.atkMin = Math.max(0, Math.round(target.atkMin * (1 + (fx.pct ?? 0) / 100)) + (fx.flat ?? 0));
+        target.atkMax = Math.max(0, Math.round(target.atkMax * (1 + (fx.pct ?? 0) / 100)) + (fx.flat ?? 0));
       } else {
         target[fx.stat] += fx.flat ?? 0;
       }

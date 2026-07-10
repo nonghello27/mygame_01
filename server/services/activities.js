@@ -10,10 +10,17 @@
 
 import { httpError } from "../http.js";
 import {
-  listJobDefs, getJobDef, insertActivity, listOpenActivities,
-  dueActivities, settleWork, settleTraining,
+  listJobDefs, getJobDef, insertActivityCapped, releaseMonsterLock,
+  cancelActivity, listOpenActivities, dueActivities, settleWork, settleTraining,
 } from "../repos/activities.js";
 import { listMonstersByTrainer, claimMonsterForJob } from "../repos/monsters.js";
+
+/**
+ * A flat cap for now — "unlock more slots" is a later phase and will move
+ * this to a per-trainer value; the client renders slots from the value the
+ * server reports (farmState().farmSlots), never its own constant.
+ */
+export const MAX_FARM_SLOTS = 2;
 
 /**
  * Pay out every finished, unresolved activity of this trainer. Each payout is
@@ -41,13 +48,18 @@ export async function farmState(sql, trainerId) {
     listMonstersByTrainer(sql, trainerId),
     listOpenActivities(sql, trainerId),
   ]);
-  return { settled, jobs, monsters, active };
+  return { settled, jobs, monsters, active, farmSlots: MAX_FARM_SLOTS };
 }
 
 /**
  * Assign a monster to a job. The busy lock is taken atomically in the repo
  * (owned + currently free, first caller wins) and the activity row shares the
- * exact busy_until timestamp so lock and timer can never drift apart.
+ * exact busy_until timestamp so lock and timer can never drift apart. The
+ * activity INSERT itself is capped at MAX_FARM_SLOTS concurrent unresolved
+ * rows (folded into the INSERT's own WHERE — a precheck-then-act pair here
+ * would be a race bug, CLAUDE.md's workflow); when the insert loses the slot
+ * race, the busy lock this call already won gets compensated (LIFO, the
+ * performSummon precedent) before reporting 409.
  */
 export async function startActivity(sql, trainerId, monsterId, jobId) {
   const id = Number(monsterId);
@@ -61,7 +73,30 @@ export async function startActivity(sql, trainerId, monsterId, jobId) {
 
   const endsAt = await claimMonsterForJob(sql, trainerId, id, job.durationS, job.kind);
   if (!endsAt) throw httpError(409, "that monster is not available — busy, or not yours");
-  await insertActivity(sql, { trainerId, monsterId: id, jobId: job.id, endsAt });
+  const inserted = await insertActivityCapped(
+    sql, { trainerId, monsterId: id, jobId: job.id, endsAt }, MAX_FARM_SLOTS);
+  if (!inserted) {
+    await releaseMonsterLock(sql, trainerId, id, job.kind, endsAt);
+    throw httpError(409, "no free farm slot — a running job must finish or be cancelled first");
+  }
+
+  return farmState(sql, trainerId);
+}
+
+/**
+ * Cancel a still-running job early: no reward, the monster comes home
+ * immediately. `settleActivities()` runs first so a job that has already
+ * finished settles (and pays) rather than getting cancelled out from under
+ * its own payout. A lost claim means there was nothing left to cancel.
+ */
+export async function cancelActivityById(sql, trainerId, activityId) {
+  const id = Number(activityId);
+  if (!Number.isInteger(id) || id <= 0) throw httpError(400, "activityId must be an activity's id");
+
+  await settleActivities(sql, trainerId);
+
+  const won = await cancelActivity(sql, trainerId, id);
+  if (!won) throw httpError(409, "nothing to cancel — that job already finished or was cancelled");
 
   return farmState(sql, trainerId);
 }

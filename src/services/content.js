@@ -25,6 +25,18 @@ async function postJson(path, body) {
   return data;
 }
 
+/** DELETE with a JSON body (some endpoints — e.g. cancel — carry an id this way). */
+async function deleteJson(path, body) {
+  const res = await fetch(path, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `DELETE ${path} failed: ${res.status}`);
+  return data;
+}
+
 /** @returns {Promise<Record<string, object>>} class metadata keyed by class name. */
 export async function loadClasses() {
   return getJson("/api/trainer/classes");
@@ -64,8 +76,10 @@ export async function createMatch(mode, monsterIds, keepEnemyMatchId) {
 /**
  * The farm: job list, your monsters with busy state, running assignments.
  * Reading it also SETTLES anything that finished (lazy time) — `settled`
- * carries what this read paid out, `trainer` the fresh gold/exp.
- * @returns {Promise<{trainer:object, settled:object[], jobs:object[], monsters:object[], active:object[]}>}
+ * carries what this read paid out, `trainer` the fresh gold/exp, `farmSlots`
+ * the server's current concurrent-job cap (Phase 10.10 — render slots from
+ * this, never a client-side constant).
+ * @returns {Promise<{trainer:object, settled:object[], jobs:object[], monsters:object[], active:object[], farmSlots:number}>}
  */
 export async function loadFarm() {
   return getJson("/api/activities");
@@ -73,10 +87,19 @@ export async function loadFarm() {
 
 /**
  * Assign a monster to a job. Two ids — duration and rewards are the server's
- * business. Responds with the same shape as loadFarm().
+ * business. 409s once `farmSlots` concurrent jobs are already running.
+ * Responds with the same shape as loadFarm().
  */
 export async function startJob(monsterId, jobId) {
   return postJson("/api/activities", { monsterId, jobId });
+}
+
+/**
+ * Cancel a still-running job early (Phase 10.10): the monster comes home
+ * immediately, no reward. Responds with the same shape as loadFarm().
+ */
+export async function cancelActivity(activityId) {
+  return deleteJson("/api/activities", { activityId });
 }
 
 /**

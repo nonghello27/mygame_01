@@ -1512,6 +1512,109 @@ picker is the same drag-and-drop unit-card experience as Setup Team's, with
 build` both pass; `git diff --stat` for this round touches only `src/` and
 docs. ✅ Done. **Phase 10.9 is done.**
 
+Refined 2026-07-10 after playtest: the unit card grew to 225px (tighter
+inner padding, a min-height so tiles don't cramp), the class-icon tile
+shrank to badge size with an element-name label under it (mirroring the
+rank badge/power column), and the name never truncates — it auto-shrinks
+through length-based size tiers instead of ellipsizing.
+
+## Phase 10.10 — Setup Monster staging + farm slots ✅ CODE COMPLETE (2026-07-10)
+
+Staged 2026-07-10 from playtest feedback, two independently shippable
+rounds:
+
+- ✅ **Setup Monster: card picker + staged Save (client-only round,
+  2026-07-10):** the 🐾 Setup Monster panel's (`ui/monsterSetup.js`,
+  Phase 10.6) text-chip picker row is replaced by a horizontally scrollable
+  row of the shared `unitCardEl()` cards (the same battlefield-style card
+  `ui/partyPicker.js` hosts) — click a card to select it, with a
+  `ms-card-active` accent border/glow. Its Equip/Unequip/Socket/Unsocket
+  buttons no longer fire the server immediately: each click stages a
+  change into a local `Map<pieceId, targetMonsterId|null>` (one map for
+  equipment, one for runes), keyed by piece id so switching the selected
+  monster never discards a pending choice, and a piece's Equipped-vs-Bag
+  section placement is its PROJECTED location (the map's override if
+  present, else the server's own `monsterId`) — landing an override back
+  on the server value deletes the entry rather than keeping a no-op change.
+  Any row whose projected state differs from the server gets a "pending"
+  badge. A footer Save/Discard bar applies every staged change SEQUENTIALLY
+  over the existing `equipMonsterEquipment`/`socketRune` endpoints —
+  unequips/unsockets first, freeing slots/capacity before the equips/
+  sockets that follow — stopping on the first failed call (surfacing the
+  piece's name plus the server's message, e.g. "no free rune slots") while
+  leaving that op and everything after it staged for retry, and clearing
+  both maps only once every op has landed. No client-side rune-slot
+  precheck — the server still 409s at Save time, same stance as before
+  this round. Client-only — no `server/`/`shared/` change.
+- ✅ **Farm slots — server slice (server-only round, 2026-07-10):** a flat
+  `MAX_FARM_SLOTS = 2` (`server/services/activities.js`) caps a trainer at 2
+  concurrent unresolved activities, folded into the activity INSERT itself
+  (`insertActivityCapped` in `server/repos/activities.js` — a
+  precheck-then-act pair would race two simultaneous starts into the same
+  last slot) rather than a separate precheck; losing that race compensates
+  the busy lock `startActivity()` already claimed (LIFO, the `performSummon`
+  precedent) before 409ing. A running job is now cancellable anytime for NO
+  reward: `DELETE /api/activities {activityId}` (the bare route's new third
+  method — a plain `api/activities.js` file can't grow a sub-path, so cancel
+  rides a METHOD instead) claims the still-unresolved, not-yet-due row and
+  frees the monster in one statement (`cancelActivity` in
+  `server/repos/activities.js`); a job already past its `ends_at` is left
+  for lazy settlement to pay out rather than raced into a reward-less
+  cancel. `farmState()` now reports `farmSlots` alongside `jobs`/`active` so
+  the client renders the cap from the server, never its own constant.
+  `src/services/content.js` gained one client stub, `cancelActivity()`, for
+  the UI round to wire up. Server-only — no `src/ui/` change yet.
+- ✅ **Farm slots — UI round (client-only round, 2026-07-10):** the 🏕 Farm
+  panel (`ui/farm.js`) is rewritten from a per-monster row list into a
+  slot-based layout, all still rendered inside the existing `#farmList`
+  container: a slots row on top — one box per the server-reported
+  `farmSlots` (occupied: the working monster's shared `unitCardEl()` card,
+  its job, the countdown, and a confirm-gated no-reward Cancel button
+  wired to the new `cancelActivity()` stub; free: a drop target you can
+  stage a monster + job into, then Send; plus one purely decorative locked
+  box hinting at more slots later) — over a horizontally scrollable roster
+  row of the same shared unit cards below. Staging is local, session-only
+  state (`staged: (number|null)[]`, indexed by free-slot position,
+  reconciled against the roster/active list on every server read); an
+  available roster card is draggable onto a free slot (a pointer-drag
+  pattern adapted from `ui/partyPicker.js`'s `beginPointerDrag`, targeting
+  `.farm-slot.free` and reusing its globally-styled `team-drag-clone`/
+  `drop-target` classes) or, for touch/no-drag, a plain click places it
+  into the first empty free slot. `styles/farm.css`'s old per-row classes
+  (`farm-row`/`farm-id`/`farm-emoji`/`farm-status`) are gone, replaced by
+  `.farm-slots`/`.farm-slot` (occupied/free/locked)/`.farm-roster`;
+  `.farm-count`/`.farm-btn`/`.farm-select` are unchanged. No `server/`/
+  `shared/` change.
+
+**Done when (card-picker round):** the picker row renders `unitCardEl()`
+cards with click-to-select; Equip/Unequip/Socket/Unsocket stage into the
+two pending maps instead of calling the server directly; a footer Save bar
+applies every staged change in the documented order, stopping and
+surfacing the server's message on the first failure while leaving the rest
+staged; Discard clears both maps; `npm test` (no diff) and `npm run build`
+both pass; `git diff --stat` for this round touches only `src/` and docs.
+✅ Done.
+
+**Done when (farm-slots server slice):** `startActivity()` 409s once 2
+concurrent unresolved activities already exist, enforced inside the
+activity INSERT itself (no precheck-then-act race) with a compensating
+busy-lock release on a lost slot race; `DELETE /api/activities
+{activityId}` cancels a still-running (not yet due) job for no reward and
+frees the monster in one statement, leaving an already-finished job to lazy
+settlement instead; `farmState()`/`GET`/`POST`/`DELETE /api/activities` all
+report `farmSlots`; `npm test` and `npm run build` both pass;
+`git diff --stat` for this round touches only `server/`, one line of
+`src/services/content.js`, and docs. ✅ Done.
+
+**Done when (farm-slots UI round):** the 🏕 Farm panel renders a slots row
+(occupied/free/locked) from the server-reported `farmSlots`, sourced from
+zero client-side constants; a free slot can be staged (drag or click) and
+Sent, an occupied slot can be Cancelled (confirm-gated, no reward) via the
+new endpoint; the roster row renders the same shared unit cards, busy ones
+tagged and non-interactive; `npm test` and `npm run build` both pass;
+`git diff --stat` for this round touches only `src/ui/farm.js`,
+`src/styles/farm.css`, and docs. ✅ Done. **Phase 10.10 is done.**
+
 ## Phase 11 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants

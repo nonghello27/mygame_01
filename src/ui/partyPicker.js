@@ -4,9 +4,11 @@
 // Pure display + local choice state — it never talks to the server; hosts
 // read getSlots() and send the ids as their CHOICE (CLAUDE.md §1.1).
 //
-// Cards render via board.js's unitCardEl over deriveStats(base, attrs) — the
-// SAME pure derivation the server freezes into snapshots (shared/ is
-// importable by src/ by design); display-only, never sent anywhere.
+// Cards render via board.js's unitCardEl over GEAR-EFFECTIVE stats —
+// deriveStats(base, attrs) folded through applyGearStats() against the
+// monster's server-state equipment[]/runes[] (the SAME pure derivation +
+// perm_stat math the server freezes into snapshots/applies at battle_start;
+// shared/ is importable by src/ by design); display-only, never sent anywhere.
 //
 // Drag-and-drop adapts ui/dragdrop.js's pointer-event clone pattern (works
 // on touch: a small movement threshold before a drag actually starts keeps a
@@ -14,7 +16,7 @@
 // globally via styles/team.css — see that file's header comment.
 
 import { unitCardEl } from "./board.js";
-import { deriveStats, powerScore } from "../../shared/rules/formulas.js";
+import { deriveStats, powerScore, applyGearStats } from "../../shared/rules/formulas.js";
 
 const BUSY_LABEL = {
   work: "Working",
@@ -45,20 +47,23 @@ function button(text, cls, onClick) {
 // ---------- pure helpers ----------
 
 /** Monsters have no level of their own — this is the same powerScore()
- *  number the card's rank block shows (Phase 10.9), display-only, never
- *  sent anywhere. */
+ *  number the card's rank block shows (Phase 10.9), gear-effective (Round 3)
+ *  so the sort order matches the number actually printed on the card,
+ *  display-only, never sent anywhere. */
 function powerOf(m) {
-  return powerScore(deriveStats(m.base, m.attrs));
+  const d = applyGearStats(deriveStats(m.base, m.attrs), [...(m.equipment ?? []), ...(m.runes ?? [])]);
+  return powerScore(d);
 }
 
 function isBusy(m) {
   return m.busyUntil && new Date(m.busyUntil) > new Date();
 }
 
-/** A display lane for one roster monster: derived stats at full HP, alive —
+/** A display lane for one roster monster: derived stats at full HP, alive,
+ *  gear-effective off the monster's equipped equipment AND socketed runes —
  *  exactly what the battlefield card markup expects. Display-only. */
 function laneView(m) {
-  const d = deriveStats(m.base, m.attrs);
+  const d = applyGearStats(deriveStats(m.base, m.attrs), [...(m.equipment ?? []), ...(m.runes ?? [])]);
   return { ...m, ...d, hp: d.maxHp, alive: true };
 }
 
@@ -240,7 +245,7 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
     const m = monsterById(detailId);
     if (!m) return null;
 
-    const d = deriveStats(m.base, m.attrs);
+    const d = applyGearStats(deriveStats(m.base, m.attrs), [...(m.equipment ?? []), ...(m.runes ?? [])]);
     const busy = isBusy(m);
     const slotIdx = slots.indexOf(m.id);
     const slotted = slotIdx !== -1;

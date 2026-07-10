@@ -557,10 +557,16 @@ GET  /api/battle/tournament/detail  ?id=<tournamentId> (Phase 9.3) →
                               null/empty until it's actually started running;
                               entrants carry display info only, never lanes
 
-# activities domain — api/activities.js (plain file: one route today)
-GET  /api/activities          the farm: jobs + monsters + running assignments
+# activities domain — api/activities.js (plain file: one route, 3 methods)
+GET    /api/activities        the farm: jobs + monsters + running assignments
                               (settles finished ones first — lazy time)
-POST /api/activities          start work/training { monsterId, jobId }
+POST   /api/activities        start work/training { monsterId, jobId } (409
+                              once farmSlots concurrent jobs are running)
+DELETE /api/activities        cancel a running job early { activityId } —
+                              monster comes home immediately, no reward
+# all three respond { trainer, settled, jobs, monsters, active, farmSlots }
+# (Phase 10.10: farmSlots is the server's current concurrent-job cap,
+# MAX_FARM_SLOTS = 2 today)
 
 # admin domain — api/admin/[...route].js
 # every call re-checks trainers.is_admin (403)

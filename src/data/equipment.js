@@ -53,4 +53,25 @@ export const EQUIPMENT = [
     effects: [{ when: "battle_start", op: "perm_stat", stat: "crit", flat: 5, perLevel: 1 }],
     enhance: null,
     sellGold: 80 },
+
+  { id: "eq_power_bracer", domain: "monster", slot: "weapon", name: "Power Bracer",
+    description: "A weighted bracer. +2 ATK (min and max).",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", flat: 2 }],
+    enhance: null,
+    sellGold: 40 },
+
+  { id: "eq_swift_anklet", domain: "monster", slot: "accessory", name: "Swift Anklet",
+    description: "A feather-light anklet. +2 SPD.",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 2 }],
+    enhance: null,
+    sellGold: 40 },
+
+  { id: "eq_berserk_greaves", domain: "monster", slot: "armor", name: "Berserk Greaves",
+    description: "Reckless greaves. +4 SPD, −10 ATK (min and max).",
+    effects: [
+      { when: "battle_start", op: "perm_stat", stat: "spd", flat: 4 },
+      { when: "battle_start", op: "perm_stat", stat: "atk", flat: -10 },
+    ],
+    enhance: null,
+    sellGold: 30 },
 ];

@@ -23,6 +23,8 @@ import {
   loadTournaments, createTournament, cancelTournament,
   loadGvgEvents, createGvgEvent, cancelGvgEvent,
 } from "../services/admin.js";
+import { fetchMe } from "../services/auth.js";
+import { showProfile } from "./auth.js";
 import { SPRITES } from "../data/sprites.js";
 import { chromaKeyed } from "./chroma.js";
 import { registerView } from "./views.js";
@@ -98,6 +100,14 @@ async function mutate(fn, okText) {
   } catch (e) {
     pushMsg(e.message, true);
   }
+}
+
+/** After an admin action that can change the CALLER's own gold (e.g. "Set
+ *  gold" on their own trainer row), refresh the header's gold chip the same
+ *  way inventory.js's enhance/repair/sell do — best-effort, never blocks. */
+async function refreshProfile() {
+  const trainer = await fetchMe();
+  if (trainer) showProfile(trainer);
 }
 
 function pushMsg(text, isError = false) {
@@ -1372,6 +1382,7 @@ function trainerDetail({ trainer, monsters, unassigned }) {
         managing = { ...managing, trainer: res.trainer };
         renderBody();
         pushMsg(`Set ${res.trainer.name}'s gold to ${res.trainer.gold}.`);
+        refreshProfile(); // fire-and-forget, mirrors gold shown by farm.js's showProfile()
       } catch (e) {
         pushMsg(e.message, true);
       }

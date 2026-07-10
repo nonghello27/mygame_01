@@ -77,8 +77,18 @@ The vision and plans live in `docs/` — treat them as part of this file:
   Adventure panel's party picker now hosts the exact same drag-and-drop
   widget the Setup Team panel does, via a new `src/ui/partyPicker.js`
   extracted out of `team.js` so both panels share one
-  `createPartyPicker()` instance factory. Phase 11 (chat, notifications &
-  the photo quest) is next.
+  `createPartyPicker()` instance factory. Phase 10.10 (playtest feedback),
+  staged 2026-07-10, has two sub-phases: the first — the 🐾 Setup Monster
+  panel's text-chip picker becomes a horizontally scrollable row of the
+  same shared `unitCardEl()` cards, and its equip/unequip/socket/unsocket
+  actions are now STAGED locally (keyed by piece id) behind a Save/Discard
+  footer bar instead of firing immediately — is code complete; the second —
+  farm slots (a server-enforced `MAX_FARM_SLOTS = 2` concurrent-job cap, a
+  cancel-anytime-for-no-reward endpoint, and a slot-based 🏕 Farm panel
+  redesign — a slots row of occupied/free/locked boxes over a drag-and-drop
+  roster row of the same shared unit cards) — is ALSO now code complete —
+  **Phase 10.10 is done**. Phase 11 (chat, notifications & the photo quest)
+  is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -144,7 +154,8 @@ per roadmap phase, don't big-bang rename.)
 │   ├── auth/[...route].js      # /api/auth/*      -> server/routers/auth.js
 │   ├── battle/[...route].js    # /api/battle/*     -> server/routers/battle.js
 │   ├── trainer/[...route].js   # /api/trainer/*    -> server/routers/trainer.js
-│   ├── activities.js           # /api/activities   -> server/routers/activities.js (plain file: one route)
+│   ├── activities.js           # /api/activities   -> server/routers/activities.js (plain file: one
+│   │                              # route, GET/POST/DELETE — cancel rides DELETE on the bare path)
 │   ├── admin/[...route].js     # /api/admin/*      -> server/routers/admin.js
 │   ├── adventure/[...route].js # /api/adventure/*  -> server/routers/adventure.js
 │   ├── market/[...route].js    # /api/market/*     -> server/routers/market.js
@@ -290,13 +301,17 @@ per roadmap phase, don't big-bang rename.)
     │   └── battle.js       # client REPLAYER: requestBattle() + animate events
     ├── ui/                 # board (exports unitCardEl(), Phase 10.8's shared battlefield-
     │                       # style card builder, besides its own battle rendering — Phase
-    │                       # 10.9 redesigned its plate: a header row (class-icon tile with a
+    │                       # 10.9 redesigned its plate: a header row (a class-icon tile with a
     │                       # native title tooltip, via the new classIconEl()/public/icons/
-    │                       # classes/, centered name, and a rank-<tier> modifier class driving
+    │                       # classes/, an element-name label under it, a centered
+    │                       # length-auto-fit name, and a rank-<tier> modifier class driving
     │                       # a rank-colored border/glow plus a rank badge + powerScore() number
     │                       # from shared/rules/formulas.js), an HP row, and a 2x2 stat-tile
     │                       # grid (atk range/spd/socketed-rune count/equipped-gear count) —
-    │                       # client-display-only, never sent anywhere), sprite,
+    │                       # client-display-only, never sent anywhere; refined 2026-07-10 after
+    │                       # playtest: a wider 225px card, a smaller class-icon tile mirroring
+    │                       # the rank badge column, and the name never truncates — it shrinks
+    │                       # through size tiers by length instead), sprite,
     │                       # dragdrop, log, chroma, auth, farm, admin,
     │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
     │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),
@@ -338,8 +353,17 @@ per roadmap phase, don't big-bang rename.)
     │                       # keepEnemyMatchId, and the module still owns the remembered
     │                       # party ids for every openMatch() caller),
     │                       # monsterSetup (🐾 Setup Monster panel, Phase 10.6: pick one owned
-    │                       # monster, equip/unequip its gear and socket/unsocket its runes over
-    │                       # the existing inventory endpoints),
+    │                       # monster — Phase 10.10's picker is a horizontally scrollable row of
+    │                       # the shared unitCardEl() cards, click to select — and stage
+    │                       # equip/unequip/socket/unsocket changes against its gear/runes
+    │                       # (a Map<pieceId, targetMonsterId|null> per domain, keyed by piece
+    │                       # so switching the selected monster never discards a pending change);
+    │                       # a Save/Discard footer bar applies every staged change SEQUENTIALLY
+    │                       # over the existing equip/socket endpoints, unequips/unsockets first
+    │                       # to free slots/capacity before the equips/sockets that follow, stops
+    │                       # and surfaces the server's message on the first failed call while
+    │                       # leaving the rest staged for retry, and clears both maps only once
+    │                       # every op lands),
     │                       # menubar (Phase 10.3: a grouped dropdown menu bar over the existing
     │                       # button ids — Me & Team (Phase 10.5's leftmost group, holding
     │                       # Setup Team, Setup Monster (10.6), and the relocated Inventory
@@ -403,8 +427,28 @@ every authenticated read (`/api/trainer/me`, `/api/activities`, match creation) 
 pays out finished jobs — work → trainer gold/exp, training → +1 monster
 attribute — each in ONE atomic claim+pay statement, exactly once. Busy lock:
 `monsters.busy_until`/`busy_kind`, taken atomically at job start; busy
-monsters are excluded from new matches and can't take a second job. The farm
-panel (`src/ui/farm.js`) is pure display; "collect" is just a re-read.
+monsters are excluded from new matches and can't take a second job.
+"Collect" is still just a re-read — settlement happens lazily on any
+authenticated read, the farm panel never computes a payout — but the farm
+panel (`src/ui/farm.js`) is no longer *pure* display: Send and Cancel are
+real player choices posted straight to the server, the client only ever
+proposes them. Phase 10.10 (server slice): the farm is capped at
+`MAX_FARM_SLOTS = 2` concurrent unresolved jobs, enforced inside the
+activity INSERT itself (never a precheck-then-act pair) so two racing
+starts can't both squeeze into the last slot; and a job is cancellable
+anytime for no reward via `DELETE /api/activities {activityId}`, which
+rides the existing bare route as a new METHOD rather than a new sub-path.
+Phase 10.10 (client slice): the 🏕 Farm panel is a slot-based layout — a
+slots row (one box per the server-reported `farmSlots`, plus one purely
+decorative locked box) rendered above a horizontally scrollable roster row
+of shared battlefield-style unit cards (board.js's `unitCardEl()`, the
+`ui/partyPicker.js`/`ui/monsterSetup.js` precedent). An occupied slot shows
+the working monster's card, its job, the countdown, and a Cancel button
+(confirm-gated, no reward); a free slot is a drop target you can stage a
+monster + job into (drag-and-drop, adapted from `partyPicker.js`'s pointer-
+drag pattern, or a no-drag click-to-place fallback into the first empty
+slot) and then Send. Staged picks are session-local state, reconciled
+against the roster on every server read.
 
 Admin console (Phase 5): accounts whose email is in the `ADMIN_EMAILS` env
 var get `trainers.is_admin` at login (promotion only; demote by SQL). The

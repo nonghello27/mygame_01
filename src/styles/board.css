@@ -40,7 +40,7 @@
 /* unit card = a transparent wrapper: a big portrait standing ABOVE a shorter
    info "plate". The card itself carries no background/border anymore. */
 .unit-card{
-  position:relative;width:150px;
+  position:relative;width:225px;
   display:flex;flex-direction:column;align-items:stretch;
   touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;
   transition:transform .18s ease, opacity .35s ease;
@@ -55,7 +55,7 @@
   filter:drop-shadow(0 6px 6px rgba(0,0,0,.45));
 }
 .unit-portrait-top .portrait-img{
-  max-width:128px;max-height:92px;width:auto;height:auto;object-fit:contain;
+  max-width:170px;max-height:92px;width:auto;height:auto;object-fit:contain;
   image-rendering:pixelated;image-rendering:crisp-edges;
 }
 /* Enemy army faces inward (art is authored facing right/forward). */
@@ -67,10 +67,10 @@
 
 /* the info "plate": the bordered box, now shorter without the portrait inside */
 .unit-plate{
-  position:relative;z-index:1;
+  position:relative;z-index:1;min-height:170px;
   background:linear-gradient(180deg,var(--panel-2),var(--panel));
   border:1px solid var(--line-strong);border-radius:var(--radius);
-  padding:11px 12px 10px;display:flex;flex-direction:column;gap:8px;
+  padding:6px 6px 5px;display:flex;flex-direction:column;gap:8px;
   transition:box-shadow .18s ease, border-color .18s ease;
 }
 .army-a .unit-plate{border-top:3px solid var(--a-deep)}
@@ -95,21 +95,40 @@
 }
 .unit-card.front .front-flag{display:inline-block}
 
-/* header row: class-icon tile (left) | name (centered) | rank badge+power (right) */
-.unit-head{display:flex;align-items:center;gap:6px}
+/* header row: class-icon column (left) | name (centered) | rank badge+power
+   column (right) — the left and right columns mirror each other (Phase
+   10.9 refined 2026-07-10: the class-icon tile shrank to badge size, with
+   an element-name label under it, same shape as the rank badge/power). */
+.unit-head{display:flex;align-items:flex-start;gap:6px}
+/* left column: class-icon tile + element label, min-width matches
+   .unit-rank so the name stays centered whether or not a rank is present */
+.unit-class{flex:none;min-width:28px;display:flex;flex-direction:column;align-items:center;gap:2px}
 .unit-class-icon{
-  flex:none;width:26px;height:26px;border-radius:7px;
+  flex:none;width:20px;height:20px;border-radius:6px;
   display:flex;align-items:center;justify-content:center;
   background:rgba(0,0,0,0.35);border:1px solid var(--line);
 }
-.unit-class-icon-img{width:17px;height:17px;object-fit:contain;display:block}
-.unit-name{
-  flex:1;min-width:0;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-family:Rajdhani,sans-serif;font-weight:700;letter-spacing:0.03em;font-size:18px;line-height:1.1;
+.unit-class-icon-img{width:14px;height:14px;object-fit:contain;display:block}
+.unit-element{
+  font-family:Rajdhani,sans-serif;font-weight:700;font-size:10px;
+  color:var(--element-color,var(--muted));line-height:1.35;
 }
+.unit-element.element-fire{--element-color:#f87171}
+.unit-element.element-wind{--element-color:#4ade80}
+.unit-element.element-water{--element-color:#60a5fa}
+.unit-element.element-earth{--element-color:#d4a45c}
+.unit-element.element-holy{--element-color:#fde68a}
+.unit-element.element-dark{--element-color:#a78bfa}
+.unit-name{
+  flex:1;min-width:0;text-align:center;
+  font-family:Rajdhani,sans-serif;font-weight:700;letter-spacing:0.03em;font-size:16px;line-height:1.1;
+}
+.unit-name.name-sm{font-size:14px}
+.unit-name.name-xs{font-size:12.5px}
+.unit-name.name-xxs{font-size:11px;white-space:normal;line-height:1.15}
 /* rank badge/power (Phase 10.9): only populated when the unit carries a
    rank — kept as an empty flex item either way so the name stays centered
-   between the class-icon tile and this slot. */
+   between the class-icon column and this slot. */
 .unit-rank{flex:none;min-width:28px;display:flex;flex-direction:column;align-items:center;gap:2px}
 .unit-rank-badge{
   font-family:Rajdhani,sans-serif;font-weight:800;font-size:10.5px;letter-spacing:0.03em;
@@ -137,6 +156,12 @@
 }
 .stat .s-ico{font-size:12px;opacity:.9}
 .stat .s-val{font-family:Rajdhani,sans-serif;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums}
+
+/* staged-gear stat preview (Phase 10.10 round 2, ui/monsterSetup.js): an
+   optional `statTone` on the HP/atk/spd values while a change is pending —
+   a clear green for an increase, a dark orange for a decrease. */
+.unit-card .tone-up{color:#3fb950}
+.unit-card .tone-down{color:#cc7a1d}
 
 /* rank tiers (Phase 10.9): --rank-color scoped on .unit-plate so the badge/
    power text (both descendants) can read it via inheritance. Unranked

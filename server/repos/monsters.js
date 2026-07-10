@@ -25,6 +25,11 @@ export function shapeMonster(r) {
     rank: r.rank,
     equipmentCount: Number(r.equipment_count ?? 0),
     runeCount: Number(r.rune_count ?? 0),
+    // Present only on rows selected WITH these subqueries (listMonstersByTrainer,
+    // getMonsterById) — other shapeMonster() callers (e.g. server/repos/pvp.js)
+    // select rows without them, so `?? []` keeps this shape safe everywhere.
+    equipment: r.equipment ?? [],
+    runes: r.runes ?? [],
   };
 }
 const shape = shapeMonster;
@@ -44,7 +49,21 @@ export async function listMonstersByTrainer(sql, trainerId) {
               WHERE ms.monster_id = m.id),
              '[]'::json) AS skills,
            (SELECT count(*)::int FROM monster_equipment me WHERE me.monster_id = m.id) AS equipment_count,
-           (SELECT count(*)::int FROM runes rn WHERE rn.monster_id = m.id) AS rune_count
+           (SELECT count(*)::int FROM runes rn WHERE rn.monster_id = m.id) AS rune_count,
+           COALESCE(
+             (SELECT json_agg(json_build_object(
+                       'id', me.def_id, 'name', ed.name,
+                       'level', me.enhance_level + 1, 'effects', ed.effects))
+              FROM monster_equipment me JOIN equipment_defs ed ON ed.id = me.def_id
+              WHERE me.monster_id = m.id),
+             '[]'::json) AS equipment,
+           COALESCE(
+             (SELECT json_agg(json_build_object(
+                       'instanceId', rn.id, 'id', rn.def_id, 'name', rd.name,
+                       'level', rn.level, 'chargesLeft', rn.charges_left, 'effects', rd.effects))
+              FROM runes rn JOIN rune_defs rd ON rd.id = rn.def_id
+              WHERE rn.monster_id = m.id),
+             '[]'::json) AS runes
     FROM monsters m JOIN monster_species s ON s.id = m.species_id
     WHERE m.trainer_id = ${trainerId}
     ORDER BY m.id`;
@@ -161,7 +180,21 @@ export async function getMonsterById(sql, trainerId, monsterId) {
               WHERE ms.monster_id = m.id),
              '[]'::json) AS skills,
            (SELECT count(*)::int FROM monster_equipment me WHERE me.monster_id = m.id) AS equipment_count,
-           (SELECT count(*)::int FROM runes rn WHERE rn.monster_id = m.id) AS rune_count
+           (SELECT count(*)::int FROM runes rn WHERE rn.monster_id = m.id) AS rune_count,
+           COALESCE(
+             (SELECT json_agg(json_build_object(
+                       'id', me.def_id, 'name', ed.name,
+                       'level', me.enhance_level + 1, 'effects', ed.effects))
+              FROM monster_equipment me JOIN equipment_defs ed ON ed.id = me.def_id
+              WHERE me.monster_id = m.id),
+             '[]'::json) AS equipment,
+           COALESCE(
+             (SELECT json_agg(json_build_object(
+                       'instanceId', rn.id, 'id', rn.def_id, 'name', rd.name,
+                       'level', rn.level, 'chargesLeft', rn.charges_left, 'effects', rd.effects))
+              FROM runes rn JOIN rune_defs rd ON rd.id = rn.def_id
+              WHERE rn.monster_id = m.id),
+             '[]'::json) AS runes
     FROM monsters m JOIN monster_species s ON s.id = m.species_id
     WHERE m.id = ${monsterId} AND m.trainer_id = ${trainerId}`;
   return rows[0] ? shape(rows[0]) : null;

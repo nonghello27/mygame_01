@@ -36,14 +36,18 @@ function renderArmy(container, visualOrder, sourceArr, side, labelNode) {
 
 /**
  * Build one battlefield-style unit card: portrait + info plate (pos badge,
- * a header row — class-icon tile, name, rank badge/power — an HP bar, and a
- * 2x2 stat-tile grid). Pure markup — no dataset, no drag, no front-lane
- * marker; `buildCard()` below layers those battlefield concerns on top.
- * Shared with ui/team.js (Phase 10.8) so the Setup Team panel renders the
- * same cards the battlefield does.
+ * a header row — a class-icon tile with an element-name label under it
+ * (mirroring the rank badge/power column on the right), a centered
+ * length-auto-fit name — an HP bar, and a 2x2 stat-tile grid). Pure markup —
+ * no dataset, no drag, no front-lane marker; `buildCard()` below layers
+ * those battlefield concerns on top. Shared with ui/team.js (Phase 10.8) so
+ * the Setup Team panel renders the same cards the battlefield does.
  * @param {object} u a unit (live battle unit, or any display lane shaped the
  *   same way: hp/maxHp/name/cls/element/atk range/matk range/spd/alive,
- *   optionally rank + equipment[]/equipmentCount + runes[]/runeCount)
+ *   optionally rank + equipment[]/equipmentCount + runes[]/runeCount, and
+ *   optionally `statTone` — `{atk?, spd?, hp?}`, each `'up'`/`'down'`, to
+ *   color that stat's value green/orange (display-only, e.g. a staged-gear
+ *   preview; absent for every battlefield caller)
  * @param {string} posLabel badge text, e.g. "A1"/"B2" — pass "" for none
  */
 export function unitCardEl(u, posLabel) {
@@ -52,6 +56,7 @@ export function unitCardEl(u, posLabel) {
   if (!u.alive) card.classList.add("dead");
   if (u.rank != null) card.classList.add(`rank-${String(u.rank).toLowerCase()}`);
 
+  const tone = (key) => (u.statTone?.[key] === "up" ? " tone-up" : u.statTone?.[key] === "down" ? " tone-down" : "");
   const ratio = u.hp / u.maxHp;
   const runeCount = u.runes?.length ?? u.runeCount ?? 0;
   const equipCount = u.equipment?.length ?? u.equipmentCount ?? 0;
@@ -61,6 +66,8 @@ export function unitCardEl(u, posLabel) {
   const rankBlock = u.rank != null
     ? `<span class="unit-rank-badge">${u.rank}</span><span class="unit-rank-power">${powerScore(u)}</span>`
     : "";
+  const nameLen = (u.name || "").length;
+  const nameSizeClass = nameLen > 18 ? "name-xxs" : nameLen > 14 ? "name-xs" : nameLen > 10 ? "name-sm" : "";
 
   card.innerHTML = `
     <div class="unit-portrait-top"></div>
@@ -68,20 +75,23 @@ export function unitCardEl(u, posLabel) {
       <span class="badge-pos">${posLabel}</span>
       <span class="front-flag">FRONT</span>
       <div class="unit-head">
-        <div class="unit-class-icon"></div>
-        <div class="unit-name">${u.name}${elementIcon(u.element)}</div>
+        <div class="unit-class">
+          <div class="unit-class-icon"></div>
+          ${elementLabel(u.element)}
+        </div>
+        <div class="unit-name${nameSizeClass ? " " + nameSizeClass : ""}">${u.name}</div>
         <div class="unit-rank">${rankBlock}</div>
       </div>
       <div class="hp-wrap">
         <div class="hp-top">
           <span class="lbl">❤️ HP</span>
-          <span class="val"><span class="hp-now">${Math.max(0, Math.round(u.hp))}</span>/${u.maxHp}</span>
+          <span class="val${tone("hp")}"><span class="hp-now">${Math.max(0, Math.round(u.hp))}</span>/${u.maxHp}</span>
         </div>
         <div class="hp-bar"><div class="hp-fill" style="width:${ratio * 100}%;background:${hpColor(ratio)}"></div></div>
       </div>
       <div class="stats">
-        <div class="stat" title="Attack"><span class="s-ico">⚔️</span><span class="s-val">${atkLabel(u)}</span></div>
-        <div class="stat" title="Speed"><span class="s-ico">⚡</span><span class="s-val">${u.spd}</span></div>
+        <div class="stat" title="Attack"><span class="s-ico">⚔️</span><span class="s-val${tone("atk")}">${atkLabel(u)}</span></div>
+        <div class="stat" title="Speed"><span class="s-ico">⚡</span><span class="s-val${tone("spd")}">${u.spd}</span></div>
         <div class="stat" title="Runes"><span class="s-ico">🔮</span><span class="s-val">${runeCount}</span></div>
         <div class="stat" title="Equipment"><span class="s-ico">🛡️</span><span class="s-val">${equipCount}</span></div>
       </div>
@@ -110,10 +120,21 @@ function buildCard(u, side, lane) {
   return card;
 }
 
-const ELEMENT_ICONS = {
-  fire: "🔥", water: "💧", wind: "🌪️", earth: "⛰️", holy: "✨", dark: "🌑",
-};
-const elementIcon = (el) => (ELEMENT_ICONS[el] ? ` ${ELEMENT_ICONS[el]}` : "");
+/**
+ * Build the element label under the class-icon tile (Phase 10.9 refined
+ * 2026-07-10) — the element's capitalized name, colored per element via an
+ * `element-<name>` modifier class; unknown/missing renders the raw value
+ * (or nothing) in the default muted color, no modifier class.
+ */
+const KNOWN_ELEMENTS = ["fire", "wind", "water", "earth", "holy", "dark"];
+function elementLabel(el) {
+  const lower = String(el || "").toLowerCase();
+  if (KNOWN_ELEMENTS.includes(lower)) {
+    const cap = lower[0].toUpperCase() + lower.slice(1);
+    return `<span class="unit-element element-${lower}">${cap}</span>`;
+  }
+  return `<span class="unit-element">${el || ""}</span>`;
+}
 
 /**
  * Build the class-icon tile's `<img>` (Phase 10.9) — its `title`/`alt` is

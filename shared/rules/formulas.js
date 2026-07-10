@@ -47,3 +47,38 @@ export function hitChance(attacker, target, targetFrozen) {
 export function powerScore(d) {
   return Math.round(d.maxHp + (d.atkMin + d.atkMax) * 5 + (d.matkMin + d.matkMax) * 5 + d.spd * 20);
 }
+
+/**
+ * Fold a list of equipment/rune pieces' `perm_stat` battle_start effects onto
+ * a derived statline — mirrors shared/engine/resolve.js's perm_stat +
+ * scaledFx semantics EXACTLY (atk: round(v*(1+pct/100))+flat, clamped >=0;
+ * maxHp: round(maxHp*(1+pct/100)), pct only; every other stat: flat add).
+ * Two piece shapes share this one loop: equipment carries `enhanceLevel`
+ * (the engine feeds it level = enhanceLevel + 1, so bonus = perLevel *
+ * enhanceLevel); runes carry `level` directly (the engine feeds that level
+ * as-is, so bonus = perLevel * (level - 1)) — a rune-only `target_select`
+ * trigger has no `op:"perm_stat"` and is skipped by the guard below same as
+ * any other non-perm_stat effect. Broken/depleted runes are skipped outright
+ * — they can't fire in a real battle either. Display only — never sent
+ * anywhere; the server (server/repos/equipment.js, server/repos/runes.js) is
+ * the one place this math actually pays out in a real battle.
+ */
+export function applyGearStats(d, pieces) {
+  const out = { ...d };
+  for (const p of pieces) {
+    if (p.broken || p.chargesLeft === 0) continue;
+    const lvl = p.enhanceLevel ?? ((p.level ?? 1) - 1);
+    for (const fx of p.effects ?? []) {
+      if (fx.when !== "battle_start" || fx.op !== "perm_stat") continue;
+      const bonus = (fx.perLevel ?? 0) * lvl;
+      const flat = fx.flat !== undefined ? fx.flat + bonus : undefined;
+      const pct = fx.flat !== undefined ? (fx.pct ?? 0) : (fx.pct ?? 0) + bonus;
+      if (fx.stat === "maxHp") out.maxHp = Math.round(out.maxHp * (1 + pct / 100));
+      else if (fx.stat === "atk") {
+        out.atkMin = Math.max(0, Math.round(out.atkMin * (1 + pct / 100)) + (flat ?? 0));
+        out.atkMax = Math.max(0, Math.round(out.atkMax * (1 + pct / 100)) + (flat ?? 0));
+      } else out[fx.stat] = (out[fx.stat] ?? 0) + (flat ?? 0);
+    }
+  }
+  return out;
+}
