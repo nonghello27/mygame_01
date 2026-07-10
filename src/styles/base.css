@@ -45,8 +45,8 @@ body{
 .wrap{max-width:980px;margin:0 auto}
 
 header.top{
-  display:flex;align-items:flex-end;justify-content:space-between;
-  gap:14px;margin-bottom:6px;flex-wrap:wrap;
+  display:flex;align-items:center;justify-content:space-between;
+  gap:14px;margin-bottom:3px;flex-wrap:wrap;
 }
 .title{
   font-family:Rajdhani, sans-serif;
@@ -59,8 +59,6 @@ header.top{
   border:1px solid rgba(251,191,36,0.4);border-radius:999px;
   padding:3px 8px;background:rgba(251,191,36,0.08);font-weight:600;
 }
-.subtitle{color:var(--muted);font-size:13px;margin:2px 0 0;max-width:520px}
-
 button.btn{
   font-family:Rajdhani,sans-serif;font-weight:700;letter-spacing:0.1em;
   text-transform:uppercase;font-size:14px;

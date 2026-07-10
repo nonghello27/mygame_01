@@ -55,8 +55,10 @@ The vision and plans live in `docs/` — treat them as part of this file:
   fight, free & PVP, with a live party strip), and 10.3 (a grouped
   dropdown menu bar over the control buttons) are all code complete.
   Phase 10 was EXTENDED 2026-07-08 with sub-phases 10.4–10.6, staged next
-  from playtest feedback: 10.4 (a keep-enemy option on match creation plus
-  a battlefield 🎲 New Enemy re-roll button), 10.5 (a leftmost "Me &
+  from playtest feedback: 10.4 (a keep-enemy option on match creation, used
+  by Setup Team's save — this sub-phase's battlefield 🎲 New Enemy re-roll
+  button was later removed, 10.11's follow-up, as redundant with New
+  Opponent), 10.5 (a leftmost "Me &
   Team" menu group whose drag-and-drop 🪖 Setup Team panel replaces the
   old battlefield party strip), and 10.6 (a monster-centric 🐾 Setup
   Monster gear panel in that same menu group) are all code complete —
@@ -87,8 +89,16 @@ The vision and plans live in `docs/` — treat them as part of this file:
   cancel-anytime-for-no-reward endpoint, and a slot-based 🏕 Farm panel
   redesign — a slots row of occupied/free/locked boxes over a drag-and-drop
   roster row of the same shared unit cards) — is ALSO now code complete —
-  **Phase 10.10 is done**. Phase 11 (chat, notifications & the photo quest)
-  is next.
+  **Phase 10.10 is done**. Phase 10.11 (playtest feedback), staged
+  2026-07-10, is also code complete: a compact header (the descriptive
+  subtitle line under the title removed, its vertical footprint roughly
+  halved) and a one-line menubar (tighter gap/font/padding on its
+  top-level items only), plus the battlefield's two army rows now stack
+  ("My Units" over "Enemy Units" with the VS clash zone between) at every
+  width instead of the old side-by-side desktop layout, with both armies'
+  front-line units rendered rightmost so lane 1 stays aligned across the
+  stack — **Phase 10.11 is done**. Phase 11 (chat, notifications & the
+  photo quest) is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -311,7 +321,10 @@ per roadmap phase, don't big-bang rename.)
     │                       # client-display-only, never sent anywhere; refined 2026-07-10 after
     │                       # playtest: a wider 225px card, a smaller class-icon tile mirroring
     │                       # the rank badge column, and the name never truncates — it shrinks
-    │                       # through size tiers by length instead), sprite,
+    │                       # through size tiers by length instead; Phase 10.11 stacked the two
+    │                       # army rows — renderBoard() renders BOTH armies back-to-front so each
+    │                       # front-line unit sits rightmost, keeping lane 1 aligned across the
+    │                       # "My Units"/"Enemy Units" stack), sprite,
     │                       # dragdrop, log, chroma, auth, farm, admin,
     │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
     │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),

@@ -26,16 +26,17 @@
   /* never let the row shrink narrower than its content — scrolls in .field-frame instead of clipping */
   min-width:max-content;
 }
-.army{display:flex;flex-direction:column;gap:12px;align-items:center}
+.army{display:flex;flex-direction:row;flex-wrap:wrap;justify-content:center;gap:14px}
+/* Army labels now live in the clash zone's .clash-row (index.html), between
+   the two stacked army rows, instead of atop each army (Phase 10.11 follow-up). */
 .army-label{
   font-family:Rajdhani,sans-serif;font-weight:600;
   letter-spacing:0.16em;text-transform:uppercase;font-size:12px;
-  display:flex;align-items:center;gap:8px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
 }
-.army-a .army-label{color:var(--a)}
-.army-b .army-label{color:var(--b)}
+.army-label-a{color:var(--a)}
+.army-label-b{color:var(--b)}
 .army-label .dot{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
-.army-label .enemy-reroll{margin-left:auto;padding:3px 9px;font-size:11px}
 
 /* unit card = a transparent wrapper: a big portrait standing ABOVE a shorter
    info "plate". The card itself carries no background/border anymore. */
@@ -210,8 +211,9 @@
 /* clash zone */
 .clash{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:6px;min-height:64px;padding:6px 14px;text-align:center;width:100%;
+  gap:6px;min-height:48px;padding:6px 14px;text-align:center;width:100%;
 }
+.clash-row{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap}
 .vs-badge{
   font-family:Rajdhani,sans-serif;font-weight:700;letter-spacing:0.12em;font-size:20px;color:var(--clash);
   border:1px solid rgba(251,191,36,0.4);background:rgba(251,191,36,0.08);
@@ -219,7 +221,7 @@
 }
 .vs-badge.pulse{animation:pulse 1s ease-in-out infinite}
 @keyframes pulse{50%{box-shadow:0 0 24px rgba(251,191,36,0.45)}}
-.clash .status{font-size:13px;color:var(--muted);min-height:16px}
+.clash .status{font-size:13px;color:var(--muted)}
 .clash .winner{font-family:Rajdhani,sans-serif;font-weight:700;font-size:22px;letter-spacing:0.08em}
 
 /* floating damage (used when cinematic mode is off) */
@@ -233,12 +235,4 @@
   0%{opacity:0;transform:translate(-50%,0) scale(.7)}
   15%{opacity:1;transform:translate(-50%,-6px) scale(1.1)}
   100%{opacity:0;transform:translate(-50%,-44px) scale(1)}
-}
-
-/* desktop: horizontal battle line */
-@media (min-width:760px){
-  .battlefield{flex-direction:row;justify-content:center;align-items:center;gap:10px}
-  .army{flex-direction:row;align-items:center;gap:14px;flex-wrap:nowrap}
-  .army-label{writing-mode:vertical-rl;transform:rotate(180deg);align-self:center}
-  .clash{width:auto;min-width:120px}
 }

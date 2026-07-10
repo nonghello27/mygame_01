@@ -13,7 +13,6 @@
     <header class="top">
       <div>
         <h1 class="title">Battle Line <span class="tag">PROTOTYPE</span></h1>
-        <p class="subtitle">Front units clash first. When one falls, the next steps up to face the survivor. Drag a card to swap its position before the fight.</p>
       </div>
       <div class="profile" id="profile" hidden>
         <span class="chip" id="profileName"></span>
@@ -61,18 +60,18 @@
     <div id="playgroundView">
       <div class="field-frame">
         <div class="battlefield">
-          <div class="army army-a" id="armyA">
-            <div class="army-label"><span class="dot"></span>Your Army</div>
-          </div>
+          <div class="army army-a" id="armyA"></div>
 
           <div class="clash" id="clash">
-            <div class="vs-badge" id="vsBadge">⚔ VS</div>
-            <div class="status" id="status">Front line: lane 1</div>
+            <div class="clash-row">
+              <div class="army-label army-label-a"><span class="dot"></span>My Units</div>
+              <div class="vs-badge" id="vsBadge">⚔ VS</div>
+              <div class="army-label army-label-b"><span class="dot"></span>Enemy Units</div>
+            </div>
+            <div class="status" id="status"></div>
           </div>
 
-          <div class="army army-b" id="armyB">
-            <div class="army-label"><span class="dot"></span>Enemy <button class="btn ghost enemy-reroll" id="newEnemyBtn" type="button">🎲 New Enemy</button></div>
-          </div>
+          <div class="army army-b" id="armyB"></div>
         </div>
       </div>
 

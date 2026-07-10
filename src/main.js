@@ -45,7 +45,6 @@ import { registerView, showView } from "./ui/views.js";
 const startBtn = document.getElementById("startBtn");
 const resetBtn = document.getElementById("resetBtn");
 const shuffleBtn = document.getElementById("shuffleBtn");
-const newEnemyBtn = document.getElementById("newEnemyBtn");
 const cineBtn = document.getElementById("cineBtn");
 const statusEl = document.getElementById("status");
 const vsBadge = document.getElementById("vsBadge");
@@ -60,7 +59,6 @@ function showWinner(youWin, survivor) {
   vsBadge.style.display = "none";
   statusEl.innerHTML = `<span class="winner" style="color:${youWin ? "var(--a)" : "var(--b)"}">${youWin ? "Victory" : "Defeat"}</span>`;
   resetBtn.disabled = false;
-  newEnemyBtn.disabled = false;
   void survivor; // available for future end-screen detail
 }
 
@@ -69,7 +67,6 @@ async function onStart() {
   if (state.phase !== "setup") return;
   startBtn.disabled = true;
   shuffleBtn.disabled = true;
-  newEnemyBtn.disabled = true;
   resetBtn.disabled = true;
   hint.style.display = "none";
   vsBadge.classList.add("pulse");
@@ -78,8 +75,8 @@ async function onStart() {
 
 /** Back to setup. A finished match is spent (the server resolves each match
  *  exactly once), so after a battle Reset opens a fresh match — since Phase
- *  10.4 against the SAME enemy (a rematch); "New Opponent"/"New Enemy" are
- *  the re-roll paths. Before a battle it just restores the current layout. */
+ *  10.4 against the SAME enemy (a rematch); "New Opponent" is the re-roll
+ *  path. Before a battle it just restores the current layout. */
 function onReset() {
   return backToSetup(state.phase === "over" ? () => openMatch(undefined, { keepEnemy: true }) : resetState);
 }
@@ -87,27 +84,6 @@ function onReset() {
 /** Ask the server for a fresh match: new opponent team, new frozen order. */
 function onNewOpponent() {
   return backToSetup(openMatch);
-}
-
-/** Re-roll ONLY the enemy (Phase 10.4): fresh match, no keepEnemyMatchId,
- *  but the CURRENT board lane order rides along as monsterIds so your team
- *  and arrangement carry over. Free matches always have owned monsterIds;
- *  a PVP board falls back to the remembered party (getPartyIds via openMatch). */
-function onNewEnemy() {
-  const ids = state.armyA.map((u) => u.monsterId);
-  if (ids.every((id) => Number.isInteger(id))) {
-    return backToSetup(() => newMatchKeepingTeam(ids));
-  }
-  return backToSetup(openMatch);
-}
-
-async function newMatchKeepingTeam(ids) {
-  try {
-    await newMatch(undefined, ids);
-  } catch (e) {
-    setStatus(`Could not start a match: ${e.message}`);
-    throw e;
-  }
 }
 
 /**
@@ -129,7 +105,6 @@ async function startRankedBattle() {
 async function backToSetup(loader, { rethrow = false } = {}) {
   if (state.phase === "battle") return;
   shuffleBtn.disabled = true;
-  newEnemyBtn.disabled = true;
   try {
     await loader();
   } catch (e) {
@@ -137,12 +112,11 @@ async function backToSetup(loader, { rethrow = false } = {}) {
     return; // status line already explains; keep current board
   } finally {
     shuffleBtn.disabled = false;
-    newEnemyBtn.disabled = false;
   }
   clearLog();
   vsBadge.style.display = "";
   vsBadge.classList.remove("pulse");
-  setStatus("Front line: lane 1");
+  setStatus(""); // clear any stale turn/error text; idle status shows nothing
   startBtn.disabled = false;
   resetBtn.disabled = true;
   hint.style.display = "";
@@ -215,5 +189,4 @@ async function startSession() {
 startBtn.addEventListener("click", onStart);
 resetBtn.addEventListener("click", onReset);
 shuffleBtn.addEventListener("click", onNewOpponent);
-newEnemyBtn.addEventListener("click", onNewEnemy);
 cineBtn.addEventListener("click", onCinematicToggle);

@@ -8,30 +8,35 @@ import { enableDragSwap } from "./dragdrop.js";
 import { spriteEl } from "./sprite.js";
 import { powerScore } from "../../shared/rules/formulas.js";
 
-let elA, elB, labelA, labelB;
+let elA, elB;
 
 export function initBoard() {
   elA = document.getElementById("armyA");
   elB = document.getElementById("armyB");
-  labelA = elA.querySelector(".army-label");
-  labelB = elB.querySelector(".army-label");
 }
 
 export function renderBoard() {
-  // Army A renders BACK -> FRONT so its front sits nearest the clash zone.
-  renderArmy(elA, [...state.armyA].reverse(), state.armyA, "a", labelA);
-  // Army B renders FRONT -> BACK so its front sits nearest the clash zone.
-  renderArmy(elB, state.armyB, state.armyB, "b", labelB);
+  // Both armies now render in STACKED rows (Phase 10.11), one above the
+  // other, with the VS clash zone between them — so each army renders
+  // BACK -> FRONT, putting its front-line unit rightmost in its row. That
+  // aligns lane 1 over lane 1 vertically, fronts nearest each other across
+  // the stacked clash zone, same as the old side-by-side layout's fronts
+  // meeting at the clash zone. Reversing the visual order never changes
+  // lane data — `lane` below still comes from `sourceArr.indexOf(u)+1`
+  // (the Phase 10.8 team-slots comment makes the same point). The army
+  // labels themselves now live in the clash zone's own row (index.html),
+  // not inside either army container (Phase 10.11 follow-up).
+  renderArmy(elA, [...state.armyA].reverse(), state.armyA, "a");
+  renderArmy(elB, [...state.armyB].reverse(), state.armyB, "b");
   markFront();
 }
 
-function renderArmy(container, visualOrder, sourceArr, side, labelNode) {
+function renderArmy(container, visualOrder, sourceArr, side) {
   [...container.querySelectorAll(".unit-card")].forEach((n) => n.remove());
   visualOrder.forEach((u) => {
     const lane = sourceArr.indexOf(u) + 1; // 1 = front
     container.appendChild(buildCard(u, side, lane));
   });
-  if (container.firstChild !== labelNode) container.insertBefore(labelNode, container.firstChild);
 }
 
 /**

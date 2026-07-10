@@ -1615,6 +1615,57 @@ tagged and non-interactive; `npm test` and `npm run build` both pass;
 `git diff --stat` for this round touches only `src/ui/farm.js`,
 `src/styles/farm.css`, and docs. ✅ Done. **Phase 10.10 is done.**
 
+## Phase 10.11 — Battlefield stack & chrome compaction (playtest) ✅ CODE COMPLETE (2026-07-10)
+
+Staged 2026-07-10 from playtest feedback, client-only, two small fixes:
+
+- **Compact header + one-line menubar:** the header's descriptive
+  `<p class="subtitle">` line under the title is gone (`index.html`,
+  `src/styles/base.css` — the now-dead `.subtitle` rule was removed too,
+  confirmed to have no other consumer), and `header.top`'s own
+  margin/padding shrank so the top bar sits noticeably lower with less
+  vertical footprint. The menubar (`src/styles/menu.css`) is scoped tighter
+  — a smaller gap (10px → 6px), smaller font/padding on its top-level items
+  only (`.menubar > .btn` and `.menu-trigger`, NOT the `.menu-drop .btn`
+  dropdown items, and NOT the global `button.btn` in base.css) — so it fits
+  one line on a typical desktop width, with `flex-wrap:wrap` still the
+  fallback on narrow windows.
+- **Battlefield: stacked army rows.** Since the unit card grew to 225px
+  (Phase 10.9), the old side-by-side desktop layout let the enemy row's
+  HP/stats scroll out of view mid-battle. `src/styles/board.css` drops the
+  `@media (min-width:760px)` side-by-side override entirely — `.army` is
+  now a full-width card row (`flex-direction:row;flex-wrap:wrap`) with its
+  `.army-label` pinned to its own line above the cards
+  (`flex:0 0 100%`) at every width, so "My Units" and "Enemy Units" always
+  stack vertically with the VS clash zone between them (`.clash`'s
+  `min-height` trimmed 64px → 48px to keep the stack tight).
+  `ui/board.js`'s `renderBoard()` now renders BOTH armies back-to-front
+  (army B reversed too, matching army A), so each army's front-line unit
+  sits rightmost, keeping lane 1 vertically aligned across the stack and
+  both fronts nearest each other over the clash zone — reversing the
+  visual order never touches lane data (`lane` still comes from
+  `sourceArr.indexOf(u)+1`). The army labels themselves are renamed "My
+  Units" / "Enemy Units" (were "Your Army" / "Enemy").
+
+**Done when:** the header takes roughly half its old vertical space with
+the subtitle line gone; the menubar's top-level items fit one row on a
+typical desktop width; the battlefield renders "My Units" over "Enemy
+Units" (VS zone between) at every width, both fronts aligned nearest the
+clash zone; `npm test` (no diff — client-only) and `npm run build` both
+pass; `git diff --stat` for this round touches only `index.html`,
+`src/styles/base.css`, `src/styles/menu.css`, `src/styles/board.css`,
+`src/ui/board.js`, and docs. ✅ Done. **Phase 10.11 is done.**
+
+**Adjusted same day:** the two `.army-label` lines merged into one line in
+the clash zone reading "● My Units  ⚔ VS  ● Enemy Units", between the
+stacked army rows instead of atop each one; the 🎲 New Enemy re-roll button
+was removed as redundant with New Opponent (Setup Team already remembers
+the party); the idle status line ("Front line: lane 1") under the VS badge
+was removed too — `#status` still stays (turn narration, errors, the
+Victory/Defeat banner all render into it) but is now empty at rest, with
+`.clash .status`'s `min-height` dropped so an empty status takes no
+vertical space.
+
 ## Phase 11 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants
