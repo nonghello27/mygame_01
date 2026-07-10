@@ -1664,7 +1664,11 @@ the party); the idle status line ("Front line: lane 1") under the VS badge
 was removed too — `#status` still stays (turn narration, errors, the
 Victory/Defeat banner all render into it) but is now empty at rest, with
 `.clash .status`'s `min-height` dropped so an empty status takes no
-vertical space.
+vertical space; and, per further playtest feedback, the enemy row's
+front-liner is now leftmost rather than rightmost — `ui/board.js`'s
+`renderBoard()` renders army B FRONT -> BACK (army A stays BACK -> FRONT),
+so the two fronts (A1, B1) sit diagonally opposite across the VS row
+instead of vertically aligned.
 
 ## Phase 11 — Chat, notifications & photo quest (later)
 

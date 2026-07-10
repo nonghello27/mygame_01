@@ -17,17 +17,19 @@ export function initBoard() {
 
 export function renderBoard() {
   // Both armies now render in STACKED rows (Phase 10.11), one above the
-  // other, with the VS clash zone between them — so each army renders
-  // BACK -> FRONT, putting its front-line unit rightmost in its row. That
-  // aligns lane 1 over lane 1 vertically, fronts nearest each other across
-  // the stacked clash zone, same as the old side-by-side layout's fronts
-  // meeting at the clash zone. Reversing the visual order never changes
-  // lane data — `lane` below still comes from `sourceArr.indexOf(u)+1`
-  // (the Phase 10.8 team-slots comment makes the same point). The army
-  // labels themselves now live in the clash zone's own row (index.html),
-  // not inside either army container (Phase 10.11 follow-up).
+  // other, with the VS clash zone between them. Per playtest preference
+  // (10.11 follow-up), the two rows use OPPOSITE visual orders: army A
+  // (top) renders BACK -> FRONT, putting its front-line unit rightmost;
+  // army B (bottom) renders FRONT -> BACK, putting its front-line unit
+  // leftmost. The two fronts (A1, B1) end up diagonally opposite across
+  // the VS row rather than aligned in the same column — that's the wanted
+  // layout, not a bug. Reversing/not-reversing is visual DOM order only;
+  // lane data — `lane` below still comes from `sourceArr.indexOf(u)+1` —
+  // is untouched either way (the Phase 10.8 team-slots comment makes the
+  // same point). The army labels themselves live in the clash zone's own
+  // row (index.html), not inside either army container (10.11 follow-up).
   renderArmy(elA, [...state.armyA].reverse(), state.armyA, "a");
-  renderArmy(elB, [...state.armyB].reverse(), state.armyB, "b");
+  renderArmy(elB, state.armyB, state.armyB, "b");
   markFront();
 }
 
