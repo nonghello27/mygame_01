@@ -133,9 +133,15 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
    *  changes call this directly; anything that actually changes a slot pick
    *  goes through renderAndNotify() below instead. */
   function render() {
+    // Re-render must not lose the player's scroll position in the picker
+    // (Phase 10.16 playtest fix) — sorting, staging a pick, or a host-driven
+    // setSlots()/setMonsters() all rebuild this whole container.
+    const scrollLeft = container.querySelector(".team-roster")?.scrollLeft ?? 0;
     container.innerHTML = "";
     if (!roster) return;
-    container.append(slotsRow(), touchHint(), sortBar(), rosterRow());
+    const roster_ = rosterRow();
+    container.append(slotsRow(), touchHint(), sortBar(), roster_);
+    roster_.scrollLeft = scrollLeft;
     const detail = detailArea();
     if (detail) container.append(detail);
   }

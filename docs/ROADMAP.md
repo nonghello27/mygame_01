@@ -1969,6 +1969,46 @@ width. Round 1 (the interaction model) and round 2 (small-screen layout,
 media-query only, desktop pixel-identical) are both done. **Phase 10.15 is
 done.**
 
+## Phase 10.16 — playtest fixes: picker scroll, Setup Monster detail, one-line slot rows
+
+Staged 2026-07-11, one client-only round, three fixes:
+
+- Every card row that rebuilds via `innerHTML = ""` on re-render now
+  preserves its horizontal scroll position across that rebuild —
+  `ui/monsterSetup.js`'s `.ms-cards` picker, `ui/partyPicker.js`'s
+  `.team-roster`, and `ui/farm.js`'s `.farm-roster` each capture
+  `scrollLeft` before clearing and restore it onto the freshly-built row, so
+  clicking a card / staging a change / switching a bag tab / Save / Send /
+  Cancel no longer snaps a scrolled-through row back to the start.
+- The Setup Monster panel's detail header (`headerRow()`) is rebuilt to the
+  current unit-card design language instead of its old pre-10.9 raw-emoji/
+  plain-text style: a class-icon tile via a newly-EXPORTED
+  `ui/board.js#classIconEl()`, the name with a colored element label
+  (reusing board.css's global `.unit-element.element-*` classes so colors
+  can never drift from the battlefield cards), a rank badge + `powerScore()`
+  when the monster has a rank (the same `.unit-rank-badge`/`.unit-rank-power`
+  classes and rank->color mapping `unitCardEl()` uses, mirrored onto
+  `.ms-head` itself via a `.rank-<tier>` modifier class), the existing attrs
+  line, and a new compact derived-stats badge row (HP/ATK/MATK/SPD/CRIT/EVA/
+  ACC) — all read off the SAME gear-effective `laneView(m)` the picker cards
+  already use, so it reflects staged changes too. `.ms-head-emoji` is
+  retired (no remaining users).
+- `.team-slots` (`styles/team.css`, shared by Setup Team and Adventure's
+  party picker) and `.farm-slots` (`styles/farm.css`) both switch from
+  `flex-wrap:wrap` to a single horizontal `overflow-x:auto` line, so the 3
+  (or 2+1) slots never stack vertically on a phone and push the roster row
+  out of view — the player was dragging blind. The `@media (max-width:
+  560px)` slot sizing changes from a flex-basis to `flex:0 0 auto` so the
+  ROW scrolls instead of the slots shrinking/stacking; the empty-slot label
+  text gets a smaller font at that breakpoint too. Desktop is pixel-
+  identical either way: 3 slots x 245px + 2x10px gaps = 755px sits
+  comfortably inside the ~950px panel content width, so the row was already
+  a single line before `nowrap` — it just now can't wrap even if a future
+  change narrowed the panel.
+
+`npm test` (203) and `npm run build` both pass — client-only, no
+`shared/engine/`/`server/`/`db/` change. **Phase 10.16 is done.**
+
 ## Phase 11 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants

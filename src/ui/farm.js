@@ -174,8 +174,14 @@ function placeInFirstFreeSlot(id) {
 // ---------- rendering ----------
 
 function render() {
+  // Re-render must not lose the player's scroll position in the picker
+  // (Phase 10.16 playtest fix) — staging a pick, Send, or Cancel all
+  // rebuild this whole list.
+  const scrollLeft = els.list.querySelector(".farm-roster")?.scrollLeft ?? 0;
   els.list.innerHTML = "";
-  els.list.append(slotsRow(), touchHint(), rosterRow());
+  const roster = rosterRow();
+  els.list.append(slotsRow(), touchHint(), roster);
+  roster.scrollLeft = scrollLeft;
 }
 
 /** Coarse-pointer-only hint (Phase 10.15) — hidden on mouse via base.css's

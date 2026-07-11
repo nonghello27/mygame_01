@@ -158,9 +158,11 @@ function elementLabel(el) {
  * fallback, `default.png`, if that art is missing too — so a user can drop
  * in replacement art under public/icons/classes/ without touching code (see
  * that dir's README.md) — same public-asset path style as ui/sprite.js's
- * `/sprites/...` references.
+ * `/sprites/...` references. Exported (Phase 10.16) so ui/monsterSetup.js's
+ * detail header can build the same class-icon tile the battlefield card
+ * does, without duplicating the lookup chain.
  */
-function classIconEl(cls) {
+export function classIconEl(cls) {
   const base = state.classes[cls]?.icon || String(cls || "").toLowerCase();
   const img = document.createElement("img");
   img.className = "unit-class-icon-img";

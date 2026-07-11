@@ -135,8 +135,15 @@ The vision and plans live in `docs/` — treat them as part of this file:
   press-and-hold — behind every drag surface (battlefield swap, party
   picker, Farm roster), plus a ≤560px compact-layout & `pointer:coarse`
   tap-target CSS pass (smaller cards/slots/paddings, bigger buttons,
-  desktop pixel-identical). **Phase 10.15 is done.** Phase 11 (chat,
-  notifications & the photo quest) is next.
+  desktop pixel-identical). **Phase 10.15 is done.** Phase 10.16 (playtest
+  fixes), staged 2026-07-11, is also code complete: every rebuilt card row
+  now preserves its scroll position across a re-render; the Setup Monster
+  panel's detail header was rebuilt to the unit-card design language — a
+  class icon, a colored element name, a rank badge/power, and a derived-
+  stats line, all gear-effective; and `.team-slots`/`.farm-slots` became
+  single-line horizontal scroll rows instead of wrapping, so the slots
+  never stack above the roster on a phone. **Phase 10.16 is done.** Phase 11
+  (chat, notifications & the photo quest) is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -365,7 +372,9 @@ per roadmap phase, don't big-bang rename.)
     │                       # "My Units"/"Enemy Units" stack; Phase 10.12 added a status-icon row
     │                       # atop the portrait, rendered by unitCardEl() and kept live by the
     │                       # replayer's status/status_end events via the new updateCardStatuses()
-    │                       # export, filenames mapped in data/statusIcons.js), sprite,
+    │                       # export, filenames mapped in data/statusIcons.js); Phase 10.16 also
+    │                       # exported the module-local classIconEl() so ui/monsterSetup.js's
+    │                       # detail header can build the same class-icon tile), sprite,
     │                       # skillMedia (Phase 10.13: skill icon lookup — icon||slot||"default" —
     │                       # plus an extension-picks-the-renderer skill animation renderer,
     │                       # surfaced in the party-picker detail and the battle log),
@@ -435,7 +444,11 @@ per roadmap phase, don't big-bang rename.)
     │                       # to free slots/capacity before the equips/sockets that follow, stops
     │                       # and surfaces the server's message on the first failed call while
     │                       # leaving the rest staged for retry, and clears both maps only once
-    │                       # every op lands),
+    │                       # every op lands; Phase 10.16 rebuilt the detail header to the
+    │                       # unit-card design language — board.js's classIconEl(), a colored
+    │                       # element label, a rank badge/power, and a derived-stats badge row,
+    │                       # all off the same gear-effective laneView(m) — and made the picker
+    │                       # row's scroll position survive a re-render),
     │                       # menubar (Phase 10.3: a grouped dropdown menu bar over the existing
     │                       # button ids — Me & Team (Phase 10.5's leftmost group, holding
     │                       # Setup Team, Setup Monster (10.6), and the relocated Inventory

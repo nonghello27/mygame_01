@@ -22,8 +22,12 @@
 
 import { fetchInventory, loadFarm, equipMonsterEquipment, socketRune } from "../services/content.js";
 import { registerView } from "./views.js";
-import { unitCardEl } from "./board.js";
-import { deriveStats, applyGearStats } from "../../shared/rules/formulas.js";
+import { unitCardEl, classIconEl } from "./board.js";
+import { deriveStats, applyGearStats, powerScore } from "../../shared/rules/formulas.js";
+
+// Same known-element list as board.js's elementLabel() — kept local rather
+// than exported/imported since it's a one-line lookup, not real logic.
+const KNOWN_ELEMENTS = ["fire", "wind", "water", "earth", "holy", "dark"];
 
 let els = null;
 let data = null;          // last fetchInventory() result
@@ -165,10 +169,16 @@ function stageRune(r, targetMonsterId) {
 // ---------- rendering ----------
 
 function renderBody() {
+  // Re-render must not lose the player's scroll position in the picker
+  // (Phase 10.16 playtest fix) — clicking a card, staging a change,
+  // switching a bag tab, or saving all rebuild this whole body.
+  const scrollLeft = els.body.querySelector(".ms-cards")?.scrollLeft ?? 0;
   els.body.innerHTML = "";
   if (!data) return;
 
-  els.body.appendChild(pickerRow());
+  const picker = pickerRow();
+  els.body.appendChild(picker);
+  picker.scrollLeft = scrollLeft;
 
   if (monsters.length === 0) {
     els.body.appendChild(el("p", "ms-hint", "No monsters yet — win or summon one first."));
@@ -202,13 +212,70 @@ function pickerRow() {
   return row;
 }
 
+/** Element-name label under/next to the name, colored via board.css's
+ *  `.unit-element.element-<name>` classes (Phase 10.16) — the exact
+ *  battlefield-card mechanism, kept in sync automatically since the color
+ *  variables live in that one shared stylesheet. */
+function elementLabelEl(element) {
+  const lower = String(element || "").toLowerCase();
+  if (KNOWN_ELEMENTS.includes(lower)) {
+    const cap = lower[0].toUpperCase() + lower.slice(1);
+    return el("span", `unit-element element-${lower}`, cap);
+  }
+  return el("span", "unit-element", element || "");
+}
+
+/**
+ * Detail header (Phase 10.16 redesign) — the unit-card design language
+ * instead of the old raw-emoji/plain-text style: a class-icon tile
+ * (board.js's classIconEl(), same lookup chain the battlefield uses), the
+ * name with a colored element label, a rank badge + powerScore() when the
+ * monster has a rank (same `.unit-rank-badge`/`.unit-rank-power` classes and
+ * rank->color mapping unitCardEl() uses — mirrored onto `.ms-head` itself
+ * via a `.rank-<tier>` modifier class, since this header isn't a battlefield
+ * unit-card), the attrs line, and a derived-stats badge row (mirrors
+ * partyPicker.js's team-detail-badge row). Stats are GEAR-EFFECTIVE — the
+ * SAME laneView(m) the picker cards already use, staged changes folded in,
+ * so this always reflects the latest projected state. */
 function headerRow(m) {
+  const view = laneView(m);
   const head = el("div", "ms-head");
-  head.append(el("span", "ms-head-emoji", m.emoji || "❔"));
-  const info = el("div");
-  info.append(el("b", null, m.name), el("span", "ms-head-sub", ` ${m.cls} · ${m.element}`));
+  if (view.rank != null) head.classList.add(`rank-${String(view.rank).toLowerCase()}`);
+
+  const iconTile = el("div", "unit-class-icon ms-head-icon");
+  iconTile.appendChild(classIconEl(m.cls));
+  head.appendChild(iconTile);
+
+  const info = el("div", "ms-head-info");
+
+  const nameRow = el("div", "ms-head-name-row");
+  nameRow.append(el("b", "ms-head-name", m.name), elementLabelEl(m.element));
+  info.appendChild(nameRow);
+
+  if (view.rank != null) {
+    const rankRow = el("div", "ms-head-rank");
+    rankRow.append(
+      el("span", "unit-rank-badge", String(view.rank)),
+      el("span", "unit-rank-power", String(powerScore(view))),
+    );
+    info.appendChild(rankRow);
+  }
+
   const a = m.attrs || {};
   info.append(el("div", "ms-attrs", `STR ${a.str ?? 0} · AGI ${a.agi ?? 0} · VIT ${a.vit ?? 0} · INT ${a.int ?? 0} · DEX ${a.dex ?? 0}`));
+
+  const stats = el("div", "ms-head-stats");
+  stats.append(
+    badge(`HP ${view.maxHp}`),
+    badge(`ATK ${view.atkMin}–${view.atkMax}`),
+    badge(`MATK ${view.matkMin}–${view.matkMax}`),
+    badge(`SPD ${view.spd}`),
+    badge(`CRIT ${view.crit}%`),
+    badge(`EVA ${view.evade}%`),
+    badge(`ACC ${view.acc}%`),
+  );
+  info.appendChild(stats);
+
   head.appendChild(info);
   return head;
 }
