@@ -2,5 +2,14 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "framework": "vite"
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/auth/:a/:b+", "destination": "/api/auth/r" },
+    { "source": "/api/battle/:a/:b+", "destination": "/api/battle/r" },
+    { "source": "/api/trainer/:a/:b+", "destination": "/api/trainer/r" },
+    { "source": "/api/admin/:a/:b+", "destination": "/api/admin/r" },
+    { "source": "/api/adventure/:a/:b+", "destination": "/api/adventure/r" },
+    { "source": "/api/market/:a/:b+", "destination": "/api/market/r" },
+    { "source": "/api/guild/:a/:b+", "destination": "/api/guild/r" }
+  ]
 }

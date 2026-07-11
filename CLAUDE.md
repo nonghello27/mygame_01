@@ -181,7 +181,12 @@ is the layout that is real today.
   each domain internally routes multiple endpoints via a table in
   `server/routers/`, so growth inside a domain never costs a new function;
   the Vite dev middleware calls the matching `server/routers/<domain>.js`
-  directly).
+  directly). Vercel's non-Next file-system routing for a dynamic
+  `[...route].js` file only matches ONE path segment in production, so
+  `vercel.json` carries a `rewrites` table folding every deeper path (e.g.
+  `/api/trainer/equipment/equip`) back onto its domain's function — a new
+  nested endpoint needs no config change, but a genuinely new domain must
+  also add its own rewrite line there.
 - **Neon Postgres** via `@neondatabase/serverless` (connection in `server/db.js`).
 - **CSS + inline SVG + PNG sprite sheets** for art; motion is CSS keyframes.
 

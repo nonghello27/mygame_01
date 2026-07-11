@@ -3,7 +3,9 @@
 // reason to add a new top-level api/ entry, after the marketplace — see
 // server/routers/guild.js). Owns every /api/guild/* URL. Real routing lives
 // in server/routers/guild.js. In dev, Vite's middleware calls that router
-// directly and this file isn't loaded.
+// directly and this file isn't loaded. In production, vercel.json's
+// rewrites fold any multi-segment /api/guild/* path back onto this same
+// function so req.url still carries the original path.
 
 import { route } from "../../server/routers/guild.js";
 
