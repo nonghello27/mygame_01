@@ -166,23 +166,23 @@ async function enrichListings(sql, rows, { mine }) {
 
   const [items, trainerEquip, monsterEquip, runes, monsters] = await Promise.all([
     itemDefIds.length
-      ? sql`SELECT id, name, description, kind FROM item_defs WHERE id = ANY(${itemDefIds}::text[])`
+      ? sql`SELECT id, name, description, kind, icon FROM item_defs WHERE id = ANY(${itemDefIds}::text[])`
       : Promise.resolve([]),
     equipRefIds.length
       ? sql`
-          SELECT e.id, d.name, d.slot, d.domain, d.effects, e.enhance_level
+          SELECT e.id, d.id AS def_id, d.name, d.slot, d.domain, d.icon, d.effects, e.enhance_level
           FROM trainer_equipment e JOIN equipment_defs d ON d.id = e.def_id
           WHERE e.id = ANY(${equipRefIds}::bigint[])`
       : Promise.resolve([]),
     equipRefIds.length
       ? sql`
-          SELECT m.id, d.name, d.slot, d.domain, d.effects, m.enhance_level
+          SELECT m.id, d.id AS def_id, d.name, d.slot, d.domain, d.icon, d.effects, m.enhance_level
           FROM monster_equipment m JOIN equipment_defs d ON d.id = m.def_id
           WHERE m.id = ANY(${equipRefIds}::bigint[])`
       : Promise.resolve([]),
     runeRefIds.length
       ? sql`
-          SELECT r.id, d.name, d.effects, d.max_charges, r.charges_left, r.broken, r.level
+          SELECT r.id, d.id AS def_id, d.name, d.icon, d.effects, d.max_charges, r.charges_left, r.broken, r.level
           FROM runes r JOIN rune_defs d ON d.id = r.def_id
           WHERE r.id = ANY(${runeRefIds}::bigint[])`
       : Promise.resolve([]),
@@ -217,18 +217,19 @@ async function enrichListings(sql, rows, { mine }) {
 
     if (r.kind === "item") {
       const d = itemById.get(r.def_id);
-      out.good = d ? { name: d.name, description: d.description, kind: d.kind } : null;
+      out.good = d ? { name: d.name, description: d.description, kind: d.kind, icon: d.icon, defId: d.id } : null;
     } else if (r.kind === "equipment") {
       const d = equipById.get(Number(r.ref_id));
       out.good = d
-        ? { name: d.name, slot: d.slot, domain: d.domain, effects: d.effects, enhanceLevel: d.enhance_level }
+        ? { name: d.name, slot: d.slot, domain: d.domain, icon: d.icon, effects: d.effects,
+            enhanceLevel: d.enhance_level, defId: d.def_id }
         : null;
     } else if (r.kind === "rune") {
       const d = runeById.get(Number(r.ref_id));
       out.good = d
         ? {
-            name: d.name, effects: d.effects, maxCharges: d.max_charges,
-            chargesLeft: d.charges_left, broken: d.broken, level: d.level,
+            name: d.name, icon: d.icon, effects: d.effects, maxCharges: d.max_charges,
+            chargesLeft: d.charges_left, broken: d.broken, level: d.level, defId: d.def_id,
           }
         : null;
     } else {

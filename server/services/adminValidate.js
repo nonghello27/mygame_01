@@ -365,13 +365,15 @@ function optStr(v, label, { max = 200 } = {}) {
 }
 
 /** @returns {{id:string, kind:string, name:string, description:(string|null),
- *   sellGold:number}} */
+ *   icon:(string|null), sellGold:number}} */
 export function validateItem(input) {
   return {
     id: str(input.id, "item id", { pattern: /^it_[a-z0-9_]+$/ }),
     kind: oneOf(input.kind, ITEM_KINDS, "kind"),
     name: str(input.name, "item name"),
     description: optStr(input.description, "description"),
+    // optional: a base filename under public/icons/items/, no extension.
+    icon: input.icon ? str(input.icon, "icon id", { pattern: /^[a-z][a-z0-9_-]*$/ }) : null,
     // Phase 8 — per-unit instant sell-to-system price; 0 (the default when
     // absent) means "not sellable to the system", the marketplace-only floor.
     sellGold: int(input.sellGold ?? 0, "sell gold", { min: 0, max: 1_000_000 }),
@@ -380,8 +382,8 @@ export function validateItem(input) {
 
 /**
  * @returns {{id:string, domain:string, slot:string, name:string,
- *   description:(string|null), effects:object[], enhance:(object|null),
- *   sellGold:number}}
+ *   description:(string|null), icon:(string|null), effects:object[],
+ *   enhance:(object|null), sellGold:number}}
  */
 export function validateEquipment(input) {
   const domain = oneOf(input.domain, EQUIP_DOMAINS, "domain");
@@ -392,6 +394,8 @@ export function validateEquipment(input) {
     slot,
     name: str(input.name, "equipment name"),
     description: optStr(input.description, "description"),
+    // optional: a base filename under public/icons/equipment/, no extension.
+    icon: input.icon ? str(input.icon, "icon id", { pattern: /^[a-z][a-z0-9_-]*$/ }) : null,
     effects: validateBattleStartEffects(input.effects, "effects", true),
     enhance: null,
     // Phase 8 — per-unit instant sell-to-system price; 0 (the default when
@@ -423,14 +427,16 @@ export function validateEquipment(input) {
 }
 
 /**
- * @returns {{id:string, name:string, description:(string|null), effects:object[],
- *   maxCharges:number, repairGold:number, sellGold:number}}
+ * @returns {{id:string, name:string, description:(string|null), icon:(string|null),
+ *   effects:object[], maxCharges:number, repairGold:number, sellGold:number}}
  */
 export function validateRune(input) {
   return {
     id: str(input.id, "rune id", { pattern: /^rn_[a-z0-9_]+$/ }),
     name: str(input.name, "rune name"),
     description: optStr(input.description, "description"),
+    // optional: a base filename under public/icons/runes/, no extension.
+    icon: input.icon ? str(input.icon, "icon id", { pattern: /^[a-z][a-z0-9_-]*$/ }) : null,
     effects: validateRuneEffects(input.effects, "effects"),
     maxCharges: int(input.maxCharges, "max charges", { min: 1, max: 100 }),
     repairGold: int(input.repairGold, "repair gold", { min: 0, max: 1_000_000 }),

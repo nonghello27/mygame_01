@@ -29,17 +29,17 @@
 //        (work: rewards {gold, trainerExp} | training: rewards {attr, gain})
 // DELETE /api/admin/jobs { id }  -> delete (409 while activities reference it)
 //
-// POST   /api/admin/items { id, kind, name, description }  -> upsert an item
+// POST   /api/admin/items { id, kind, name, description, icon }  -> upsert an item
 // DELETE /api/admin/items { id }  -> delete (409 while any trainer owns it)
 //
-// POST   /api/admin/equipment { id, domain, slot, name, description,
+// POST   /api/admin/equipment { id, domain, slot, name, description, icon,
 //                                effects, enhance }  -> upsert equipment
 //        (domain 'monster': slot weapon|armor|accessory; domain 'trainer':
 //        slot head|body|charm; effects: battle_start/perm_stat list, may
 //        carry perLevel; enhance: {maxLevel, goldPerLevel} or null)
 // DELETE /api/admin/equipment { id }  -> delete (409 while owned)
 //
-// POST   /api/admin/runes { id, name, description, effects, maxCharges,
+// POST   /api/admin/runes { id, name, description, icon, effects, maxCharges,
 //                            repairGold }  -> upsert a rune
 // DELETE /api/admin/runes { id }  -> delete (409 while any trainer owns it)
 //

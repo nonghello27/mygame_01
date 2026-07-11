@@ -31,6 +31,7 @@
   border-radius:11px;padding:10px 12px;
 }
 .inv-id{display:flex;align-items:center;gap:10px;min-width:220px}
+.inv-id .good-icon-img{flex-shrink:0;object-fit:contain}
 .inv-id b{font-size:14px}
 .inv-id small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
 .inv-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}

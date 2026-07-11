@@ -14,6 +14,8 @@
 // repair flow charges to un-break a rune once it hits zero. `sellGold`
 // (Phase 8) is the per-unit instant sell-to-system price; 0 means not
 // sellable to the system (the marketplace is the only way to move it).
+// `icon` (Phase 10.17) is an optional base filename (no extension) under
+// public/icons/runes/; NULL/absent falls back to the def id, then default.png.
 // Ids are stable strings — never renumber.
 
 export const RUNES = [

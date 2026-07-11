@@ -5,6 +5,8 @@
 //                 yet; 7.1 only wires acquisition + the inventory read)
 // `sellGold` (Phase 8) is the per-unit instant sell-to-system price; 0 means
 // not sellable to the system (the marketplace is the only way to move it).
+// `icon` (Phase 10.17) is an optional base filename (no extension) under
+// public/icons/items/; NULL/absent falls back to the def id, then default.png.
 // Ids are stable strings — never renumber.
 
 export const ITEMS = [

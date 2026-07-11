@@ -516,8 +516,9 @@ function classesTab() {
 /** A `/icons/<dir>/<base>.png` image with the standard default.png fallback
  *  (the onerror is re-armed each time src changes so a repeated bad value
  *  still falls back cleanly — used by both list rows and live form previews).
- *  Shared by the Classes tab (`dir:"classes"`) and Skills tab
- *  (`dir:"skills"`, Phase 10.13). */
+ *  Shared by the Classes tab (`dir:"classes"`), Skills tab (`dir:"skills"`,
+ *  Phase 10.13), and the Items/Equipment/Runes tabs (`dir:"items"` /
+ *  `"equipment"` / `"runes"`, Phase 10.17). */
 function iconImg(dir, base, title, size = 44) {
   const img = el("img", "adm-thumb");
   img.width = size;
@@ -687,12 +688,13 @@ function itemsTab() {
   if (editing) return itemForm(editing);
   els.body.appendChild(toolbar("＋ New item", () => ({
     id: "", kind: data.enums.itemKinds[0] ?? "material", name: "", description: "",
-    sellGold: 0, ownedCount: 0, isNew: true,
+    icon: null, sellGold: 0, ownedCount: 0, isNew: true,
   })));
 
   for (const it of data.itemDefs) {
     const row = el("div", "adm-row");
     const id = el("div", "adm-id");
+    id.append(iconImg("items", it.icon || it.id, it.name, 26));
     const txt = el("span");
     txt.append(el("b", null, it.name), el("small", null, `${it.id} · ${it.description || "—"}`));
     id.append(txt);
@@ -720,20 +722,38 @@ function itemForm(it) {
     kind: selectInput(data.enums.itemKinds, it.kind),
     name: textInput(it.name),
     description: textInput(it.description ?? "", "optional"),
+    icon: textInput(it.icon ?? "", "potion"),
     sellGold: numInput(it.sellGold ?? 0, 0, 1_000_000),
   };
   f.id.disabled = !it.isNew;
 
+  // Live icon preview — the classForm/skillForm paintPreview pattern,
+  // repaints on BOTH icon and id input (id matters while creating a new
+  // item, since an empty icon falls back to it).
+  const iconPreview = el("div", "adm-preview");
+  const paintIconPreview = () => {
+    iconPreview.innerHTML = "";
+    const base = f.icon.value.trim() || f.id.value.trim() || "default";
+    iconPreview.append(iconImg("items", base, f.name.value, 64), el("small", null, `/icons/items/${base}.png`));
+  };
+  f.icon.addEventListener("input", paintIconPreview);
+  f.id.addEventListener("input", paintIconPreview);
+  paintIconPreview();
+
   const grid = el("div", "adm-grid");
   grid.append(field("Id (permanent)", f.id), field("Kind", f.kind),
     field("Name", f.name), field("Description", f.description),
-    field("Sell gold (0 = not sellable)", f.sellGold));
+    field("Icon id", f.icon), field("Sell gold (0 = not sellable)", f.sellGold));
 
-  form.append(grid, formButtons(() => saveItem({
-    id: f.id.value.trim(), kind: f.kind.value,
-    name: f.name.value.trim(), description: f.description.value.trim() || null,
-    sellGold: +f.sellGold.value,
-  }), "Item saved"));
+  form.append(iconPreview, grid,
+    el("p", "adm-hint",
+      "Icon art lives in public/icons/items/ (see that folder's README) — leave " +
+      "blank to fall back to the def id, then default.png."),
+    formButtons(() => saveItem({
+      id: f.id.value.trim(), kind: f.kind.value,
+      name: f.name.value.trim(), description: f.description.value.trim() || null,
+      icon: f.icon.value.trim() || null, sellGold: +f.sellGold.value,
+    }), "Item saved"));
   els.body.appendChild(form);
 }
 
@@ -743,7 +763,7 @@ function equipmentTab() {
     const domain = data.enums.equipDomains[0] ?? "monster";
     return {
       id: "", domain, slot: data.enums.equipSlots[domain]?.[0] ?? "",
-      name: "", description: "",
+      name: "", description: "", icon: null,
       effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 10, perLevel: 2 }],
       enhance: { maxLevel: 5, goldPerLevel: 50 },
       sellGold: 0, trainerOwned: 0, monsterOwned: 0, isNew: true,
@@ -753,6 +773,7 @@ function equipmentTab() {
   for (const eq of data.equipmentDefs) {
     const row = el("div", "adm-row");
     const id = el("div", "adm-id");
+    id.append(iconImg("equipment", eq.icon || eq.id, eq.name, 26));
     const txt = el("span");
     txt.append(el("b", null, eq.name), el("small", null, `${eq.id} · ${eq.description || "—"}`));
     id.append(txt);
@@ -784,6 +805,7 @@ function equipmentForm(eq) {
     slot: selectInput(E.equipSlots[eq.domain] ?? [], eq.slot),
     name: textInput(eq.name),
     description: textInput(eq.description ?? "", "optional"),
+    icon: textInput(eq.icon ?? "", "sword"),
     effects: el("textarea"),
     enhanced: el("input"),
     maxLevel: numInput(eq.enhance?.maxLevel ?? 5, 1, 20),
@@ -805,10 +827,23 @@ function equipmentForm(eq) {
     f.slot = fresh;
   });
 
+  // Live icon preview — the classForm/skillForm paintPreview pattern,
+  // repaints on BOTH icon and id input (id matters while creating a new
+  // piece, since an empty icon falls back to it).
+  const iconPreview = el("div", "adm-preview");
+  const paintIconPreview = () => {
+    iconPreview.innerHTML = "";
+    const base = f.icon.value.trim() || f.id.value.trim() || "default";
+    iconPreview.append(iconImg("equipment", base, f.name.value, 64), el("small", null, `/icons/equipment/${base}.png`));
+  };
+  f.icon.addEventListener("input", paintIconPreview);
+  f.id.addEventListener("input", paintIconPreview);
+  paintIconPreview();
+
   const grid = el("div", "adm-grid");
   grid.append(field("Id (permanent)", f.id), field("Domain", f.domain), field("Slot", f.slot),
     field("Name", f.name), field("Description", f.description),
-    field("Sell gold (0 = not sellable)", f.sellGold));
+    field("Icon id", f.icon), field("Sell gold (0 = not sellable)", f.sellGold));
 
   const effectsField = field("Effects (JSON)", f.effects);
   effectsField.classList.add("adm-wide");
@@ -821,7 +856,10 @@ function equipmentForm(eq) {
   f.enhanced.addEventListener("change", paintEnhance);
   paintEnhance();
 
-  form.append(grid, effectsField, el("p", "adm-hint", EFFECTS_HINT),
+  form.append(iconPreview, grid, effectsField, el("p", "adm-hint", EFFECTS_HINT),
+    el("p", "adm-hint",
+      "Icon art lives in public/icons/equipment/ (see that folder's README) — leave " +
+      "blank to fall back to the def id, then default.png."),
     field("Enhanceable", f.enhanced), enhanceGrid,
     formButtons(() => {
       let effects;
@@ -833,6 +871,7 @@ function equipmentForm(eq) {
       return saveEquipment({
         id: f.id.value.trim(), domain: f.domain.value, slot: f.slot.value,
         name: f.name.value.trim(), description: f.description.value.trim() || null,
+        icon: f.icon.value.trim() || null,
         effects,
         enhance: f.enhanced.checked
           ? { maxLevel: +f.maxLevel.value, goldPerLevel: +f.goldPerLevel.value }
@@ -846,7 +885,7 @@ function equipmentForm(eq) {
 function runesTab() {
   if (editing) return runeForm(editing);
   els.body.appendChild(toolbar("＋ New rune", () => ({
-    id: "", name: "", description: "",
+    id: "", name: "", description: "", icon: null,
     effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 2, perLevel: 1 }],
     maxCharges: 5, repairGold: 30, sellGold: 0, ownedCount: 0, isNew: true,
   })));
@@ -854,6 +893,7 @@ function runesTab() {
   for (const rn of data.runeDefs) {
     const row = el("div", "adm-row");
     const id = el("div", "adm-id");
+    id.append(iconImg("runes", rn.icon || rn.id, rn.name, 26));
     const txt = el("span");
     txt.append(el("b", null, rn.name), el("small", null, `${rn.id} · ${rn.description || "—"}`));
     id.append(txt);
@@ -880,6 +920,7 @@ function runeForm(rn) {
     id: textInput(rn.id, "rn_my_rune"),
     name: textInput(rn.name),
     description: textInput(rn.description ?? "", "optional"),
+    icon: textInput(rn.icon ?? "", "gem"),
     effects: el("textarea"),
     maxCharges: numInput(rn.maxCharges, 1, 100),
     repairGold: numInput(rn.repairGold, 0, 1_000_000),
@@ -890,15 +931,31 @@ function runeForm(rn) {
   f.effects.spellcheck = false;
   f.effects.value = JSON.stringify(rn.effects, null, 2);
 
+  // Live icon preview — the classForm/skillForm paintPreview pattern,
+  // repaints on BOTH icon and id input (id matters while creating a new
+  // rune, since an empty icon falls back to it).
+  const iconPreview = el("div", "adm-preview");
+  const paintIconPreview = () => {
+    iconPreview.innerHTML = "";
+    const base = f.icon.value.trim() || f.id.value.trim() || "default";
+    iconPreview.append(iconImg("runes", base, f.name.value, 64), el("small", null, `/icons/runes/${base}.png`));
+  };
+  f.icon.addEventListener("input", paintIconPreview);
+  f.id.addEventListener("input", paintIconPreview);
+  paintIconPreview();
+
   const grid = el("div", "adm-grid");
   grid.append(field("Id (permanent)", f.id), field("Name", f.name), field("Description", f.description),
-    field("Max charges", f.maxCharges), field("Repair gold", f.repairGold),
+    field("Icon id", f.icon), field("Max charges", f.maxCharges), field("Repair gold", f.repairGold),
     field("Sell gold (0 = not sellable)", f.sellGold));
 
   const effectsField = field("Effects (JSON)", f.effects);
   effectsField.classList.add("adm-wide");
 
-  form.append(grid, effectsField, el("p", "adm-hint", EFFECTS_HINT),
+  form.append(iconPreview, grid, effectsField, el("p", "adm-hint", EFFECTS_HINT),
+    el("p", "adm-hint",
+      "Icon art lives in public/icons/runes/ (see that folder's README) — leave " +
+      "blank to fall back to the def id, then default.png."),
     formButtons(() => {
       let effects;
       try {
@@ -909,6 +966,7 @@ function runeForm(rn) {
       return saveRune({
         id: f.id.value.trim(), name: f.name.value.trim(),
         description: f.description.value.trim() || null,
+        icon: f.icon.value.trim() || null,
         effects, maxCharges: +f.maxCharges.value, repairGold: +f.repairGold.value,
         sellGold: +f.sellGold.value,
       });

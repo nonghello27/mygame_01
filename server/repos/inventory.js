@@ -76,25 +76,25 @@ export async function grantRune(sql, trainerId, defId) {
 export async function listInventory(sql, trainerId) {
   const [items, trainerEquip, monsterEquip, runes] = await Promise.all([
     sql`
-      SELECT i.def_id, i.qty, d.kind, d.name, d.description, d.sell_gold
+      SELECT i.def_id, i.qty, d.kind, d.name, d.description, d.icon, d.sell_gold
       FROM items i JOIN item_defs d ON d.id = i.def_id
       WHERE i.trainer_id = ${trainerId} AND i.qty > 0
       ORDER BY d.kind, d.id`,
     sql`
       SELECT e.id, e.def_id, e.enhance_level, e.equipped_slot,
-        d.domain, d.slot, d.name, d.description, d.effects, d.enhance, d.sell_gold
+        d.domain, d.slot, d.name, d.description, d.icon, d.effects, d.enhance, d.sell_gold
       FROM trainer_equipment e JOIN equipment_defs d ON d.id = e.def_id
       WHERE e.trainer_id = ${trainerId}
       ORDER BY e.id`,
     sql`
       SELECT m.id, m.def_id, m.enhance_level, m.monster_id,
-        d.domain, d.slot, d.name, d.description, d.effects, d.enhance, d.sell_gold
+        d.domain, d.slot, d.name, d.description, d.icon, d.effects, d.enhance, d.sell_gold
       FROM monster_equipment m JOIN equipment_defs d ON d.id = m.def_id
       WHERE m.trainer_id = ${trainerId}
       ORDER BY m.id`,
     sql`
       SELECT r.id, r.def_id, r.level, r.charges_left, r.broken, r.monster_id,
-        d.name, d.description, d.effects, d.max_charges, d.repair_gold, d.sell_gold
+        d.name, d.description, d.icon, d.effects, d.max_charges, d.repair_gold, d.sell_gold
       FROM runes r JOIN rune_defs d ON d.id = r.def_id
       WHERE r.trainer_id = ${trainerId}
       ORDER BY r.id`,
@@ -103,25 +103,25 @@ export async function listInventory(sql, trainerId) {
   return {
     items: items.map((r) => ({
       defId: r.def_id, qty: r.qty, kind: r.kind, name: r.name, description: r.description,
-      sellGold: r.sell_gold,
+      icon: r.icon, sellGold: r.sell_gold,
     })),
     equipment: {
       trainer: trainerEquip.map((r) => ({
         id: Number(r.id), defId: r.def_id, enhanceLevel: r.enhance_level, equippedSlot: r.equipped_slot,
         domain: r.domain, slot: r.slot, name: r.name, description: r.description,
-        effects: r.effects, enhance: r.enhance, sellGold: r.sell_gold,
+        icon: r.icon, effects: r.effects, enhance: r.enhance, sellGold: r.sell_gold,
       })),
       monster: monsterEquip.map((r) => ({
         id: Number(r.id), defId: r.def_id, enhanceLevel: r.enhance_level,
         monsterId: r.monster_id === null ? null : Number(r.monster_id),
         domain: r.domain, slot: r.slot, name: r.name, description: r.description,
-        effects: r.effects, enhance: r.enhance, sellGold: r.sell_gold,
+        icon: r.icon, effects: r.effects, enhance: r.enhance, sellGold: r.sell_gold,
       })),
     },
     runes: runes.map((r) => ({
       id: Number(r.id), defId: r.def_id, level: r.level, chargesLeft: r.charges_left,
       broken: r.broken, monsterId: r.monster_id === null ? null : Number(r.monster_id),
-      name: r.name, description: r.description, effects: r.effects,
+      name: r.name, description: r.description, icon: r.icon, effects: r.effects,
       maxCharges: r.max_charges, repairGold: r.repair_gold, sellGold: r.sell_gold,
     })),
   };

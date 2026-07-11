@@ -142,8 +142,21 @@ The vision and plans live in `docs/` — treat them as part of this file:
   class icon, a colored element name, a rank badge/power, and a derived-
   stats line, all gear-effective; and `.team-slots`/`.farm-slots` became
   single-line horizontal scroll rows instead of wrapping, so the slots
-  never stack above the roster on a phone. **Phase 10.16 is done.** Phase 11
-  (chat, notifications & the photo quest) is next.
+  never stack above the roster on a phone. **Phase 10.16 is done.** Phase
+  10.17 (goods icons), staged 2026-07-11, is also code complete: an
+  admin-editable `icon` column on all three goods master tables
+  (`item_defs`/`equipment_defs`/`rune_defs`, migration `023_goods_icon.sql`,
+  the classes/skills icon precedent) rides every read that already joins the
+  def (admin master, `GET /api/trainer/inventory`, the marketplace's listing
+  enrichment) into a new `ui/goodsMedia.js` renderer seam — an icon lookup
+  chain of `icon || defId || the def's own string id || "default"` — shown
+  ahead of the name on the 🎒 Inventory panel's rows, 🐾 Setup Monster's
+  equipped/bag rows, the 🏪 Marketplace's listing cards, and the admin 🧰
+  Items/⚔ Equipment/🔮 Runes tabs' rows and forms (each form growing an Icon
+  id field with a live preview), with new `public/icons/items/`,
+  `public/icons/equipment/`, `public/icons/runes/` art folders (a
+  default.svg/default.png/README.md apiece). **Phase 10.17 is done.** Phase
+  11 (chat, notifications & the photo quest) is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -320,7 +333,7 @@ per roadmap phase, don't big-bang rename.)
 │                           # bracket/standings read)
 ├── db/
 │   ├── migrations/         # NNN_name.sql, applied in order (append-only once live;
-│   │                       # up to 021_skill_media.sql)
+│   │                       # up to 023_goods_icon.sql)
 │   ├── migrate.mjs         # npm run db:migrate (tracked in schema_migrations)
 │   └── seed.mjs            # npm run db:seed (migrates, then loads master data)
 ├── shared/                 # PURE game logic imported by BOTH api/ and src/
@@ -383,6 +396,10 @@ per roadmap phase, don't big-bang rename.)
     │                       # skillMedia (Phase 10.13: skill icon lookup — icon||slot||"default" —
     │                       # plus an extension-picks-the-renderer skill animation renderer,
     │                       # surfaced in the party-picker detail and the battle log),
+    │                       # goodsMedia (Phase 10.17: the same seam for items/equipment/runes —
+    │                       # goodIconEl(dir, good, size) looks up icon||defId||(the def's own
+    │                       # string id)||"default" under public/icons/<dir>/, surfaced in the
+    │                       # Inventory/Setup Monster/Marketplace panels and the admin console),
     │                       # pointerDrag (Phase 10.15: the shared hold-to-drag/swipe-to-scroll
     │                       # pointer engine — beginPointerDrag({sourceEl, findTarget, onDrop,
     │                       # cloneClasses}) — behind dragdrop/partyPicker/farm; mouse drags on a
@@ -609,7 +626,9 @@ Acquisition was admin-grant-only at this phase (`POST /api/admin/grant`) —
 the Summon Hall (Phase 7.4) later added a player-facing path for monsters,
 though items/equipment/runes still only reach a trainer via grant until
 Adventure/the marketplace. `GET /api/trainer/inventory` is the one read
-(items + equipment + runes in one call).
+(items + equipment + runes in one call). Every goods def also carries an
+admin-editable `icon` (Phase 10.17, the classes/skills icon precedent) —
+see `ui/goodsMedia.js`.
 
 Equipment (Phase 7.2): `POST /api/trainer/equipment/equip {domain:'trainer'|
 'monster', equipmentId, monsterId?, equip?}` equips/unequips one owned piece
@@ -1040,7 +1059,10 @@ job, never re-derived client-side.
   same tab): the flat per-unit price `POST /api/trainer/inventory/sell`
   credits when a player instant-sells one to the system; 0 (the default)
   means not system-sellable at all — the marketplace remains the only way
-  to turn it into gold.
+  to turn it into gold. Every def also carries an optional `icon` (Phase
+  10.17, same tab, with a live preview): a base filename under
+  `public/icons/items|equipment|runes/`, empty = the def id, then
+  `default.png` (`ui/goodsMedia.js`'s `goodIconEl()`).
 - **Add a summon banner (live):** admin console (✨ Summons tab) — validated
   writes straight to `summon_defs`, no redeploy. Or a row in
   `src/data/summons.js` + `npm run db:seed` for content meant to ship with

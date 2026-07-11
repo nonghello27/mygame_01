@@ -157,22 +157,22 @@ export const deleteJob = (sql, id) => sql`DELETE FROM job_defs WHERE id = ${id}`
 
 export async function listItemsAdmin(sql) {
   const rows = await sql`
-    SELECT i.id, i.kind, i.name, i.description, i.sell_gold,
+    SELECT i.id, i.kind, i.name, i.description, i.icon, i.sell_gold,
       (SELECT count(*)::int FROM items t WHERE t.def_id = i.id) AS owned_count
     FROM item_defs i ORDER BY i.kind, i.id`;
   return rows.map((r) => ({
-    id: r.id, kind: r.kind, name: r.name, description: r.description, sellGold: r.sell_gold,
-    ownedCount: r.owned_count,
+    id: r.id, kind: r.kind, name: r.name, description: r.description, icon: r.icon,
+    sellGold: r.sell_gold, ownedCount: r.owned_count,
   }));
 }
 
-export async function upsertItem(sql, { id, kind, name, description, sellGold }) {
+export async function upsertItem(sql, { id, kind, name, description, icon, sellGold }) {
   await sql`
-    INSERT INTO item_defs (id, kind, name, description, sell_gold)
-    VALUES (${id}, ${kind}, ${name}, ${description}, ${sellGold})
+    INSERT INTO item_defs (id, kind, name, description, icon, sell_gold)
+    VALUES (${id}, ${kind}, ${name}, ${description}, ${icon}, ${sellGold})
     ON CONFLICT (id) DO UPDATE SET
       kind = EXCLUDED.kind, name = EXCLUDED.name, description = EXCLUDED.description,
-      sell_gold = EXCLUDED.sell_gold`;
+      icon = EXCLUDED.icon, sell_gold = EXCLUDED.sell_gold`;
 }
 
 export async function itemUsage(sql, id) {
@@ -186,26 +186,26 @@ export const deleteItem = (sql, id) => sql`DELETE FROM item_defs WHERE id = ${id
 
 export async function listEquipmentAdmin(sql) {
   const rows = await sql`
-    SELECT e.id, e.domain, e.slot, e.name, e.description, e.effects, e.enhance, e.sell_gold,
+    SELECT e.id, e.domain, e.slot, e.name, e.description, e.icon, e.effects, e.enhance, e.sell_gold,
       (SELECT count(*)::int FROM trainer_equipment t WHERE t.def_id = e.id) AS trainer_owned,
       (SELECT count(*)::int FROM monster_equipment m WHERE m.def_id = e.id) AS monster_owned
     FROM equipment_defs e ORDER BY e.domain, e.slot, e.id`;
   return rows.map((r) => ({
     id: r.id, domain: r.domain, slot: r.slot, name: r.name, description: r.description,
-    effects: r.effects, enhance: r.enhance, sellGold: r.sell_gold,
+    icon: r.icon, effects: r.effects, enhance: r.enhance, sellGold: r.sell_gold,
     trainerOwned: r.trainer_owned, monsterOwned: r.monster_owned,
   }));
 }
 
-export async function upsertEquipment(sql, { id, domain, slot, name, description, effects, enhance, sellGold }) {
+export async function upsertEquipment(sql, { id, domain, slot, name, description, icon, effects, enhance, sellGold }) {
   await sql`
-    INSERT INTO equipment_defs (id, domain, slot, name, description, effects, enhance, sell_gold)
-    VALUES (${id}, ${domain}, ${slot}, ${name}, ${description},
+    INSERT INTO equipment_defs (id, domain, slot, name, description, icon, effects, enhance, sell_gold)
+    VALUES (${id}, ${domain}, ${slot}, ${name}, ${description}, ${icon},
             ${JSON.stringify(effects)}::jsonb, ${enhance ? JSON.stringify(enhance) : null}::jsonb, ${sellGold})
     ON CONFLICT (id) DO UPDATE SET
       domain = EXCLUDED.domain, slot = EXCLUDED.slot, name = EXCLUDED.name,
-      description = EXCLUDED.description, effects = EXCLUDED.effects, enhance = EXCLUDED.enhance,
-      sell_gold = EXCLUDED.sell_gold`;
+      description = EXCLUDED.description, icon = EXCLUDED.icon, effects = EXCLUDED.effects,
+      enhance = EXCLUDED.enhance, sell_gold = EXCLUDED.sell_gold`;
 }
 
 export async function equipmentUsage(sql, id) {
@@ -221,22 +221,23 @@ export const deleteEquipment = (sql, id) => sql`DELETE FROM equipment_defs WHERE
 
 export async function listRunesAdmin(sql) {
   const rows = await sql`
-    SELECT r.id, r.name, r.description, r.effects, r.max_charges, r.repair_gold, r.sell_gold,
+    SELECT r.id, r.name, r.description, r.icon, r.effects, r.max_charges, r.repair_gold, r.sell_gold,
       (SELECT count(*)::int FROM runes t WHERE t.def_id = r.id) AS owned_count
     FROM rune_defs r ORDER BY r.id`;
   return rows.map((r) => ({
-    id: r.id, name: r.name, description: r.description, effects: r.effects,
+    id: r.id, name: r.name, description: r.description, icon: r.icon, effects: r.effects,
     maxCharges: r.max_charges, repairGold: r.repair_gold, sellGold: r.sell_gold, ownedCount: r.owned_count,
   }));
 }
 
-export async function upsertRune(sql, { id, name, description, effects, maxCharges, repairGold, sellGold }) {
+export async function upsertRune(sql, { id, name, description, icon, effects, maxCharges, repairGold, sellGold }) {
   await sql`
-    INSERT INTO rune_defs (id, name, description, effects, max_charges, repair_gold, sell_gold)
-    VALUES (${id}, ${name}, ${description}, ${JSON.stringify(effects)}::jsonb, ${maxCharges}, ${repairGold}, ${sellGold})
+    INSERT INTO rune_defs (id, name, description, icon, effects, max_charges, repair_gold, sell_gold)
+    VALUES (${id}, ${name}, ${description}, ${icon}, ${JSON.stringify(effects)}::jsonb, ${maxCharges}, ${repairGold}, ${sellGold})
     ON CONFLICT (id) DO UPDATE SET
-      name = EXCLUDED.name, description = EXCLUDED.description, effects = EXCLUDED.effects,
-      max_charges = EXCLUDED.max_charges, repair_gold = EXCLUDED.repair_gold, sell_gold = EXCLUDED.sell_gold`;
+      name = EXCLUDED.name, description = EXCLUDED.description, icon = EXCLUDED.icon,
+      effects = EXCLUDED.effects, max_charges = EXCLUDED.max_charges,
+      repair_gold = EXCLUDED.repair_gold, sell_gold = EXCLUDED.sell_gold`;
 }
 
 export async function runeUsage(sql, id) {

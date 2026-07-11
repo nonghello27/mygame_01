@@ -2009,6 +2009,50 @@ Staged 2026-07-11, one client-only round, three fixes:
 `npm test` (203) and `npm run build` both pass — client-only, no
 `shared/engine/`/`server/`/`db/` change. **Phase 10.16 is done.**
 
+## Phase 10.17 — goods icons (items, equipment, runes)
+
+Staged 2026-07-11 from playtest feedback: every item/equipment/rune name in
+the UI sits behind a blank text row today — no art in front of it at all,
+unlike classes (10.12) and skills (10.13), which both already got a
+DB-mapped icon column an admin can repoint live. Two rounds, same shape as
+10.12/10.13's own split:
+
+- **Round 1 (server + data):** an `icon` column on all three goods master
+  tables (`item_defs`/`equipment_defs`/`rune_defs`, migration
+  `023_goods_icon.sql`) — nullable, NULL means "derive from the def id"
+  (e.g. `it_potion_small` -> `it_potion_small.png`), then `default.png`.
+  `validateItem`/`validateEquipment`/`validateRune`
+  (`server/services/adminValidate.js`) gained the exact `icon` grammar the
+  class/skill validators already use; the column rides every existing read
+  that already joins the def — the admin console's master list
+  (`server/repos/admin.js`), `GET /api/trainer/inventory`
+  (`server/repos/inventory.js`), and the marketplace's per-kind listing
+  enrichment (`server/repos/market.js`) — plus `db/seed.mjs`'s upserts, with
+  no value ever set on a shipped `src/data/*.js` row (that stays art-only,
+  round 2's job).
+- **Round 2 (client + art):** a new `ui/goodsMedia.js` renderer seam — the
+  `ui/skillMedia.js` precedent — exporting one `goodIconEl(dir, good, size)`
+  building an `<img>` off the lookup chain `good.icon || good.defId ||
+  (good's own string id) || "default"` (a numeric INSTANCE id, present on
+  owned equipment/runes alongside their string `defId`, is explicitly never
+  allowed to leak into the URL), with the standard onerror-to-`default.png`
+  loop-guarded fallback. Three new art folders, `public/icons/items/`,
+  `public/icons/equipment/`, `public/icons/runes/`, each with a
+  `default.svg`/`default.png` (a pouch / a sword / a faceted gem,
+  respectively) and a README mirroring `public/icons/classes/README.md`'s
+  lookup-order writeup. Every caller that already renders a good's name grew
+  the matching icon ahead of it: the 🎒 Inventory panel's three tabs, the 🐾
+  Setup Monster panel's equipped/bag rows, the 🏪 Marketplace's listing
+  cards (item/equipment/rune kinds; monster listings unchanged), and the
+  admin console's 🧰 Items/⚔ Equipment/🔮 Runes tabs — both their list rows
+  and their forms, which each grew an "Icon id" field with a live preview
+  (the classForm/skillForm `paintPreview` pattern, repainting on both the
+  icon and id inputs since a new def's fallback depends on the id being
+  typed).
+
+`npm test` (206) and `npm run build` both pass — no `shared/engine/` change.
+**Phase 10.17 is done.**
+
 ## Phase 11 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants

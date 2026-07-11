@@ -21,6 +21,7 @@ import {
 import { fetchMe } from "../services/auth.js";
 import { showProfile } from "./auth.js";
 import { registerView } from "./views.js";
+import { goodIconEl } from "./goodsMedia.js";
 
 const TABS = [
   ["browse", "🔍 Browse"],
@@ -289,6 +290,11 @@ function goodName(l) {
   return l.good?.name ?? l.defId ?? "the item";
 }
 
+// Item/equipment/rune kinds each render as an icon + text column, the same
+// "icon head" shape monster listings already used (mkt-mon-head) — dir picks
+// the goodIconEl() lookup folder per kind.
+const GOODS_ICON_DIR = { item: "items", equipment: "equipment", rune: "runes" };
+
 /** Kind-specific display detail — renders whatever the enriched listing
  *  actually carries (server/repos/market.js's enrichListings()). */
 function goodBlock(l) {
@@ -299,15 +305,21 @@ function goodBlock(l) {
   }
 
   if (l.kind === "item") {
-    box.append(el("b", null, `${l.qty}× ${l.good.name}`));
+    const head = el("div", "mkt-good-head");
+    head.append(goodIconEl(GOODS_ICON_DIR.item, l.good), el("b", null, `${l.qty}× ${l.good.name}`));
+    box.append(head);
     if (l.good.description) box.append(el("p", "mkt-desc", l.good.description));
   } else if (l.kind === "equipment") {
-    box.append(el("b", null, l.good.name));
+    const head = el("div", "mkt-good-head");
+    head.append(goodIconEl(GOODS_ICON_DIR.equipment, l.good), el("b", null, l.good.name));
+    box.append(head);
     const line = [`${l.good.domain} · ${l.good.slot}`];
     if (l.good.enhanceLevel) line.push(`+${l.good.enhanceLevel}`);
     box.append(el("p", "mkt-desc", line.join(" · ")));
   } else if (l.kind === "rune") {
-    box.append(el("b", null, l.good.name));
+    const head = el("div", "mkt-good-head");
+    head.append(goodIconEl(GOODS_ICON_DIR.rune, l.good), el("b", null, l.good.name));
+    box.append(head);
     const line = [`Lv ${l.good.level}`, `${l.good.chargesLeft}/${l.good.maxCharges} charges`];
     box.append(el("p", "mkt-desc", line.join(" · ")));
     if (l.good.broken) box.append(badge("BROKEN", "mkt-broken"));

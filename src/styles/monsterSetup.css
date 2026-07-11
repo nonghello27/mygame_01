@@ -74,6 +74,7 @@
   border-radius:11px;padding:10px 12px;
 }
 .ms-id{display:flex;align-items:center;gap:10px;min-width:220px}
+.ms-id .good-icon-img{flex-shrink:0;object-fit:contain}
 .ms-id b{font-size:14px}
 .ms-id small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
 .ms-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}

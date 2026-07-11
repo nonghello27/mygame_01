@@ -196,6 +196,16 @@ test("validateItem accepts a happy-path row and rejects bad shapes", () => {
     "sellGold must be >= 0");
 });
 
+test("validateItem's icon is optional: absent -> null, a valid id round-trips, a bad one rejects", () => {
+  assert.equal(validateItem({ id: "it_x", kind: "material", name: "X" }).icon, null);
+  assert.equal(validateItem({ id: "it_x", kind: "material", name: "X", icon: "" }).icon, null);
+  assert.equal(
+    validateItem({ id: "it_x", kind: "material", name: "X", icon: "it_potion_small" }).icon,
+    "it_potion_small");
+  rejects(() => validateItem({ id: "it_x", kind: "material", name: "X", icon: "Bad Name!" }),
+    "icon must be lowercase, no spaces/punctuation");
+});
+
 test("validateEquipment enforces domain/slot pairing, effects grammar, enhance bounds", () => {
   const ok = validateEquipment({
     id: "eq_iron_sword", domain: "monster", slot: "weapon", name: "Iron Sword",
@@ -253,6 +263,18 @@ test("validateEquipment enforces domain/slot pairing, effects grammar, enhance b
     effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
     sellGold: -1,
   }), "sellGold must be >= 0");
+});
+
+test("validateEquipment's icon is optional: absent -> null, a valid id round-trips, a bad one rejects", () => {
+  const base = {
+    id: "eq_x", domain: "monster", slot: "weapon", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "atk", pct: 1 }],
+  };
+  assert.equal(validateEquipment(base).icon, null);
+  assert.equal(validateEquipment({ ...base, icon: "" }).icon, null);
+  assert.equal(validateEquipment({ ...base, icon: "eq_iron_sword" }).icon, "eq_iron_sword");
+  rejects(() => validateEquipment({ ...base, icon: "Bad Name!" }),
+    "icon must be lowercase, no spaces/punctuation");
 });
 
 test("validateEquipment's enhance.material is optional and round-trips (Phase 7.2 step B)", () => {
@@ -347,6 +369,19 @@ test("validateRune enforces the effects grammar (with perLevel) and charge/gold 
     effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 1 }],
     maxCharges: 5, repairGold: 0, sellGold: -1,
   }), "sellGold must be >= 0");
+});
+
+test("validateRune's icon is optional: absent -> null, a valid id round-trips, a bad one rejects", () => {
+  const base = {
+    id: "rn_x", name: "X",
+    effects: [{ when: "battle_start", op: "perm_stat", stat: "spd", flat: 1 }],
+    maxCharges: 5, repairGold: 0,
+  };
+  assert.equal(validateRune(base).icon, null);
+  assert.equal(validateRune({ ...base, icon: "" }).icon, null);
+  assert.equal(validateRune({ ...base, icon: "rn_swift" }).icon, "rn_swift");
+  rejects(() => validateRune({ ...base, icon: "Bad Name!" }),
+    "icon must be lowercase, no spaces/punctuation");
 });
 
 test("validateRune accepts the target_select/override_targeting shape and rejects bad/mixed shapes", () => {

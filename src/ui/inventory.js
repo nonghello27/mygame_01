@@ -16,6 +16,7 @@ import {
 import { fetchMe } from "../services/auth.js";
 import { showProfile } from "./auth.js";
 import { registerView } from "./views.js";
+import { goodIconEl } from "./goodsMedia.js";
 
 const TABS = [
   ["items", "🧰 Items"],
@@ -138,7 +139,7 @@ function itemsTab() {
     const id = el("div", "inv-id");
     const txt = el("span");
     txt.append(el("b", null, it.name), el("small", null, it.description || "—"));
-    id.append(txt);
+    id.append(goodIconEl("items", it), txt);
     const side = el("div", "inv-actions");
     side.append(badge(KIND_LABEL[it.kind] ?? it.kind), el("span", "inv-qty", `×${it.qty}`));
     side.append(...itemSellControls(it));
@@ -203,7 +204,7 @@ function equipmentRow(e) {
   const id = el("div", "inv-id");
   const txt = el("span");
   txt.append(el("b", null, e.name), el("small", null, e.description || "—"));
-  id.append(txt);
+  id.append(goodIconEl("equipment", e), txt);
 
   const side = el("div", "inv-actions");
   side.append(badge(`${e.domain} · ${e.slot}`));
@@ -356,7 +357,7 @@ function runeRow(r) {
   const id = el("div", "inv-id");
   const txt = el("span");
   txt.append(el("b", null, r.name), el("small", null, r.description || "—"));
-  id.append(txt);
+  id.append(goodIconEl("runes", r), txt);
 
   const side = el("div", "inv-actions");
   side.append(badge(`Lv ${r.level}`), el("span", "inv-charges", `${r.chargesLeft}/${r.maxCharges}`));

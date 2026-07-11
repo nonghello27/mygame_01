@@ -23,6 +23,7 @@
 import { fetchInventory, loadFarm, equipMonsterEquipment, socketRune } from "../services/content.js";
 import { registerView } from "./views.js";
 import { unitCardEl, classIconEl } from "./board.js";
+import { goodIconEl } from "./goodsMedia.js";
 import { deriveStats, applyGearStats, powerScore } from "../../shared/rules/formulas.js";
 
 // Same known-element list as board.js's elementLabel() — kept local rather
@@ -302,7 +303,7 @@ function equippedEquipmentRow(e) {
   const id = el("div", "ms-id");
   const txt = el("span");
   txt.append(el("b", null, e.name), el("small", null, e.description || "—"));
-  id.append(txt);
+  id.append(goodIconEl("equipment", e), txt);
 
   const side = el("div", "ms-actions");
   side.append(badge(e.slot));
@@ -320,7 +321,7 @@ function equippedRuneRow(r) {
   const id = el("div", "ms-id");
   const txt = el("span");
   txt.append(el("b", null, r.name), el("small", null, r.description || "—"));
-  id.append(txt);
+  id.append(goodIconEl("runes", r), txt);
 
   const side = el("div", "ms-actions");
   side.append(badge(`Lv ${r.level}`), el("span", "ms-charges", `${r.chargesLeft}/${r.maxCharges}`));
@@ -374,7 +375,7 @@ function bagItemsList() {
     const id = el("div", "ms-id");
     const txt = el("span");
     txt.append(el("b", null, it.name), el("small", null, it.description || "—"));
-    id.append(txt);
+    id.append(goodIconEl("items", it), txt);
     const side = el("div", "ms-actions");
     side.append(el("span", "ms-charges", `×${it.qty}`));
     row.append(id, side);
@@ -410,7 +411,7 @@ function bagEquipmentRow(e, m) {
   const id = el("div", "ms-id");
   const txt = el("span");
   txt.append(el("b", null, e.name), el("small", null, e.description || "—"));
-  id.append(txt);
+  id.append(goodIconEl("equipment", e), txt);
 
   const side = el("div", "ms-actions");
   side.append(badge(e.slot));
@@ -428,7 +429,7 @@ function bagRuneRow(r, m) {
   const id = el("div", "ms-id");
   const txt = el("span");
   txt.append(el("b", null, r.name), el("small", null, r.description || "—"));
-  id.append(txt);
+  id.append(goodIconEl("runes", r), txt);
 
   const side = el("div", "ms-actions");
   side.append(badge(`Lv ${r.level}`), el("span", "ms-charges", `${r.chargesLeft}/${r.maxCharges}`));
