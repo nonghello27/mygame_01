@@ -15,13 +15,15 @@
 // perm_stat math the server freezes into snapshots/applies at battle_start;
 // shared/ is importable by src/ by design); display-only, never sent anywhere.
 //
-// Drag-and-drop adapts ui/dragdrop.js's pointer-event clone pattern (works
-// on touch: a small movement threshold before a drag actually starts keeps a
-// plain tap a click). CSS classes (`team-*`) are unchanged and shared
-// globally via styles/team.css — see that file's header comment.
+// Drag-and-drop rides the shared ui/pointerDrag.js engine (Phase 10.15):
+// mouse drags on a small movement threshold, touch/pen drags on a
+// press-and-hold so a swipe can still scroll the roster row. CSS classes
+// (`team-*`) are unchanged and shared globally via styles/team.css — see
+// that file's header comment.
 
 import { unitCardEl } from "./board.js";
 import { skillIconEl } from "./skillMedia.js";
+import { beginPointerDrag } from "./pointerDrag.js";
 import { deriveStats, powerScore, applyGearStats } from "../../shared/rules/formulas.js";
 
 const BUSY_LABEL = {
@@ -32,7 +34,6 @@ const BUSY_LABEL = {
   gvg: "In GVG",
 };
 const PARTY_SIZE = 3;
-const DRAG_THRESHOLD = 5; // px of movement before a pointerdown becomes a drag
 
 // ---------- tiny DOM helpers ----------
 
@@ -105,7 +106,6 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
   let sortKey = "order";      // 'order' | 'name' | 'power'
   let sortDir = "asc";        // 'asc' | 'desc'
   let detailId = null;        // monster id shown in the detail area, or null
-  let drag = null;            // { source, clone, target } — see beginPointerDrag()
 
   const container = el("div", "party-picker");
 
@@ -135,7 +135,7 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
   function render() {
     container.innerHTML = "";
     if (!roster) return;
-    container.append(slotsRow(), sortBar(), rosterRow());
+    container.append(slotsRow(), touchHint(), sortBar(), rosterRow());
     const detail = detailArea();
     if (detail) container.append(detail);
   }
@@ -191,6 +191,12 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
       row.appendChild(slot);
     }
     return row;
+  }
+
+  /** Coarse-pointer-only hint (Phase 10.15) — hidden on mouse via base.css's
+   *  `.touch-hint` utility. */
+  function touchHint() {
+    return el("p", "team-hint touch-hint", "✋ Hold a card to pick it up · swipe to scroll");
   }
 
   function sortBar() {
@@ -322,77 +328,10 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
     return box;
   }
 
-  // ---------- drag & drop (adapted from ui/dragdrop.js's pointer-event pattern) ----------
+  // ---------- drag & drop (rides the shared ui/pointerDrag.js engine) ----------
 
-  function beginPointerDrag(sourceEl, source, e) {
-    const startX = e.clientX;
-    const startY = e.clientY;
-    let started = false;
-    let clone = null;
-    let dx = 0, dy = 0;
-
-    function onMove(ev) {
-      if (!started) {
-        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
-        started = true;
-        const rect = sourceEl.getBoundingClientRect();
-        clone = sourceEl.cloneNode(true);
-        clone.classList.add("team-drag-clone");
-        clone.style.width = rect.width + "px";
-        clone.style.left = rect.left + "px";
-        clone.style.top = rect.top + "px";
-        document.body.appendChild(clone);
-        dx = startX - rect.left;
-        dy = startY - rect.top;
-        drag = { source, clone, target: null };
-        sourceEl.classList.add("dragging-src");
-      }
-      if (!started || !drag) return;
-      clone.style.left = ev.clientX - dx + "px";
-      clone.style.top = ev.clientY - dy + "px";
-      const under = document.elementFromPoint(ev.clientX, ev.clientY);
-      const tSlot = under ? under.closest(".team-slot") : null;
-      if (drag.target && drag.target !== tSlot) drag.target.classList.remove("drop-target");
-      if (tSlot) {
-        tSlot.classList.add("drop-target");
-        drag.target = tSlot;
-      } else {
-        drag.target = null;
-      }
-    }
-
-    // Shared teardown for both a normal drop and an interrupted stream —
-    // never leaves the pointermove listener, the clone, or a drop-target
-    // highlight behind either way.
-    function cleanup() {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onCancel);
-      sourceEl.classList.remove("dragging-src");
-      if (drag?.target) drag.target.classList.remove("drop-target");
-      if (clone) clone.remove();
-    }
-
-    function onUp() {
-      const wasStarted = started;
-      const targetSlot = drag?.target ?? null;
-      cleanup();
-      if (wasStarted) applyDrop(source, targetSlot ? Number(targetSlot.dataset.slot) : null);
-      // else: a plain click — the element's own click handler runs separately
-      drag = null;
-    }
-
-    // A touch scroll or other browser gesture interrupts the pointer stream
-    // with `pointercancel`, not `pointerup` — tear down exactly like onUp
-    // but WITHOUT applying a drop (a cancelled drag changes nothing).
-    function onCancel() {
-      cleanup();
-      drag = null;
-    }
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
-    window.addEventListener("pointercancel", onCancel, { once: true });
+  function findSlotTarget(under) {
+    return under.closest(".team-slot");
   }
 
   function applyDrop(source, targetSlotIdx) {
@@ -417,16 +356,24 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
 
   function enableRosterDrag(card, id) {
     card.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      beginPointerDrag(card, { kind: "roster", id }, e);
+      beginPointerDrag(e, {
+        sourceEl: card,
+        findTarget: findSlotTarget,
+        cloneClasses: ["team-drag-clone"],
+        onDrop: (targetSlot) => applyDrop({ kind: "roster", id }, targetSlot ? Number(targetSlot.dataset.slot) : null),
+      });
     });
   }
 
   function enableSlotDrag(chip, idx) {
     chip.addEventListener("pointerdown", (e) => {
       if (e.target.closest(".team-slot-clear")) return; // the ✕ button handles its own click
-      e.preventDefault();
-      beginPointerDrag(chip, { kind: "slot", idx }, e);
+      beginPointerDrag(e, {
+        sourceEl: chip,
+        findTarget: findSlotTarget,
+        cloneClasses: ["team-drag-clone"],
+        onDrop: (targetSlot) => applyDrop({ kind: "slot", idx }, targetSlot ? Number(targetSlot.dataset.slot) : null),
+      });
     });
   }
 

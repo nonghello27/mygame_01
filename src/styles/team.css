@@ -43,6 +43,13 @@
 .team-slot.drop-target{border-color:var(--a);border-style:solid}
 .team-slot-empty{font-size:12px;color:var(--muted);text-align:center}
 
+/* phone slot sizing (Phase 10.15): scaled to the 164px mobile card
+   (board.css) — two slots share a row, the third wraps below (flex-wrap
+   is already on .team-slots). Desktop untouched. */
+@media (max-width: 560px){
+  .team-slot{flex:1 1 172px;min-width:172px;padding:8px 6px}
+}
+
 /* the slot's unit-card is the drag source; ✕ sits absolute top-right,
    above the card's plate (z-index 4 clears badge-pos's 3). */
 .team-slot .unit-card{cursor:grab}
@@ -53,6 +60,14 @@
   cursor:pointer;flex:none;
 }
 .team-slot-clear:hover{color:var(--hp-low);border-color:var(--hp-low)}
+/* the ✕ is a 20px target normally — too small for a finger (Phase 10.15). */
+@media (pointer: coarse){
+  .team-slot-clear{width:26px;height:26px;font-size:13px}
+}
+
+/* --- touch hint (Phase 10.15, coarse pointers only — see base.css's
+   .touch-hint utility) --- */
+.team-hint{font-size:11px;color:var(--muted);text-align:center;margin:0}
 
 /* --- sort bar --- */
 .team-sortbar{display:flex;align-items:center;gap:8px}
@@ -66,12 +81,11 @@
 .team-roster{
   display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;padding-top:8px;padding-bottom:6px;
 }
-/* Roster cards override board.css's touch-action:none with pan-x: the row
-   must stay horizontally touch-scrollable (a vertical drag up toward the
-   slots still starts a pointer drag; a horizontal swipe scrolls instead —
-   the existing pointercancel cleanup in ui/team.js handles either way this
-   resolves). Slot cards keep the inherited touch-action:none. */
-.team-roster .unit-card{flex:0 0 auto;touch-action:pan-x}
+/* board.css's .unit-card already carries touch-action:pan-x pan-y (Phase
+   10.15) — a swipe anywhere on the row scrolls it, and a HOLD lifts a drag
+   instead (ui/pointerDrag.js). flex:0 0 auto only, here, so the cards don't
+   shrink in the scroll row. */
+.team-roster .unit-card{flex:0 0 auto}
 .team-roster .unit-card.busy{opacity:.55;cursor:default}
 .team-card-busy-tag{
   display:block;text-align:center;font-size:10.5px;color:var(--clash);

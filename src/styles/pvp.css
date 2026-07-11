@@ -40,7 +40,10 @@
 
 button.btn.pvp-ranked-btn{align-self:flex-start}
 
-.pvp-table{display:flex;flex-direction:column;gap:4px}
+/* Phase 10.15: the ladder is the one grid-based "table" in the app — a
+   safety net in case a very narrow viewport ever squeezes its fixed
+   columns tighter than they can readably shrink. */
+.pvp-table{display:flex;flex-direction:column;gap:4px;overflow-x:auto}
 .pvp-row{
   display:grid;grid-template-columns:36px 1fr 80px 90px;gap:8px;align-items:center;
   padding:7px 10px;border-radius:9px;font-size:12.5px;

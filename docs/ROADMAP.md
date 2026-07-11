@@ -1879,6 +1879,96 @@ picker's pool row shows only unplaced monsters; `npm test` and `npm run
 build` both pass (no `shared/engine/` change, no golden regen). ✅ Done.
 **Phase 10.14 is done.**
 
+## Phase 10.15 — Mobile & touch friendliness
+
+Staged 2026-07-11 from playtest feedback on a phone (Android Chrome): unit
+cards carried `touch-action:none` and every pointer-drag implementation
+started a drag after only 5px of movement, so on a touch screen a finger
+landing on ANY card got captured — with cards this big, there was barely any
+empty space left to scroll a row or the page at all. Two independently
+shippable rounds:
+
+- ✅ **The shared hold-to-drag/swipe-to-scroll engine ✅ CODE COMPLETE
+  (2026-07-11):** a new `src/ui/pointerDrag.js` — the one drag-gesture
+  engine behind every drag surface in the game, extracted from the three
+  near-identical implementations that used to live in `ui/partyPicker.js`
+  (the most complete: threshold, clone, drop-target class, pointercancel
+  teardown), `ui/farm.js` (a near-verbatim copy), and `ui/dragdrop.js` (the
+  older, immediate-on-pointerdown battlefield swap, upgraded onto the same
+  engine in this round). `beginPointerDrag(e, {sourceEl, findTarget,
+  onDrop, cloneClasses})` is called straight from a `pointerdown` handler
+  and owns the rest of the gesture itself. The new interaction model,
+  uniform across every site: **mouse** unchanged (a small movement
+  threshold before a drag starts, `preventDefault()` on the pointerdown
+  itself); **touch/pen** drags only after a ~300ms press-and-hold with the
+  finger inside a ~10px slop — moving past the slop before the hold fires
+  cancels the pending drag outright and lets the browser scroll, and a
+  native `pointercancel` (the browser independently deciding this is a pan)
+  tears down the exact same way. A completed hold "lifts" the card
+  (`navigator.vibrate?.(15)`, the clone appears) and, since `touch-action`
+  can't change mid-gesture, wires a window-level NON-PASSIVE `touchmove`
+  listener that calls `preventDefault()` for the rest of the gesture — the
+  standard way to keep an already-lifted drag from being hijacked as a
+  scroll. `partyPicker.js`/`farm.js`/`dragdrop.js` all now call the shared
+  engine instead of hosting their own copy; `dragdrop.js`'s battlefield
+  swap picked up the same threshold/hold split it never had before (it used
+  to lift immediately on pointerdown with zero threshold at all). CSS: the
+  `touch-action` flip — `styles/board.css`'s `.unit-card` flips
+  `touch-action:none` → `pan-x pan-y` (the actual root cause — `none` told
+  the browser to hand every touch straight to JS with no native panning at
+  all) and adds `-webkit-touch-callout:none` next to its existing
+  `user-select:none` (stops iOS's long-press callout menu from fighting the
+  same hold). The three per-site overrides that used to exist only to
+  *re*-allow `pan-x` on top of the old blanket `none` (`styles/team.css`'s
+  `.team-roster .unit-card`, `styles/farm.css`'s `.farm-roster .unit-card`,
+  `styles/monsterSetup.css`'s `.ms-cards .unit-card`) are now redundant —
+  `.unit-card` itself is scrollable by default — and were simplified down
+  to just their non-touch-action rules (`flex:0 0 auto` etc.), with their
+  stale comments rewritten for the new model. Touch hints, coarse-pointer-
+  only via a new `base.css` utility pair (`.touch-hint`/`.mouse-hint`,
+  gated on `@media (pointer:coarse)`): the battlefield's `#hint` now
+  carries both a `.mouse-hint` span (the existing drag copy) and a
+  `.touch-hint` span ("✋ Hold a unit to pick it up · swipe to scroll");
+  `ui/partyPicker.js` and `ui/farm.js` each render one small hint line of
+  their own (`team-hint touch-hint` / `farm-hint touch-hint`) directly
+  under the slots row. `npm test` (203) and `npm run build` both pass (no
+  `shared/engine/` change, no golden regen — this round never touches the
+  server or the pure rules layer). ✅ Done.
+- ✅ **Small-screen layout pass ✅ CODE COMPLETE (2026-07-11):** a pure
+  CSS/media-query pass, no JS or `index.html` changes — desktop stays
+  pixel-identical, everything new lives behind `@media (max-width:560px)`
+  (compact sizing) or `@media (pointer:coarse)` (tap-target bumps). A new
+  block at the end of `styles/board.css` shrinks the unit card for phones
+  (225px→164px, portrait/status-icon/plate/name-tier/stat/hp-bar
+  dimensions scaled down with it, plus tighter `.field-frame`/`.battlefield`/
+  `.army` padding/gaps) without touching the card's structure or content.
+  `base.css` gets a matching `body` padding reduction at the same
+  breakpoint, plus a `@media (pointer:coarse){.btn{min-height:38px}}`
+  guard so every button — including the smaller nested variants
+  (menu-drop items, the many `*-small` buttons) — clears a comfortable
+  finger target on touch while mice see no change. `team.css`'s
+  `.team-slot` and `farm.css`'s `.farm-slot` both shrink to a 172px basis
+  at the same breakpoint to fit the smaller mobile card (two slots per row
+  instead of one), and `team.css`'s ✕ clear button grows to 26px under
+  `pointer:coarse`. `menu.css`'s `.menu-drop` gains
+  `max-width:calc(100vw - 20px)` so a right-edge menu group's dropdown can
+  never push off-screen. A sweep of the remaining panels
+  (`admin.css`/`market.css`/`tournament.css`/`guild.css`/`adventure.css`)
+  found no fixed width past what flex-wrap already handles — the one
+  grid-based "table" in the app, the Arena ladder (`pvp.css`'s
+  `.pvp-table`), got a defensive `overflow-x:auto` regardless. `npm test`
+  (203) and `npm run build` both pass. ✅ Done.
+
+**Done when:** a touch-screen finger can swipe-scroll a card row without a
+drag capturing it, a deliberate ~300ms hold still lifts a card into a
+proper drag on every drag surface (battlefield swap, Setup Team/Adventure
+party picker, Setup Monster's — click-only, unaffected — picker, and the
+Farm roster), mouse dragging feels exactly as it did before, touch users
+see a hint explaining the hold, AND the layout itself reads well at phone
+width. Round 1 (the interaction model) and round 2 (small-screen layout,
+media-query only, desktop pixel-identical) are both done. **Phase 10.15 is
+done.**
+
 ## Phase 11 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants

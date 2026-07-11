@@ -15,12 +15,16 @@
 // shared unitCardEl(), the same widget ui/partyPicker.js and
 // ui/monsterSetup.js host — display-only, gear-effective (Round 3) over
 // deriveStats() folded through applyGearStats() at full HP, never sent
-// anywhere.
+// anywhere. The roster row's drag-and-drop rides the shared
+// ui/pointerDrag.js engine (Phase 10.15): mouse drags on a small movement
+// threshold, touch/pen drags on a press-and-hold so a swipe can still
+// scroll the row.
 
 import { loadFarm, startJob, cancelActivity } from "../services/content.js";
 import { showProfile } from "./auth.js";
 import { registerView } from "./views.js";
 import { unitCardEl } from "./board.js";
+import { beginPointerDrag } from "./pointerDrag.js";
 import { deriveStats, applyGearStats } from "../../shared/rules/formulas.js";
 
 const ATTR_LABEL = { str: "STR", agi: "AGI", vit: "VIT", int: "INT", dex: "DEX" };
@@ -36,8 +40,6 @@ const BUSY_LABEL = {
   gvg: "In GVG",
 };
 
-const DRAG_THRESHOLD = 5; // px of movement before a pointerdown becomes a drag
-
 let els = null;
 let data = null; // last farm state: { trainer, jobs, monsters, active, farmSlots }
 let timer = null;
@@ -47,7 +49,6 @@ let timer = null;
 // or null. Session-local until Send actually posts it; a fresh apply()
 // reconciles this against the new roster/active list every time.
 let staged = [];
-let drag = null; // { id, clone, target } — see beginPointerDrag()
 
 export function initFarm() {
   els = {
@@ -174,7 +175,13 @@ function placeInFirstFreeSlot(id) {
 
 function render() {
   els.list.innerHTML = "";
-  els.list.append(slotsRow(), rosterRow());
+  els.list.append(slotsRow(), touchHint(), rosterRow());
+}
+
+/** Coarse-pointer-only hint (Phase 10.15) — hidden on mouse via base.css's
+ *  `.touch-hint` utility. */
+function touchHint() {
+  return el("p", "farm-hint touch-hint", "✋ Hold a card to pick it up · swipe to scroll");
 }
 
 function slotsRow() {
@@ -338,88 +345,22 @@ function fmtLeft(s) {
     : `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-// ---------- drag & drop (adapted from ui/partyPicker.js's beginPointerDrag,
-// aimed at `.farm-slot.free` drop targets instead of party-picker's
-// `.team-slot`s; the clone class + drop-target highlight class are the same
-// globally-styled names so styles/team.css's rules apply here for free) ----
+// ---------- drag & drop (rides the shared ui/pointerDrag.js engine, aimed at
+// `.farm-slot.free` drop targets instead of party-picker's `.team-slot`s;
+// the clone class + drop-target highlight class are the same globally-
+// styled names so styles/team.css's rules apply here for free) ----------
 
 function enableRosterDrag(card, id) {
   card.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    beginPointerDrag(card, id, e);
+    beginPointerDrag(e, {
+      sourceEl: card,
+      findTarget: (under) => under.closest(".farm-slot.free"),
+      cloneClasses: ["team-drag-clone"],
+      onDrop: (targetSlot) => {
+        if (!targetSlot) return;
+        staged[Number(targetSlot.dataset.freeIndex)] = id;
+        render();
+      },
+    });
   });
-}
-
-function beginPointerDrag(sourceEl, id, e) {
-  const startX = e.clientX;
-  const startY = e.clientY;
-  let started = false;
-  let clone = null;
-  let dx = 0, dy = 0;
-
-  function onMove(ev) {
-    if (!started) {
-      if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
-      started = true;
-      const rect = sourceEl.getBoundingClientRect();
-      clone = sourceEl.cloneNode(true);
-      clone.classList.add("team-drag-clone");
-      clone.style.width = rect.width + "px";
-      clone.style.left = rect.left + "px";
-      clone.style.top = rect.top + "px";
-      document.body.appendChild(clone);
-      dx = startX - rect.left;
-      dy = startY - rect.top;
-      drag = { id, clone, target: null };
-      sourceEl.classList.add("dragging-src");
-    }
-    if (!started || !drag) return;
-    clone.style.left = ev.clientX - dx + "px";
-    clone.style.top = ev.clientY - dy + "px";
-    const under = document.elementFromPoint(ev.clientX, ev.clientY);
-    const tSlot = under ? under.closest(".farm-slot.free") : null;
-    if (drag.target && drag.target !== tSlot) drag.target.classList.remove("drop-target");
-    if (tSlot) {
-      tSlot.classList.add("drop-target");
-      drag.target = tSlot;
-    } else {
-      drag.target = null;
-    }
-  }
-
-  // Shared teardown for both a normal drop and an interrupted stream —
-  // never leaves the pointermove listener, the clone, or a drop-target
-  // highlight behind either way.
-  function cleanup() {
-    window.removeEventListener("pointermove", onMove);
-    window.removeEventListener("pointerup", onUp);
-    window.removeEventListener("pointercancel", onCancel);
-    sourceEl.classList.remove("dragging-src");
-    if (drag?.target) drag.target.classList.remove("drop-target");
-    if (clone) clone.remove();
-  }
-
-  function onUp() {
-    const wasStarted = started;
-    const targetSlot = drag?.target ?? null;
-    cleanup();
-    if (wasStarted && targetSlot) {
-      staged[Number(targetSlot.dataset.freeIndex)] = id;
-      render();
-    }
-    // else: a plain click — the element's own click handler runs separately
-    drag = null;
-  }
-
-  // A touch scroll or other browser gesture interrupts the pointer stream
-  // with `pointercancel`, not `pointerup` — tear down exactly like onUp
-  // but WITHOUT applying a drop (a cancelled drag changes nothing).
-  function onCancel() {
-    cleanup();
-    drag = null;
-  }
-
-  window.addEventListener("pointermove", onMove);
-  window.addEventListener("pointerup", onUp, { once: true });
-  window.addEventListener("pointercancel", onCancel, { once: true });
 }

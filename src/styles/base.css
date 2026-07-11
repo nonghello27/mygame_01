@@ -41,6 +41,10 @@ body{
   -webkit-font-smoothing:antialiased;
   padding:18px 14px 40px;
 }
+/* tighter outer margins on a phone (Phase 10.15) — desktop untouched. */
+@media (max-width: 560px){
+  body{padding:12px 8px 32px}
+}
 
 .wrap{max-width:980px;margin:0 auto}
 
@@ -77,10 +81,28 @@ button.btn.primary{
   box-shadow:0 8px 22px rgba(15,174,127,0.3);
 }
 button.btn.ghost{background:transparent}
+/* comfortable finger tap targets on touch devices (Phase 10.15) — mouse/
+   trackpad pointers (desktop) are untouched. button.btn's own desktop
+   padding already clears 38px, but the smaller variants nested elsewhere
+   (menu-drop items, *-small buttons, etc) don't — this guard covers all
+   of them without a per-file override. */
+@media (pointer: coarse){
+  .btn{min-height:38px}
+}
 
 .hint{
   text-align:center;color:var(--muted);font-size:12.5px;margin-top:14px;
   display:flex;align-items:center;justify-content:center;gap:7px;
+}
+
+/* Coarse-pointer (touch/pen) vs fine-pointer (mouse) copy, Phase 10.15 —
+   swap which one an element shows without any JS: wrap mouse-only copy in
+   .mouse-hint and touch-only copy in .touch-hint side by side. */
+.touch-hint{display:none}
+.mouse-hint{display:inline}
+@media (pointer:coarse){
+  .touch-hint{display:block}
+  .mouse-hint{display:none}
 }
 
 /* ---------- Log ---------- */

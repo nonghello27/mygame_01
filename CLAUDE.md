@@ -128,8 +128,15 @@ The vision and plans live in `docs/` — treat them as part of this file:
   pool row (Setup Team, Adventure) now hides any monster already placed in
   a lane, so what's left below the slots is always exactly what's still
   available to pick.
-  **Phase 10.14 is done.** Phase 11 (chat, notifications & the photo
-  quest) is next.
+  **Phase 10.14 is done.** Phase 10.15 (mobile & touch friendliness),
+  staged 2026-07-11 from phone playtest feedback, is also code complete in
+  two rounds: a shared `ui/pointerDrag.js` hold-to-drag/swipe-to-scroll
+  engine — mouse unchanged, touch/pen now drags only after a ~300ms
+  press-and-hold — behind every drag surface (battlefield swap, party
+  picker, Farm roster), plus a ≤560px compact-layout & `pointer:coarse`
+  tap-target CSS pass (smaller cards/slots/paddings, bigger buttons,
+  desktop pixel-identical). **Phase 10.15 is done.** Phase 11 (chat,
+  notifications & the photo quest) is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -362,7 +369,13 @@ per roadmap phase, don't big-bang rename.)
     │                       # skillMedia (Phase 10.13: skill icon lookup — icon||slot||"default" —
     │                       # plus an extension-picks-the-renderer skill animation renderer,
     │                       # surfaced in the party-picker detail and the battle log),
-    │                       # dragdrop, log, chroma, auth, farm, admin,
+    │                       # pointerDrag (Phase 10.15: the shared hold-to-drag/swipe-to-scroll
+    │                       # pointer engine — beginPointerDrag({sourceEl, findTarget, onDrop,
+    │                       # cloneClasses}) — behind dragdrop/partyPicker/farm; mouse drags on a
+    │                       # small movement threshold, touch/pen drags only after a ~300ms
+    │                       # press-and-hold so a swipe still scrolls the row/page),
+    │                       # dragdrop (the battlefield's swap-lanes drag, now riding
+    │                       # pointerDrag.js), log, chroma, auth, farm, admin,
     │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
     │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),
     │                       # summon (✨ Summon Hall panel: banner cards + pull), adventure
@@ -393,9 +406,10 @@ per roadmap phase, don't big-bang rename.)
     │                       # returning {el, getSlots, setSlots, setMonsters} so team.js and
     │                       # adventure.js can each host an independent instance; the slots
     │                       # row, sort bar (order/name/power, asc/desc), horizontally
-    │                       # scrollable owned-monster row, click-for-detail area, and pointer
-    │                       # drag-and-drop are all still styled by styles/team.css's
-    │                       # team-*/party-picker classes, global; both lane slots and roster
+    │                       # scrollable owned-monster row, click-for-detail area, and
+    │                       # pointerDrag.js-driven drag-and-drop (Phase 10.15: hold-to-drag on
+    │                       # touch) are all still styled by styles/team.css's team-*/
+    │                       # party-picker classes, global; both lane slots and roster
     │                       # cards render via board.js's shared unitCardEl() over a
     │                       # display-only deriveStats(m.base, m.attrs) lane — full HP, never
     │                       # sent anywhere — and clicking any card opens the click-for-detail

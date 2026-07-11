@@ -39,11 +39,18 @@
 .army-label .dot{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
 
 /* unit card = a transparent wrapper: a big portrait standing ABOVE a shorter
-   info "plate". The card itself carries no background/border anymore. */
+   info "plate". The card itself carries no background/border anymore.
+   touch-action stays pan-x pan-y (Phase 10.15) — NOT none — so a finger
+   landing on a card can still scroll its row/the page; ui/pointerDrag.js's
+   hold-to-drag model claims the gesture for itself only once its hold timer
+   fires (a non-passive touchmove listener at that point, since touch-action
+   can't change mid-gesture). -webkit-touch-callout:none suppresses iOS's
+   long-press callout menu, which would otherwise fight the same hold. */
 .unit-card{
   position:relative;width:225px;
   display:flex;flex-direction:column;align-items:stretch;
-  touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;
+  touch-action:pan-x pan-y;user-select:none;-webkit-user-select:none;
+  -webkit-touch-callout:none;cursor:grab;
   transition:transform .18s ease, opacity .35s ease;
 }
 .unit-card.no-drag{cursor:default}
@@ -245,4 +252,27 @@
   0%{opacity:0;transform:translate(-50%,0) scale(.7)}
   15%{opacity:1;transform:translate(-50%,-6px) scale(1.1)}
   100%{opacity:0;transform:translate(-50%,-44px) scale(1)}
+}
+
+/* compact card sizing for phones (Phase 10.15) — everything below is
+   width/spacing only, the card's structure and content never change. */
+@media (max-width: 560px){
+  .unit-card{width:164px}
+  .unit-portrait-top{height:70px}
+  .unit-portrait-top .portrait-img{max-width:126px;max-height:70px}
+  .unit-portrait-top .unit-emoji{font-size:40px}
+  .status-icon-img{width:22px;height:22px}
+  .unit-plate{min-height:0;gap:6px;padding:5px 5px 4px}
+  .unit-name{font-size:14px}
+  .unit-name.name-sm{font-size:12.5px}
+  .unit-name.name-xs{font-size:11.5px}
+  .unit-name.name-xxs{font-size:10.5px}
+  .stat{padding:4px 3px}
+  .stat .s-val{font-size:12.5px}
+  .stat .s-ico{font-size:11px}
+  .hp-bar{height:8px}
+  .hp-top .val{font-size:12px}
+  .field-frame{padding:22px 10px 12px}
+  .battlefield{gap:10px}
+  .army{gap:8px}
 }

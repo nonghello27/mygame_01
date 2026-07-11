@@ -29,7 +29,10 @@
   display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;
   padding-top:2px;padding-bottom:6px;
 }
-.ms-cards .unit-card{flex:0 0 auto;cursor:pointer;touch-action:pan-x}
+/* board.css's .unit-card already carries touch-action:pan-x pan-y (Phase
+   10.15), so the row stays swipe-scrollable on its own — these cards are
+   click-only (no drag) anyway, so no override is needed here at all. */
+.ms-cards .unit-card{flex:0 0 auto;cursor:pointer}
 .ms-cards .unit-card.ms-card-active .unit-plate{
   border-color:var(--a-deep);box-shadow:0 0 12px 1px rgba(56,189,248,0.45);
 }
