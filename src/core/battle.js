@@ -9,7 +9,7 @@
 // this module never reaches into page chrome directly.
 
 import { state } from "./state.js";
-import { requestBattle } from "../services/content.js";
+import { requestBattle, resolveAdventureBattle } from "../services/content.js";
 import { sleep } from "../utils/helpers.js";
 import { log, nameSpan } from "../ui/log.js";
 import { renderBoard, cardEl, updateCardHp, updateCardStatuses, floatDamage } from "../ui/board.js";
@@ -20,6 +20,10 @@ import { playCutscene } from "../cutscene/cutscene.js";
  * Run a full battle to completion by asking the server to resolve it, then
  * replaying the returned events.
  * @param {{ setStatus:(t:string)=>void, showWinner:(youWin:boolean, survivor:object)=>void }} hooks
+ * @returns {Promise<{youWin:boolean, events:object[], survivor:object|null,
+ *   pvp?:object, adventure?:{session:object, node:object}}|undefined>} the
+ *   resolved result (undefined if the battle couldn't be resolved at all —
+ *   the early error path below already left the board back in setup).
  */
 export async function runBattle({ setStatus, showWinner }) {
   if (state.phase !== "setup") return;
@@ -28,12 +32,22 @@ export async function runBattle({ setStatus, showWinner }) {
   log("Battle begins!", true);
 
   // The only thing the client decides is the lane ORDER of its own army;
-  // the enemy's composition and order were frozen when the match was created.
+  // the enemy's composition and order were frozen when the match (or, for
+  // an Adventure fight, the staged pendingBattle) was created.
   const playerOrder = state.armyA.map((u) => u.idx);
 
   let result;
   try {
-    result = await requestBattle(state.matchId, playerOrder);
+    if (state.adventureBattle) {
+      // An adventure fight resolves through its own endpoint against the
+      // session's frozen snapshots — same permutation choice, same replayed
+      // event log; `adventure` carries the raw `{session, node}` for
+      // main.js to hand back to the Adventure panel.
+      const res = await resolveAdventureBattle(playerOrder);
+      result = { youWin: res.node.battle.won, events: res.node.battle.events, survivor: null, adventure: res };
+    } else {
+      result = await requestBattle(state.matchId, playerOrder);
+    }
   } catch (e) {
     log(`Battle could not be resolved: ${e.message}`, true);
     setStatus("Connection error — try again");
@@ -75,6 +89,7 @@ export async function runBattle({ setStatus, showWinner }) {
     const d = result.pvp.yourDelta;
     log(`Rating: ${d >= 0 ? "+" : ""}${d} → ${result.pvp.yourRating}`, true);
   }
+  return result;
 }
 
 /** Find the live client-side unit a server event refers to (by side + lane idx). */

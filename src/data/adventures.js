@@ -25,6 +25,11 @@
 //   gather       same shape/constraints as loot — what a "gather" node yields.
 //   catchPct     integer 0-100  — chance to catch one defeated wild monster
 //                after winning a "battle" node.
+//   enemies      optional { min, max }, both 1-3, min <= max — how many wild
+//                monsters a "battle" node fields (Phase 10.14: the rolled
+//                count feeds rollEncounter() the same way PARTY_SIZE used
+//                to). Absent defaults to { min: 1, max: 3 } — the route's
+//                one difficulty knob.
 //
 // Ids are stable strings — never renumber.
 
@@ -54,5 +59,7 @@ export const ADVENTURES = [
         { itemId: "it_potion_small", weight: 20, qtyMin: 1, qtyMax: 1 },
       ],
       catchPct: 25,
+      // A beginner route: mostly solo wild encounters, occasionally a pair.
+      enemies: { min: 1, max: 2 },
     } },
 ];

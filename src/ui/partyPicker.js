@@ -4,6 +4,11 @@
 // Pure display + local choice state — it never talks to the server; hosts
 // read getSlots() and send the ids as their CHOICE (CLAUDE.md §1.1).
 //
+// The roster row below the slots is the remaining POOL, not the whole
+// roster (Phase 10.14): a monster placed in a lane is removed from the pool
+// row entirely and exists only as that lane's card, so the pool always
+// shows exactly what's still available to pick from.
+//
 // Cards render via board.js's unitCardEl over GEAR-EFFECTIVE stats —
 // deriveStats(base, attrs) folded through applyGearStats() against the
 // monster's server-state equipment[]/runes[] (the SAME pure derivation +
@@ -209,20 +214,18 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
     return bar;
   }
 
+  /** The remaining pool row (Phase 10.14): a monster already placed in a
+   *  lane is skipped entirely here — it lives only in slotsRow() above — so
+   *  this always renders exactly the monsters still available to pick. */
   function rosterRow() {
     const row = el("div", "team-roster");
     for (const m of sortedRoster()) {
+      if (slots.indexOf(m.id) !== -1) continue; // already placed in a lane — lives only in the slots row (Phase 10.14)
       const busy = isBusy(m);
-      const slotIdx = slots.indexOf(m.id);
-      const slotted = slotIdx !== -1;
       const card = unitCardEl(laneView(m), "");
       if (busy) card.classList.add("busy");
-      if (slotted) card.classList.add("slotted");
       if (busy) {
         card.append(el("span", "team-card-busy-tag", `Busy: ${BUSY_LABEL[m.busyKind] ?? m.busyKind ?? "?"}`));
-      }
-      if (slotted) {
-        card.append(el("span", "team-card-badge", String(slotIdx + 1)));
       }
       // Busy cards get no click/drag — tap-to-place is DELETED (10.8): a
       // click now opens the detail area, which is where lane placement/

@@ -406,11 +406,14 @@ battles before it grows features.
   once and persists.
   This closes the "client picks the enemy order" hole and rejects replays.
 - **Adventure sessions:** a row holding the generated map + party + position;
-  each move is a POST that validates and advances it exactly once
-  (`claimAdvance`, same claim-guard shape as `applyOrder`), resolving battle
-  nodes with a direct `resolveBattle()` call rather than a `matches` row.
-  `ends_at` is the lazy-time valve (same shape as season rollover): an
-  overdue 'active' session is marked 'abandoned' on next read, no cron.
+  each move is a POST that validates and claims it exactly once
+  (`claimAdvance` for chest/gather; a battle option instead stages the fight
+  into `pending_battle` via `claimStageBattle`, resolved by a separate
+  `POST /api/adventure/battle` through `claimSettleBattle` — Phase 10.14),
+  resolving battle nodes with a direct `resolveBattle()` call rather than a
+  `matches` row. `ends_at` is the lazy-time valve (same shape as season
+  rollover): an overdue 'active' session is marked 'abandoned' on next read,
+  no cron.
   Only if a future feature needs push (live GVG spectating, chat) do we add
   websockets — and then via a hosted realtime service, since Vercel
   functions can't hold sockets.
@@ -631,18 +634,33 @@ POST /api/adventure/start     { adventureId, monsterIds:number[3] } → lock
 POST /api/adventure/move      { choice:number } → resolve the CURRENT step's
                               chosen option exactly once (claim-guarded, same
                               shape as battle/resolve's applyOrder): chest/
-                              gather grant loot via the inventory repo,
-                              battle auto-resolves through resolveBattle()
-                              directly (seeded from deriveNodeSeed(session.seed,
-                              position) — no `matches` row) and settles the
-                              party's rune durability; a lost/drawn battle
-                              fails the run, the final step's win completes
-                              it, either way releasing the party; returns
-                              { session, node } (node carries the battle
-                              event log, if any — never persisted to the row)
+                              gather log loot (granted only on run completion,
+                              see battle below); a battle option instead
+                              STAGES the fight (Phase 10.14) — rolls 1-3 wild
+                              enemies (config.enemies) into `pending_battle`
+                              and leaves it for POST /api/adventure/battle to
+                              resolve; 409 "resolve the staged battle first"
+                              while one is pending; returns { session, node }
+POST /api/adventure/battle    { order:number[] } → resolve a staged battle
+                              with the player's own lane order (applyOrder's
+                              permutation gate) against the frozen nodeSeed
+                              (resolveBattle() directly — no `matches` row),
+                              claims the settlement exactly once, settles rune
+                              durability, and — only once the run reaches
+                              'completed' — grants every escrowed loot/catch
+                              entry logged so far; a lost/drawn battle fails
+                              the run, either way releasing the party; returns
+                              { session, node } (node carries the battle event
+                              log, plus catch/granted summaries — never
+                              persisted to the row); 409 if no battle is staged
+POST /api/adventure/surrender {} → give up a staged battle — a defeat,
+                              forfeiting every escrowed reward, failing the
+                              run and releasing the party; returns { session };
+                              409 if no battle is staged
 POST /api/adventure/abandon   {} → give up the active run early (guarded
-                              'active'→'abandoned'), releases the party;
-                              404 if no active session
+                              'active'→'abandoned'), releases the party
+                              (discarding any staged battle); 404 if no
+                              active session
 
 # guild domain — api/guild/[...route].js (Phase 9.4; the 8th domain, the
 # second sanctioned reason — after the marketplace — to add a new

@@ -114,7 +114,21 @@ The vision and plans live in `docs/` — treat them as part of this file:
   new `ui/skillMedia.js` renderer seam (an icon lookup chain plus an
   extension-picks-the-renderer animation chain), surfaced in the
   party-picker detail, the battle log, and the admin ⚔ Skills tab's two new
-  fields with live previews. Phase 11 (chat, notifications & the photo
+  fields with live previews. Phase 10.14 (playtest feedback), staged
+  2026-07-11, is also code complete: an Adventure battle option now STAGES
+  the fight instead of auto-resolving it — a new `pending_battle` column
+  (migration `022_adventure_pending_battle.sql`) plus
+  `/api/adventure/battle`/`/api/adventure/surrender` — and hands off to the
+  REAL battlefield for an interactive two-phase fight with Surrender/
+  Continue battle controls; every chest/gather/battle reward is escrowed in
+  the run's loot log and granted in one place, only once the run actually
+  completes, so a later loss can no longer keep loot a run never finished
+  earning; a terminal run's summary now reads "What you brought home" (or
+  a forfeit line) with an "End Adventure" button. The shared party picker's
+  pool row (Setup Team, Adventure) now hides any monster already placed in
+  a lane, so what's left below the slots is always exactly what's still
+  available to pick.
+  **Phase 10.14 is done.** Phase 11 (chat, notifications & the photo
   quest) is next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
@@ -354,7 +368,13 @@ per roadmap phase, don't big-bang rename.)
     │                       # summon (✨ Summon Hall panel: banner cards + pull), adventure
     │                       # (🗺 panel: route list + a Phase 10.9 partyPicker.js party picker
     │                       # (the same card-based drag-and-drop widget Setup Team hosts),
-    │                       # step options, run log),
+    │                       # step options, run log; Phase 10.14's client slice — a staged
+    │                       # battle option renders a "To battle" notice + enemy chips (also
+    │                       # the resume-after-refresh state, since pendingBattle rides every
+    │                       # session read) that hands off through an injected enterBattle hook
+    │                       # to main.js's real battlefield instead of resolving inline, and a
+    │                       # terminal run's summary gained a "what you brought home" tally vs.
+    │                       # a forfeited hint, its button now "End Adventure"),
     │                       # marketplace (🏪 panel: browse + my listings + list-a-good picker),
     │                       # tournament (🏆 panel: open/upcoming cards with a register flow +
     │                       # party picker, my-entry + withdraw, a past-tournaments history list,
@@ -381,7 +401,9 @@ per roadmap phase, don't big-bang rename.)
     │                       # sent anywhere — and clicking any card opens the click-for-detail
     │                       # area, stats/attrs/skills/busy state plus "Set lane 1/2/3"/
     │                       # "Remove from team" actions, the no-drag placement path
-    │                       # tap-to-place used to be),
+    │                       # tap-to-place used to be; the roster row hides any monster
+    │                       # already placed in a lane, Phase 10.14 — it shows only the
+    │                       # remaining pool),
     │                       # team (🪖 Setup Team panel, Phase 10.5: a "Me & Team" menu-group
     │                       # panel — now just a HOST (Phase 10.9) over partyPicker.js's
     │                       # widget, built fresh from a loadFarm() roster read on every
@@ -638,64 +660,99 @@ Adventure (Phase 7.4 step B, session engine — SIXTH domain, `api/adventure/`):
 `adventure_defs` (master, seeded from `src/data/adventures.js`; `config` is
 the whole map/loot grammar `shared/rules/adventure.js` reads — `steps`,
 `choices` per step, a weighted node-type table (`battle`/`chest`/`gather`),
-the wild `encounters` pool, `loot`/`gather` tables, `catchPct`) → `adventure_
-sessions`, an instance row per run — **frozen** at start exactly like
-`matches` freezes a battle's inputs: `seed`, `map` (`generateMap(config,
+the wild `encounters` pool, `loot`/`gather` tables, `catchPct`, and (Phase
+10.14) an optional `enemies:{min,max}` knob, both 1-3, defaulting to
+`{min:1,max:3}` — how many wild monsters a `battle` node fields) →
+`adventure_sessions`, an instance row per run — **frozen** at start exactly
+like `matches` freezes a battle's inputs: `seed`, `map` (`generateMap(config,
 seed)`'s output), `party` (`{lanes, display}` — `lanes` mirrors `toLane()`'s
 battle-snapshot shape, equipped gear/socketed runes included, in the
 player's CHOSEN lane order), `position`, `state`
-(`active → completed | failed | abandoned`), a running `loot` log, `ends_at`.
-At most one `active` session per trainer (partial unique index, same
-precedent as "at most one active season"). Flow: `GET /api/adventure/state`
-lazily expires an overdue session (`ends_at` past ⇒ `abandoned`, same
-read-then-claim shape as `ensureSeason`) and returns the enabled routes
-(id/name/description ONLY — `config` is server balance data, never shipped)
-plus the current session view, which exposes ONLY the step in front of the
-player (`options`), never the whole frozen map — revealing the route would
-leak upcoming nodes. `POST /api/adventure/start {adventureId, monsterIds}`
-claims the 3-monster party's busy lock in one statement
-(`claimPartyForAdventure`, same shape as `claimMonsterForJob`, `busy_kind =
-'adventure'`) with a compensating `releaseParty()` on any later failure (same
-spirit as Summon Hall's unmint/refund), then mints the seed and freezes the
-map + party. `POST /api/adventure/move {choice}` validates `choice` against
-the CURRENT step only, claims the step exactly once (`claimAdvance`, same
-claim-guard shape as `applyOrder`'s resolve claim), then resolves the node
-DETERMINISTICALLY off `deriveNodeSeed(session.seed, position)` through a
-closed `NODE_RESOLVERS` registry in `server/services/adventure.js` — a new
-node kind is one registry entry, never a branch in `move()`
-(`ADVENTURE_NODE_TYPES`, same closed-set philosophy the engine uses for
-skills): `chest`/`gather` roll `rollLoot()` and grant via the inventory repo;
-`battle` draws `PARTY_SIZE` wild species with `rollEncounter()` (new this
-step, same style as `rollLoot`), then calls `resolveBattle()` **directly** —
-**no `matches` row**, since an adventure fight has no opposing trainer and
-only ever needs to update this one session — settles the party's rune
-durability exactly like `resolveMatch` (against the frozen snapshot's
-charges, the same accepted wrinkle as two open matches sharing a snapshot),
-and on a win rolls a `catchPct` chance to mint one defeated wild species via
-`mintMonster`. A lost/drawn battle fails the run; the final step's win
-completes it; either terminal state releases the party. The battle event log
-never touches the session row (re-derivable forever from the stored seed,
-CLAUDE.md §1.6) — it only ever rides in the response's `node.battle.events`.
-`POST /api/adventure/abandon {}` gives up early (guarded `active →
-abandoned`), releasing the party. `adventure_defs` gets the admin CRUD half
+(`active → completed | failed | abandoned`), a running `loot` log, `ends_at`,
+and (Phase 10.14) `pending_battle` — NULL unless a battle option's fight is
+currently staged. At most one `active` session per trainer (partial unique
+index, same precedent as "at most one active season"). Flow: `GET
+/api/adventure/state` lazily expires an overdue session (`ends_at` past ⇒
+`abandoned`, same read-then-claim shape as `ensureSeason`) and returns the
+enabled routes (id/name/description ONLY — `config` is server balance data,
+never shipped) plus the current session view, which exposes ONLY the step in
+front of the player (`options`, forced `null` whenever a battle is staged)
+plus, while one is staged, both sides' frozen lane snapshots under
+`pendingBattle` (the same disclosure level `POST /api/battle/match`'s
+`you`/`enemy` already sets) — never the whole frozen map, which would leak
+upcoming nodes. `POST /api/adventure/start {adventureId, monsterIds}` claims
+the 3-monster party's busy lock in one statement (`claimPartyForAdventure`,
+same shape as `claimMonsterForJob`, `busy_kind = 'adventure'`) with a
+compensating `releaseParty()` on any later failure (same spirit as Summon
+Hall's unmint/refund), then mints the seed and freezes the map + party.
+`POST /api/adventure/move {choice}` validates `choice` against the CURRENT
+step only (409 "resolve the staged battle first" while one is already
+pending) and dispatches by node type: `chest`/`gather` still claim the step
+exactly once (`claimAdvance`, same claim-guard shape as `applyOrder`'s
+resolve claim) and resolve DETERMINISTICALLY off
+`deriveNodeSeed(session.seed, position)` through a closed `NODE_RESOLVERS`
+registry in `server/services/adventure.js` — a new ONE-SHOT node kind is one
+registry entry, never a branch in `move()` (`ADVENTURE_NODE_TYPES`, same
+closed-set philosophy the engine uses for skills) — rolling `rollLoot()` and
+only LOGGING the result (`{loot:[...]}`), never granting it mid-run. `battle`
+is the one TWO-PHASE node kind (Phase 10.14): `move()` instead rolls a wild
+team sized by `config.enemies` via `rollEncounter()` and freezes it into
+`pending_battle` (`claimStageBattle`, the `claimAdvance` role minus
+advancing `position` — a staged fight still occupies the current step);
+`POST /api/adventure/battle {order}` then resolves it with the player's own
+lane order (`applyOrder()`'s exact permutation gate) against the frozen
+`nodeSeed`, calling `resolveBattle()` **directly** — **no `matches` row**,
+since an adventure fight has no opposing trainer and only ever needs to
+update this one session — claims the settlement exactly once
+(`claimSettleBattle`), settles the party's rune durability exactly like
+`resolveMatch` (win or lose, against the frozen snapshot's charges, the same
+accepted wrinkle as two open matches sharing a snapshot), and on a win rolls
+a `catchPct` chance to record (not yet mint) a defeated wild species. A
+lost/drawn battle fails the run; the final step's win completes it; either
+terminal state releases the party. `POST /api/adventure/surrender {}` is the
+other way to resolve a staged battle — an unconditional defeat, no order
+needed. Loot/catches are ESCROWED, not granted as they're logged: every
+chest/gather/battle outcome only appends to `loot`; a new `grantRunRewards()`
+walks that whole log and grants every item stack + mints every catch, but
+ONLY once, from `battle()`, the moment a run's state flips to `'completed'`
+— a defeat, a surrender, an abandon, or lazy expiry forfeits everything
+logged so far. The battle event log never touches the session row
+(re-derivable forever from the stored seed, CLAUDE.md §1.6) — it only ever
+rides in the response's `node.battle.events`. `POST /api/adventure/abandon
+{}` gives up early (guarded `active → abandoned`), releasing the party
+(discarding any staged battle along with it). `adventure_defs` gets the admin CRUD half
 of the Phase 5 workflow (`validateAdventure()`, guarded 409 delete, a
 `sessionCount` usage badge, and a 🗺 Adventures tab in `src/ui/admin.js`
 mirroring Summons' one-JSON-textarea-for-config approach). The 🗺 Adventure
-panel (`src/ui/adventure.js`) is pure display + action over the four
-endpoints above (`src/services/content.js`'s `fetchAdventureState()`/
-`startAdventure()`/`moveAdventure()`/`abandonAdventure()`): no session shows
-a route list with a shared party picker (borrowed straight from the Arena
-defense editor's row shape — `loadFarm()`'s `busyUntil`/`busyKind` disable a
-busy monster) and a per-route "Set out" button gated on exactly 3 picks; an
-active session shows the step header, party chips, the run's loot log so
-far, and the CURRENT step's options as Go-able cards; a terminal session
-(completed/failed/abandoned) is narrated from the just-returned outcome and
-kept in module memory for a one-screen summary (same precedent as
-`ui/summon.js`'s results map) until "New adventure" is clicked. The panel
-never replays the battle event log through the cutscene system — a battle
-node's outcome is a text summary (win/loss, an optional fall count read
-straight off `t:"fall"` events) — the event log itself only rides the
-response for a future replay feature.
+panel (`src/ui/adventure.js`) is pure display + action over six endpoints
+(`src/services/content.js`'s `fetchAdventureState()`/`startAdventure()`/
+`moveAdventure()`/`resolveAdventureBattle()`/`surrenderAdventureBattle()`/
+`abandonAdventure()`): no session shows a route list with a shared party
+picker (borrowed straight from the Arena defense editor's row shape —
+`loadFarm()`'s `busyUntil`/`busyKind` disable a busy monster) and a
+per-route "Set out" button gated on exactly 3 picks; an active session
+shows the step header, party chips, the run's loot log so far, and the
+CURRENT step's options as Go-able cards — UNLESS a battle is staged
+(`session.pendingBattle`), which the panel renders as a "To battle" notice
++ enemy chips instead (both on picking a fresh battle option and, since
+`pendingBattle` rides every session read, on resuming one after a page
+refresh); a terminal session (completed/failed/abandoned) is narrated from
+the just-returned outcome and kept in module memory for a one-screen
+summary (same precedent as `ui/summon.js`'s results map) — an aggregated
+"what you brought home" tally on a completed run vs. a one-line "forfeited"
+hint otherwise — until "End Adventure" is clicked. Battles no longer replay
+inside this panel at all (Phase 10.14's client slice): "To battle" hands
+`pendingBattle` off through an injected `enterBattle` hook (main.js's
+`enterAdventureBattle()`, the `initPvp(startRankedBattle)` precedent — this
+module never imports `main.js`), which loads it onto the REAL battlefield
+via `core/state.js`'s `loadAdventureBattle()` (setting a
+`state.adventureBattle:{position}` marker `core/battle.js`'s `runBattle()`
+branches on, resolving through `resolveAdventureBattle()` instead of
+`requestBattle()`, same replayed event log either way) and switches to the
+Playground view, where a Surrender button (posts `surrenderAdventureBattle()`,
+confirm-gated) stands in for Reset/New Opponent until the fight ends, then a
+Continue button hands the fresh session back to `ui/adventure.js` via its
+`noteAdventureBattleResult()` export and returns here.
 
 Marketplace (Phase 8): `marketplace_listings` is an instance table
 referencing another owned instance (an item stack, an equipment piece, a

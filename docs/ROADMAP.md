@@ -1776,6 +1776,109 @@ tab can set/preview both fields live; `npm test` and `npm run build` both
 pass (this round never touches `shared/engine/` or the server — no golden
 regen needed). ✅ Done. **Phase 10.13 is done.**
 
+## Phase 10.14 — Interactive adventure battles + party-picker pool ✅ CODE COMPLETE (2026-07-11)
+
+Staged 2026-07-11 from playtest feedback, three independently shippable
+rounds: today an Adventure battle node auto-resolves the instant it's
+picked, with no player agency in lane order, and its loot/catch grant
+mid-run even though the whole run might still be lost later. This phase
+makes battle nodes an actual two-phase fight and escrows every reward until
+the run is actually won.
+
+- ✅ **Interactive battles + reward escrow — server slice (server-only
+  round, 2026-07-11):** picking a battle option in `move()`
+  (`server/services/adventure.js`) no longer auto-resolves it — it STAGES
+  the fight: rolls 1-3 wild enemies (the route's new optional
+  `config.enemies:{min,max}` knob, `server/services/adminValidate.js`'s
+  `validateAdventureConfig`, defaulting to `{min:1,max:3}`) via
+  `rollEncounter()` and freezes them into a new `pending_battle` jsonb
+  column (`022_adventure_pending_battle.sql`) via a new exactly-once claim,
+  `claimStageBattle()` (`server/repos/adventures.js`) — the `claimAdvance`
+  role, minus advancing `position`, since a staged fight still occupies the
+  current step. Two new domain endpoints ride the existing `adventure`
+  router: `POST /api/adventure/battle {order}` resolves the staged fight
+  with the player's own lane order (`applyOrder()`, the exact permutation
+  gate `battle/resolve` uses, imported from `services/matches.js`) against
+  the frozen `nodeSeed`, claims the settlement exactly once
+  (`claimSettleBattle()`, the `claimResolve`-style "one guarded UPDATE
+  clears pending_battle, advances position on a win, flips a terminal
+  state, appends the log entry" claim), then fires post-claim rune wear
+  (win or lose, the `resolveMatch` precedent) and — only once the run
+  actually reaches `'completed'` — grants every escrowed reward via a new
+  `grantRunRewards()`; `POST /api/adventure/surrender {}` is a defeat with
+  no order to validate, forfeiting everything staged. A session with a
+  battle already staged 409s any further `move()` call ("resolve the staged
+  battle first") — battle/surrender are the only moves left. Loot/catches
+  are no longer granted mid-run at all: chest/gather resolvers
+  (`NODE_RESOLVERS`) now only log `{loot:[...]}}`, and `grantRunRewards()`
+  (called from `battle()`/the now-unreachable-but-harmless chest/gather
+  completion path) is the ONE place items get granted and catches get
+  minted, walking the session's whole `loot` log at once — a defeat,
+  surrender, abandon, or lazy expiry forfeits every escrowed entry, since
+  nothing before `'completed'` ever calls it. `toSessionView()`'s new
+  `pendingBattle` key ships both sides' frozen lane snapshots for the
+  staged fight (the same disclosure level `POST /api/battle/match`'s
+  `you`/`enemy` already sets) and forces `options: null` while a battle is
+  pending. Server-only — no `src/ui/` change yet (the panel still only
+  calls `move()`, so a battle node currently reads as staged-but-never-
+  resolved until the client round below wires the new endpoints in).
+- ✅ **Battlefield scene — client slice (2026-07-11):** picking (or
+  resuming) a staged Adventure battle now cuts to the REAL battlefield —
+  no separate scene of its own. The Adventure panel (`ui/adventure.js`)
+  never replays events itself; it hands `session.pendingBattle` off through
+  an injected `enterBattle` hook (the `initPvp(startRankedBattle)`
+  precedent — the panel never imports `main.js`), which main.js's new
+  `enterAdventureBattle()` turns into `core/state.js`'s new
+  `loadAdventureBattle()` (the same toLane()-shaped `you`/`enemy` snapshot
+  load `newMatch()` does, setting a new `state.adventureBattle:{position}`
+  marker and clearing `matchId`/`opponent`) before switching to the
+  Playground view. `runBattle()` (`core/battle.js`) branches on
+  `state.adventureBattle`: an adventure fight resolves through
+  `resolveAdventureBattle()`/`POST /api/adventure/battle` instead of
+  `requestBattle()`, replays the identical event log either way, and now
+  RETURNS its result (`{youWin, events, survivor, adventure:{session,node}}`)
+  so main.js can act on it. A new battle-controls row pair —
+  `#surrenderBtn`/`#continueBtn` in `index.html`, synced by main.js's new
+  `updateBattleControls()` — swaps Reset/New Opponent out for Surrender
+  while an adventure fight is staged (posts to `/api/adventure/surrender`,
+  confirm-gated, a defeat that forfeits every escrowed reward) and reveals
+  Continue once `onStart()` sees the battle end
+  (`state.adventureBattle && state.phase === "over"`); Continue hands the
+  fresh session back to the panel (`noteAdventureBattleResult()`, a new
+  `ui/adventure.js` export) and returns to the Adventure view, which
+  resumes correctly whether that session is still active (next step) or
+  just went terminal (see below) — including on a plain page refresh, since
+  `refresh()` now renders a "To battle" notice + enemy chips straight off a
+  re-fetched `pendingBattle` instead of the old (now-impossible) inline
+  battle option. The terminal summary (`renderTerminal()`) gained a
+  headline for a surrendered run, an explicit "What you brought home"
+  section (item qtys summed + catches, from the same escrowed `loot` log
+  `grantRunRewards()` reads) on a completed run vs. a one-line "everything
+  was forfeited" hint otherwise, and its button is now "End Adventure".
+- ✅ **Party-picker pool trim (2026-07-11):** `ui/partyPicker.js`'s roster
+  row now shows only the REMAINING pool — a monster already placed in a
+  lane is skipped entirely rather than rendered dimmed-with-a-badge, so at
+  a glance the row below the slots is always exactly what's still
+  available to pick (duplicates were already impossible via
+  `assignToSlot`; this round is about clarity, not correctness). The now-
+  dead `.team-roster .unit-card.slotted` CSS rule (nothing sets that class
+  in a `.team-roster` any more) was removed from `styles/team.css`;
+  `.team-card-badge` stays — `ui/farm.js`'s slot picker still uses it.
+  Shared picker, so both hosts (Setup Team, Adventure) pick this up with
+  no host-file changes.
+
+**Done when:** picking a battle option stages 1-3 enemies into
+`pending_battle` instead of resolving instantly; `POST /api/adventure/battle
+{order}` resolves it with a validated lane-order permutation and grants
+every escrowed reward only once the run completes; `POST
+/api/adventure/surrender {}` fails the run and forfeits everything staged;
+chest/gather loot is logged but not granted until completion; a staged
+Adventure battle plays out on the real battlefield (Surrender/Continue
+controls, a terminal "What you brought home" summary); the shared party
+picker's pool row shows only unplaced monsters; `npm test` and `npm run
+build` both pass (no `shared/engine/` change, no golden regen). ✅ Done.
+**Phase 10.14 is done.**
+
 ## Phase 11 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants

@@ -249,7 +249,10 @@ export async function performSummon(summonId) {
  * (public fields only — id/name/description) plus the trainer's current
  * session, if any (null when nothing is running). The session view exposes
  * ONLY the step in front of the player — the server never ships the whole
- * frozen map.
+ * frozen map. A staged battle (Phase 10.14) replaces the current step's
+ * `options` with `null` and adds `pendingBattle` (both sides' frozen lane
+ * snapshots) — resolve it via resolveAdventureBattle()/
+ * surrenderAdventureBattle() before any further moveAdventure() call.
  * @returns {Promise<{adventures:{id:string,name:string,description:string}[],
  *   session:object|null}>}
  */
@@ -273,15 +276,48 @@ export async function startAdventure(adventureId, monsterIds) {
 /**
  * Resolve the current step's chosen option. Every roll (loot, the wild
  * team, the fight, the catch) happens server-side, seeded from the frozen
- * session — this only ever sends an index into the step's own options.
+ * session — this only ever sends an index into the step's own options. A
+ * battle option no longer resolves inline (Phase 10.14) — it STAGES the
+ * fight instead: the node comes back `{..., staged:true}` and the session
+ * gains a `pendingBattle` (both sides' frozen `toLane()` lane snapshots,
+ * `party`/`enemy`/`enemyDisplay`) with `options:null` until the player
+ * resolves it via resolveAdventureBattle()/surrenderAdventureBattle(). Loot
+ * is escrowed (logged, not granted) until the run actually completes.
  * @param {number} choice index into the current step's `options`
  * @returns {Promise<{session:object, node:{position:number, choice:number,
- *   type:string, loot?:{itemId:string,qty:number}[],
- *   battle?:{won:boolean,events:object[]},
+ *   type:string, staged?:true, loot?:{itemId:string,qty:number}[],
  *   catch?:{speciesId:string,name:string,monsterId:number}}>}
  */
 export async function moveAdventure(choice) {
   return postJson("/api/adventure/move", { choice });
+}
+
+/**
+ * Resolve the currently staged Adventure battle (Phase 10.14). `order` is
+ * the player's OWN lane order — a permutation of their party's lane
+ * indices, front-first, the exact same choice requestBattle() sends for a
+ * match; the server owns the enemy, every stat, and the outcome. The
+ * response's `node.battle` carries the event log for the replayer, plus
+ * `catch`/`granted` summaries when this win just completed the run (loot/
+ * catches are escrowed until then).
+ * @param {number[]} order
+ * @returns {Promise<{session:object, node:{position:number, choice:number,
+ *   type:"battle", battle:{won:boolean, events:object[]},
+ *   catch?:{speciesId:string,name:string,monsterId:number},
+ *   granted?:{items:object[], monsters:object[]}}>}
+ */
+export async function resolveAdventureBattle(order) {
+  return postJson("/api/adventure/battle", { order });
+}
+
+/**
+ * Surrender the currently staged Adventure battle — this IS a defeat, the
+ * run fails and every escrowed reward (loot log so far, any earlier catch)
+ * is forfeited.
+ * @returns {Promise<{session:object}>}
+ */
+export async function surrenderAdventureBattle() {
+  return postJson("/api/adventure/surrender", {});
 }
 
 /** Give up the active run early — same terminal effect as a lost battle,

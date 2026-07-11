@@ -19,6 +19,11 @@ export const state = {
   cinematic: true,
   /** the PVP opponent {name, rating} for the match just opened, or null for free play */
   opponent: null,
+  /** the staged Adventure fight currently on the battlefield (`{position}`),
+   *  or null when the board holds a normal match; set by
+   *  loadAdventureBattle(), cleared by newMatch()/the Continue handoff in
+   *  main.js */
+  adventureBattle: null,
 };
 
 // The current match's lane definitions (server snapshots, already idx-tagged).
@@ -45,7 +50,24 @@ export async function newMatch(mode, monsterIds, keepEnemyMatchId) {
   const match = await createMatch(mode, monsterIds, keepEnemyMatchId);
   state.matchId = match.matchId;
   state.opponent = match.opponent ?? null;
+  state.adventureBattle = null; // a fresh match always evicts an adventure fight from the board
   defs = { you: match.you, enemy: match.enemy };
+  resetState();
+}
+
+/**
+ * Load a staged Adventure fight's frozen snapshots (the same toLane() lane
+ * shape a match's you/enemy arrive in) onto the battlefield in place of a
+ * match (Phase 10.14).
+ * @param {{position:number, party:object[], enemy:object[]}} pending the
+ *   active session's `pendingBattle` (services/content.js's
+ *   fetchAdventureState()/moveAdventure() shape).
+ */
+export function loadAdventureBattle(pending) {
+  state.matchId = null;
+  state.opponent = null;
+  state.adventureBattle = { position: pending.position };
+  defs = { you: pending.party, enemy: pending.enemy };
   resetState();
 }
 

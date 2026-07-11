@@ -575,6 +575,25 @@ function validateAdventureLootTable(list, label) {
 }
 
 /**
+ * `enemies`: optional `{min, max}` (both 1-3, min <= max) — the route's
+ * difficulty knob for how many wild monsters a battle node fields. Absent
+ * defaults to `{min:1, max:3}` (server/services/adventure.js's staging path
+ * applies the same default defensively, for defs validated before Phase
+ * 10.14).
+ */
+function validateAdventureEnemies(input) {
+  if (input === undefined) return { min: 1, max: 3 };
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw bad("config.enemies must be an object");
+  }
+  onlyKeys(input, ["min", "max"], "config.enemies");
+  const min = int(input.min, "config.enemies.min", { min: 1, max: 3 });
+  const max = int(input.max, "config.enemies.max", { min: 1, max: 3 });
+  if (min > max) throw bad("config.enemies.min must be <= config.enemies.max");
+  return { min, max };
+}
+
+/**
  * An adventure route's `config` grammar — see src/data/adventures.js's
  * header for the authoritative description, kept in sync with this
  * validator. Pure grammar only (no DB); the referential checks (every
@@ -586,7 +605,7 @@ function validateAdventureConfig(config) {
   if (typeof config !== "object" || config === null || Array.isArray(config)) {
     throw bad("config must be a JSON object");
   }
-  onlyKeys(config, ["steps", "choices", "nodes", "encounters", "loot", "gather", "catchPct"], "config");
+  onlyKeys(config, ["steps", "choices", "nodes", "encounters", "loot", "gather", "catchPct", "enemies"], "config");
   return {
     steps: int(config.steps, "config.steps", { min: 3, max: 10 }),
     choices: int(config.choices, "config.choices", { min: 2, max: 3 }),
@@ -595,6 +614,7 @@ function validateAdventureConfig(config) {
     loot: validateAdventureLootTable(config.loot, "config.loot"),
     gather: validateAdventureLootTable(config.gather, "config.gather"),
     catchPct: int(config.catchPct, "config.catchPct", { min: 0, max: 100 }),
+    enemies: validateAdventureEnemies(config.enemies),
   };
 }
 

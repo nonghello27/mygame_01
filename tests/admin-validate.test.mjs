@@ -528,13 +528,38 @@ test("validateAdventure accepts a happy-path def and defaults description/enable
   assert.equal(ok.id, "ad_verdant_trail");
   assert.equal(ok.description, "", "description defaults to empty string");
   assert.equal(ok.enabled, true, "enabled defaults to true");
-  assert.deepEqual(ok.config, ADVENTURE_CONFIG);
+  assert.deepEqual(ok.config, { ...ADVENTURE_CONFIG, enemies: { min: 1, max: 3 } });
 
   const full = validateAdventure({
     id: "ad_x", name: "X", description: "  a route  ", enabled: false, config: ADVENTURE_CONFIG,
   });
   assert.equal(full.description, "a route");
   assert.equal(full.enabled, false);
+});
+
+// Phase 10.14 — config.enemies: the route's difficulty knob for how many
+// wild monsters a battle node fields. Optional; defaults to {min:1,max:3}.
+test("validateAdventure's config.enemies defaults to {min:1,max:3}, round-trips a valid pair, and rejects bad shapes", () => {
+  const cfg = (patch) => ({ ...ADVENTURE_CONFIG, ...patch });
+
+  assert.deepEqual(
+    validateAdventure({ id: "ad_x", name: "X", config: ADVENTURE_CONFIG }).config.enemies,
+    { min: 1, max: 3 },
+    "default applied when absent"
+  );
+  assert.deepEqual(
+    validateAdventure({ id: "ad_x", name: "X", config: cfg({ enemies: { min: 2, max: 3 } }) }).config.enemies,
+    { min: 2, max: 3 },
+    "a valid {min,max} passes through"
+  );
+  rejects(() => validateAdventure({ id: "ad_x", name: "X", config: cfg({ enemies: { min: 3, max: 2 } }) }),
+    "rejects min > max");
+  rejects(() => validateAdventure({ id: "ad_x", name: "X", config: cfg({ enemies: { min: 0, max: 3 } }) }),
+    "rejects min below range");
+  rejects(() => validateAdventure({ id: "ad_x", name: "X", config: cfg({ enemies: { min: 1, max: 4 } }) }),
+    "rejects max above range");
+  rejects(() => validateAdventure({ id: "ad_x", name: "X", config: cfg({ enemies: { min: 1, max: 3, extra: 1 } }) }),
+    "rejects unknown keys inside enemies");
 });
 
 test("validateAdventure rejects malformed config shapes", () => {
