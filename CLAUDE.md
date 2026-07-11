@@ -156,7 +156,19 @@ The vision and plans live in `docs/` — treat them as part of this file:
   id field with a live preview), with new `public/icons/items/`,
   `public/icons/equipment/`, `public/icons/runes/` art folders (a
   default.svg/default.png/README.md apiece). **Phase 10.17 is done.** Phase
-  11 (chat, notifications & the photo quest) is next.
+  11 (Adventure 2.0: grid expeditions), staged 2026-07-11 as sub-phases
+  11.1–11.3, is also code complete: the old linear step-list run is replaced
+  by an explorable width×height maze (randomized-DFS carved, three
+  difficulty tiers — easy/medium/hard — each tuning monster/item density and
+  battle gold/exp) played against a move budget (the party's summed derived
+  spd plus the route's own bonus); reaching 0 moves anywhere but the
+  entrance strands the run and forfeits its whole escrowed haul, while an
+  explicit exit at the entrance is the only way a run banks it; the session
+  view is fog-of-war (only visited cells plus their orthogonal neighbors ever
+  ship) and the client renders it as a tappable grid, with staged battles
+  still handing off to the real battlefield exactly as Phase 10.14 wired it.
+  **Phase 11 is done.** Phase 12 (chat, notifications & the photo quest) is
+  next.
 
 Don't build ahead of the roadmap phase you're in, and don't assume a
 directory from ARCHITECTURE's *target* layout exists until it does — §3 below
@@ -243,7 +255,8 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # battle, progression, trainerSkills, formation, ladder,
 │   │                       # inventory (+ its sell), equipment.js (equip, enhance),
 │   │                       # runes.js (socket, repair), summon.js (summonHall, summon),
-│   │                       # adventure.js (state, start, move, abandon), market.js
+│   │                       # adventure.js (state, start, move, battle, surrender, exit,
+│   │                       # abandon), market.js
 │   │                       # (browse, mine, list, buy, cancel), tournament.js
 │   │                       # (tournaments list, register, withdraw, detail — rides the
 │   │                       # battle domain), admin.js (master + classes/skills/species/jobs/
@@ -301,10 +314,13 @@ per roadmap phase, don't big-bang rename.)
 │                           # (performSummon: pluggable REQUIREMENT_CHECKERS pay/refund per
 │                           # cost leg, seeded rollSummon() + mint + audit insert,
 │                           # compensating refund/unmint on failure), adventure.js
-│                           # (getState/start/move/abandon: lazy session expiry, party
-│                           # busy-claim with compensating release, closed NODE_RESOLVERS
-│                           # registry dispatching chest/gather/battle — battle calls
-│                           # resolveBattle() directly, no matches row), market.js
+│                           # (getState/start/move/battle/surrender/exit/abandon: a grid
+│                           # maze (Phase 11) instead of the original step list — lazy
+│                           # session expiry, party busy-claim with compensating release,
+│                           # claimMove's one-statement move+stage+strand claim, a fog-of-
+│                           # war session view, the stranded rule (0 moves left anywhere but
+│                           # the entrance fails the run), and exit()-only run completion —
+│                           # battle calls resolveBattle() directly, no matches row), market.js
 │                           # (list/buy/cancel claim-first-then-pay with LIFO
 │                           # compensations after a won claim), tournament.js (list/
 │                           # register/withdraw claim-first-then-pay with LIFO
@@ -344,8 +360,9 @@ per roadmap phase, don't big-bang rename.)
 │                           # progression (expertise unlock exp, learn-slot validation),
 │                           # pvp (Elo delta, season-end reward tiers), summon.js
 │                           # (rollSummon: pure seeded weighted roll over a pool),
-│                           # adventure.js (generateMap/deriveNodeSeed/rollLoot/rollEncounter:
-│                           # pure seeded map generation + node rolls), bracket.js
+│                           # adventure.js (generateGridMap/visibleCellKeys/deriveNodeSeed/
+│                           # rollLoot/rollEncounter: pure seeded maze generation, a fog-of-
+│                           # war visibility helper, + cell rolls, Phase 11), bracket.js
 │                           # (generateBracket/nextRound/placements: seeded single-
 │                           # elimination bracket + rank math, Phase 9.1; derivePairingSeed/
 │                           # replayBracket: Phase 9.3's per-pairing seed derivation + the
@@ -410,15 +427,26 @@ per roadmap phase, don't big-bang rename.)
     │                       # pvp (Arena panel: ladder + defense editor), trainer (expertise +
     │                       # skills), inventory (🎒 panel: Items | Equipment | Runes),
     │                       # summon (✨ Summon Hall panel: banner cards + pull), adventure
-    │                       # (🗺 panel: route list + a Phase 10.9 partyPicker.js party picker
-    │                       # (the same card-based drag-and-drop widget Setup Team hosts),
-    │                       # step options, run log; Phase 10.14's client slice — a staged
-    │                       # battle option renders a "To battle" notice + enemy chips (also
-    │                       # the resume-after-refresh state, since pendingBattle rides every
-    │                       # session read) that hands off through an injected enterBattle hook
-    │                       # to main.js's real battlefield instead of resolving inline, and a
-    │                       # terminal run's summary gained a "what you brought home" tally vs.
-    │                       # a forfeited hint, its button now "End Adventure"),
+    │                       # (🗺 panel: no-session route cards — a Phase 10.9 partyPicker.js
+    │                       # party picker (the same card-based drag-and-drop widget Setup Team
+    │                       # hosts) plus, per route (Phase 11.3), a width×height dimension line
+    │                       # and a difficulty <select>; an active run renders a fog-of-war grid
+    │                       # of tappable tiles instead of a step list — fog/rock/grass/visited/
+    │                       # entrance/cleared modifiers off the session's sparse `cells` (an
+    │                       # absent cell IS the fog, never inferred client-side), the party's
+    │                       # front unit marking the current cell via board.js's classIconEl()
+    │                       # (emoji fallback), and tapping any orthogonally-adjacent open tile
+    │                       # posting the move — plus an HUD row (moves left, a loot counter, a
+    │                       # Leave button live only at the entrance, and the existing
+    │                       # confirm-gated Abandon); Phase 10.14's staged-battle handoff is
+    │                       # unchanged — a "To battle" notice + enemy chips (also the
+    │                       # resume-after-refresh state, since pendingBattle rides every
+    │                       # session read) hands off through an injected enterBattle hook to
+    │                       # main.js's real battlefield instead of resolving inline; and a
+    │                       # terminal run's summary carries a stranded headline alongside the
+    │                       # existing defeated/surrendered/abandoned ones, its "what you
+    │                       # brought home" tally now summing gold/exp too (preferring exit's own
+    │                       # stashed grant total), its button still "End Adventure"),
     │                       # marketplace (🏪 panel: browse + my listings + list-a-good picker),
     │                       # tournament (🏆 panel: open/upcoming cards with a register flow +
     │                       # party picker, my-entry + withdraw, a past-tournaments history list,
@@ -710,103 +738,167 @@ refresh-on-open) — it shows each banner's human-readable cost line and, on a
 successful pull, the minted monster's emoji/name/species and the trainer's
 new gold balance.
 
-Adventure (Phase 7.4 step B, session engine — SIXTH domain, `api/adventure/`):
-`adventure_defs` (master, seeded from `src/data/adventures.js`; `config` is
-the whole map/loot grammar `shared/rules/adventure.js` reads — `steps`,
-`choices` per step, a weighted node-type table (`battle`/`chest`/`gather`),
-the wild `encounters` pool, `loot`/`gather` tables, `catchPct`, and (Phase
-10.14) an optional `enemies:{min,max}` knob, both 1-3, defaulting to
-`{min:1,max:3}` — how many wild monsters a `battle` node fields) →
-`adventure_sessions`, an instance row per run — **frozen** at start exactly
-like `matches` freezes a battle's inputs: `seed`, `map` (`generateMap(config,
-seed)`'s output), `party` (`{lanes, display}` — `lanes` mirrors `toLane()`'s
-battle-snapshot shape, equipped gear/socketed runes included, in the
-player's CHOSEN lane order), `position`, `state`
+Adventure (Phase 7.4 step B, session engine — SIXTH domain, `api/adventure/`;
+rebuilt on an explorable grid maze in Phase 11, sub-phases 11.1's pure rules
++ 11.2's schema/session engine, both code complete): `adventure_defs`
+(master, seeded from `src/data/adventures.js`; `config` is the whole maze/
+loot grammar `shared/rules/adventure.js` + `server/services/adminValidate.js`
+read — `width`/`height` (5-20), an optional `movesBonus` (0-500, default 0),
+`difficulties` (an object with EXACTLY the keys `easy`/`medium`/`hard`, each
+`{monsterPct, itemPct, battleGold:{min,max}, battleExp:{min,max}}` —
+`monsterPct`/`itemPct` are 1-60 with their sum ≤ 80), the wild `encounters`
+pool, a `loot` table, `catchPct`, and an `enemies:{min,max}` knob (both 1-3,
+defaulting to `{min:1,max:3}`) — how many wild monsters a monster cell
+fields; the OLD `steps`/`choices`/`nodes`/`gather` grammar is retired
+outright, a deliberate prototype-stage breaking change) → `adventure_sessions`,
+an instance row per run — **frozen** at start exactly like `matches` freezes
+a battle's inputs: `seed`, `map` (`generateGridMap(config, difficulty,
+seed)`'s output — a randomized-DFS-carved width×height grid of rock/open/
+monster/item cells with a border entrance), `difficulty`, `party`
+(`{lanes, display}` — `lanes` mirrors `toLane()`'s battle-snapshot shape,
+equipped gear/socketed runes included, in the player's CHOSEN lane order),
+`pos_x`/`pos_y` (the party's current cell; the original scalar `position`
+column survives unused, migration `024_adventure_grid.sql`'s "don't drop
+what a later phase might still reference" caution), `moves_total`/
+`moves_left` (the run's move BUDGET — the frozen party lanes' summed `spd`
+plus `config.movesBonus` — decremented once per step), `visited`/`cleared`
+jsonb (arrays of `cellKey()` strings — every cell the party has ever seen,
+and every monster/item cell whose content is already resolved), `state`
 (`active → completed | failed | abandoned`), a running `loot` log, `ends_at`,
-and (Phase 10.14) `pending_battle` — NULL unless a battle option's fight is
-currently staged. At most one `active` session per trainer (partial unique
-index, same precedent as "at most one active season"). Flow: `GET
-/api/adventure/state` lazily expires an overdue session (`ends_at` past ⇒
-`abandoned`, same read-then-claim shape as `ensureSeason`) and returns the
-enabled routes (id/name/description ONLY — `config` is server balance data,
-never shipped) plus the current session view, which exposes ONLY the step in
-front of the player (`options`, forced `null` whenever a battle is staged)
-plus, while one is staged, both sides' frozen lane snapshots under
-`pendingBattle` (the same disclosure level `POST /api/battle/match`'s
-`you`/`enemy` already sets) — never the whole frozen map, which would leak
-upcoming nodes. `POST /api/adventure/start {adventureId, monsterIds}` claims
-the 3-monster party's busy lock in one statement (`claimPartyForAdventure`,
-same shape as `claimMonsterForJob`, `busy_kind = 'adventure'`) with a
-compensating `releaseParty()` on any later failure (same spirit as Summon
-Hall's unmint/refund), then mints the seed and freezes the map + party.
-`POST /api/adventure/move {choice}` validates `choice` against the CURRENT
-step only (409 "resolve the staged battle first" while one is already
-pending) and dispatches by node type: `chest`/`gather` still claim the step
-exactly once (`claimAdvance`, same claim-guard shape as `applyOrder`'s
-resolve claim) and resolve DETERMINISTICALLY off
-`deriveNodeSeed(session.seed, position)` through a closed `NODE_RESOLVERS`
-registry in `server/services/adventure.js` — a new ONE-SHOT node kind is one
-registry entry, never a branch in `move()` (`ADVENTURE_NODE_TYPES`, same
-closed-set philosophy the engine uses for skills) — rolling `rollLoot()` and
-only LOGGING the result (`{loot:[...]}`), never granting it mid-run. `battle`
-is the one TWO-PHASE node kind (Phase 10.14): `move()` instead rolls a wild
-team sized by `config.enemies` via `rollEncounter()` and freezes it into
-`pending_battle` (`claimStageBattle`, the `claimAdvance` role minus
-advancing `position` — a staged fight still occupies the current step);
-`POST /api/adventure/battle {order}` then resolves it with the player's own
-lane order (`applyOrder()`'s exact permutation gate) against the frozen
-`nodeSeed`, calling `resolveBattle()` **directly** — **no `matches` row**,
-since an adventure fight has no opposing trainer and only ever needs to
-update this one session — claims the settlement exactly once
-(`claimSettleBattle`), settles the party's rune durability exactly like
+and (Phase 10.14) `pending_battle` — NULL unless a monster cell's fight is
+currently staged. Migration `024_adventure_grid.sql` added all of the grid
+columns and abandoned every in-flight OLD-shape (`steps`) session outright,
+freeing its party lock — there is no sensible mapping from "step 3 of 8"
+onto a grid cell, so migrating one in place was never on the table. At most
+one `active` session per trainer (partial unique index, same precedent as
+"at most one active season"). Flow: `GET /api/adventure/state` lazily
+expires an overdue session (`ends_at` past ⇒ `abandoned`, same
+read-then-claim shape as `ensureSeason`) and returns the enabled routes
+(id/name/description/width/height/difficulty NAMES only — `config`'s
+density/reward knobs are server balance data, never shipped) plus the
+current session view, which exposes fog-of-war TERRAIN ONLY for cells the
+party has visited plus their orthogonal neighbors (`visibleCellKeys()`) —
+never a cell's CONTENT, only its `visited`/`cleared` flags, since an item
+cell clears the instant it's stepped on and a monster cell is either the
+pending battle or `cleared` — plus, while one is staged, both sides' frozen
+lane snapshots under `pendingBattle` (the same disclosure level `POST
+/api/battle/match`'s `you`/`enemy` already sets). `POST /api/adventure/start
+{adventureId, difficulty, monsterIds}` claims the 3-monster party's busy lock
+in one statement (`claimPartyForAdventure`, same shape as
+`claimMonsterForJob`, `busy_kind = 'adventure'`) with a compensating
+`releaseParty()` on any later failure (same spirit as Summon Hall's unmint/
+refund), then mints the seed, generates the maze at the chosen difficulty,
+computes the move budget, and freezes it all into a new session (`visited`
+seeded with just the entrance's own `cellKey()`). `POST /api/adventure/move
+{x, y}` validates the target cell (in bounds, not rock, orthogonally
+adjacent to the party's current cell, moves remaining) against the CURRENT
+session state — never trust it blind (409 "resolve the staged battle first"
+while one is already pending) — then, for a FRESH (not yet `cleared`) cell,
+resolves its content DETERMINISTICALLY off `deriveNodeSeed(session.seed,
+y·width + x)` before ever claiming anything: an item cell rolls `rollLoot()`
+and only LOGS the result (escrowed, never granted mid-run); a monster cell
+(the one TWO-PHASE case, Phase 10.14's shape carried over) rolls a wild team
+sized by `config.enemies` via `rollEncounter()` and freezes it into
+`pending_battle`, plus two more rolls off that SAME node-seeded stream in a
+FIXED order — `catchSeed`, then `rewardSeed` — for `battle()` to consume
+later. `claimMove()` (`server/repos/adventures.js`) then carries the WHOLE
+result as ONE guarded UPDATE — the cursor move, the moves decrement, the
+`visited`/`cleared`/`loot` appends, the optional `pending_battle` stage, and
+an optional terminal-state flip, the entire gate living in its WHERE (the
+`claimSettleBattle` precedent, one level up). The STRANDED rule rides that
+same claim: running the move budget to 0 anywhere but the entrance flips
+`state` to `'failed'` in the very statement that spent the last move — the
+risk/return loop this phase is chasing (go deeper for more loot, or bank
+what's already banked) — while landing the last move ON the entrance stays
+`active` (leaving costs nothing) and a battle staged on the last move defers
+the check to `battle()`. `POST /api/adventure/battle {order}` resolves a
+staged fight with the player's own lane order (`applyOrder()`'s exact
+permutation gate) against the frozen `nodeSeed`, calling `resolveBattle()`
+**directly** — **no `matches` row**, since an adventure fight has no
+opposing trainer and only ever needs to update this one session — claims the
+settlement exactly once (`claimSettleBattle`, which now also appends the
+fought cell's key to `cleared` on a win rather than ever advancing a
+step-index `position`), settles the party's rune durability exactly like
 `resolveMatch` (win or lose, against the frozen snapshot's charges, the same
 accepted wrinkle as two open matches sharing a snapshot), and on a win rolls
-a `catchPct` chance to record (not yet mint) a defeated wild species. A
-lost/drawn battle fails the run; the final step's win completes it; either
-terminal state releases the party. `POST /api/adventure/surrender {}` is the
-other way to resolve a staged battle — an unconditional defeat, no order
-needed. Loot/catches are ESCROWED, not granted as they're logged: every
-chest/gather/battle outcome only appends to `loot`; a new `grantRunRewards()`
-walks that whole log and grants every item stack + mints every catch, but
-ONLY once, from `battle()`, the moment a run's state flips to `'completed'`
-— a defeat, a surrender, an abandon, or lazy expiry forfeits everything
-logged so far. The battle event log never touches the session row
-(re-derivable forever from the stored seed, CLAUDE.md §1.6) — it only ever
-rides in the response's `node.battle.events`. `POST /api/adventure/abandon
-{}` gives up early (guarded `active → abandoned`), releasing the party
-(discarding any staged battle along with it). `adventure_defs` gets the admin CRUD half
+BOTH a difficulty-tiered gold/exp reward (a fresh rng off the frozen
+`rewardSeed`, `config.difficulties[difficulty].battleGold`/`battleExp`) and
+the existing `catchPct` chance (off the frozen `catchSeed`) to record a
+defeated wild species — both logged, not granted, same escrow. A lost/drawn
+battle fails the run; UNLIKE Phase 10.14, a WIN no longer completes the run
+by itself — only `exit()` (below) does that — but a win on the party's LAST
+move away from the entrance still STRANDS it (the fight cleared the cell,
+but exploring further or leaving both cost a move the party no longer has).
+Either terminal state releases the party. `POST /api/adventure/surrender {}`
+is the other way to resolve a staged battle — an unconditional defeat, no
+order needed. `POST /api/adventure/exit {}` (Phase 11.2, new) is now the
+**ONLY** way a run ever completes: a guarded `active → completed` flip
+(`claimExit`) gated on the party actually standing at the maze's entrance —
+standing-there is part of the claim's own WHERE, never a separate pre-check
+that could race. Loot/catches/rewards are ESCROWED, not granted as they're
+logged: every item/battle outcome only appends to `loot`; `grantRunRewards()`
+walks that whole log and grants every item stack, sums every logged
+gold/exp roll into ONE `creditTrainerReward()` call
+(`server/repos/trainers.js` — the unconditional-credit sibling of
+`refundGold`), and mints every escrowed catch, but ONLY once, from `exit()`,
+the moment the completion claim is won — a defeat, a surrender, a stranding,
+an abandon, or lazy expiry forfeits everything logged so far. The battle
+event log never touches the session row (re-derivable forever from the
+stored seed, CLAUDE.md §1.6) — it only ever rides in the response's
+`node.battle.events`. `POST /api/adventure/abandon {}` gives up early
+(guarded `active → abandoned`), releasing the party (discarding any staged
+battle along with it). `adventure_defs` gets the admin CRUD half
 of the Phase 5 workflow (`validateAdventure()`, guarded 409 delete, a
 `sessionCount` usage badge, and a 🗺 Adventures tab in `src/ui/admin.js`
 mirroring Summons' one-JSON-textarea-for-config approach). The 🗺 Adventure
-panel (`src/ui/adventure.js`) is pure display + action over six endpoints
-(`src/services/content.js`'s `fetchAdventureState()`/`startAdventure()`/
-`moveAdventure()`/`resolveAdventureBattle()`/`surrenderAdventureBattle()`/
+panel (`src/ui/adventure.js`, rebuilt around the grid in Phase 11.3) is pure
+display + action over SEVEN endpoints (`src/services/content.js`'s
+`fetchAdventureState()`/`startAdventure()`/`moveAdventure()`/
+`resolveAdventureBattle()`/`surrenderAdventureBattle()`/`exitAdventure()`/
 `abandonAdventure()`): no session shows a route list with a shared party
 picker (borrowed straight from the Arena defense editor's row shape —
-`loadFarm()`'s `busyUntil`/`busyKind` disable a busy monster) and a
-per-route "Set out" button gated on exactly 3 picks; an active session
-shows the step header, party chips, the run's loot log so far, and the
-CURRENT step's options as Go-able cards — UNLESS a battle is staged
-(`session.pendingBattle`), which the panel renders as a "To battle" notice
-+ enemy chips instead (both on picking a fresh battle option and, since
+`loadFarm()`'s `busyUntil`/`busyKind` disable a busy monster), each route
+card now also showing a `width×height` dimension line and a difficulty
+`<select>` (options from the route's own `difficulties`, defaulting to
+"easy"), and a per-route "Set out" button gated on exactly 3 picks; an
+active session renders the FOG-OF-WAR MAZE as a scrollable CSS grid of
+tappable tiles built from the session's sparse `cells` array (a cell
+missing from it is undiscovered fog, rendered blank — the client never
+infers a cell's contents, only what the server actually shipped) — rock/
+grass/visited/entrance/cleared modifier classes, the party's FRONT unit
+marking the current cell via `ui/board.js`'s `classIconEl()` (falling back
+to its emoji), and any orthogonally-adjacent OPEN tile clickable to move
+(disabled otherwise, and every tile disabled while a battle is staged) —
+above an HUD row (moves left, a loot counter, a Leave button enabled only
+while standing at the entrance with nothing staged, and the existing
+confirm-gated Abandon) and the run's loot log so far. A staged battle
+(`session.pendingBattle`) still renders as a "To battle" notice + enemy
+chips ABOVE the grid (both on picking a fresh battle cell and, since
 `pendingBattle` rides every session read, on resuming one after a page
 refresh); a terminal session (completed/failed/abandoned) is narrated from
 the just-returned outcome and kept in module memory for a one-screen
-summary (same precedent as `ui/summon.js`'s results map) — an aggregated
-"what you brought home" tally on a completed run vs. a one-line "forfeited"
-hint otherwise — until "End Adventure" is clicked. Battles no longer replay
-inside this panel at all (Phase 10.14's client slice): "To battle" hands
-`pendingBattle` off through an injected `enterBattle` hook (main.js's
-`enterAdventureBattle()`, the `initPvp(startRankedBattle)` precedent — this
-module never imports `main.js`), which loads it onto the REAL battlefield
-via `core/state.js`'s `loadAdventureBattle()` (setting a
-`state.adventureBattle:{position}` marker `core/battle.js`'s `runBattle()`
-branches on, resolving through `resolveAdventureBattle()` instead of
-`requestBattle()`, same replayed event log either way) and switches to the
-Playground view, where a Surrender button (posts `surrenderAdventureBattle()`,
-confirm-gated) stands in for Reset/New Opponent until the fight ends, then a
-Continue button hands the fresh session back to `ui/adventure.js` via its
-`noteAdventureBattleResult()` export and returns here.
+summary (same precedent as `ui/summon.js`'s results map) — a headline that
+now also covers a stranded run, an aggregated "what you brought home" tally
+(item qtys, gold, exp — preferring `exitAdventure()`'s own stashed `granted`
+totals when on hand — plus any catches) on a completed run vs. a one-line
+"forfeited" hint otherwise — until "End Adventure" is clicked. Battles still
+never replay inside this panel (Phase 10.14's client slice, unchanged by the
+grid): "To battle" hands `pendingBattle` off through an injected
+`enterBattle` hook (main.js's `enterAdventureBattle()`, the
+`initPvp(startRankedBattle)` precedent — this module never imports
+`main.js`), which loads it onto the REAL battlefield via `core/state.js`'s
+`loadAdventureBattle()` (setting a `state.adventureBattle:{x, y}` marker
+`core/battle.js`'s `runBattle()` branches on — the maze cell it's blocking,
+only ever checked for truthiness — resolving through
+`resolveAdventureBattle()` instead of `requestBattle()`, same replayed event
+log either way) and switches to the Playground view, where a Surrender
+button (posts `surrenderAdventureBattle()`, confirm-gated) stands in for
+Reset/New Opponent until the fight ends, then a Continue button hands the
+fresh session back to `ui/adventure.js` via its `noteAdventureBattleResult()`
+export and returns here — a win logs its escrowed gold/exp (and any catch)
+to the battle log, and a win that runs the party's last move out anywhere
+but the entrance also surfaces the same stranded warning `moveAdventure()`
+does.
 
 Marketplace (Phase 8): `marketplace_listings` is an instance table
 referencing another owned instance (an item stack, an equipment piece, a
@@ -1075,11 +1167,11 @@ job, never re-derived client-side.
 - **Add an adventure route (live):** admin console (🗺 Adventures tab) —
   validated writes straight to `adventure_defs`, no redeploy. Or a row in
   `src/data/adventures.js` + `npm run db:seed` for content meant to ship
-  with the repo. `config`'s grammar (steps/choices/nodes/encounters/loot/
-  gather/catchPct) is documented in that file's header and enforced by
-  `validateAdventure()`; a new node TYPE (beyond `battle`/`chest`/`gather`)
-  needs one more `ADVENTURE_NODE_TYPES` entry AND one more `NODE_RESOLVERS`
-  entry in `server/services/adventure.js` — never a branch in `move()`.
+  with the repo. `config`'s grammar (width/height/movesBonus/difficulties/
+  encounters/loot/catchPct/enemies) is documented in that file's header and
+  enforced by `validateAdventure()`; a cell's kind (rock/open/monster/item)
+  is decided by `generateGridMap()` from the difficulty's density knobs —
+  content stays data, never an engine branch.
 - **Give a monster to an account (live):** admin console (👥 Trainers tab) —
   two paths. Either pick the trainer, pick a species, Mint (copies base
   stats/attrs/skill loadout from the species master row, same mint as the

@@ -200,8 +200,8 @@ export async function removeSummon(sql, id) {
 /**
  * validateAdventure() is pure grammar only (no DB); the referential checks a
  * route actually needs — every encounters speciesId must be a real species,
- * every loot/gather itemId must be a real item — happen here against fresh
- * DB state, same precedent as saveSummon() checking pool/cost relations.
+ * every loot itemId must be a real item — happen here against fresh DB
+ * state, same precedent as saveSummon() checking pool/cost relations.
  */
 export async function saveAdventure(sql, input) {
   const adventure = validateAdventure(input);
@@ -213,8 +213,8 @@ export async function saveAdventure(sql, input) {
       throw httpError(400, `encounters references unknown species "${e.speciesId}"`);
     }
   }
-  for (const row of [...adventure.config.loot, ...adventure.config.gather]) {
-    if (!itemIds.has(row.itemId)) throw httpError(400, `loot/gather references unknown item "${row.itemId}"`);
+  for (const row of adventure.config.loot) {
+    if (!itemIds.has(row.itemId)) throw httpError(400, `loot references unknown item "${row.itemId}"`);
   }
   await upsertAdventure(sql, adventure);
 }

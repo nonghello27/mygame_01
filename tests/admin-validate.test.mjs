@@ -534,16 +534,17 @@ test("enums include summonCostTypes", () => {
   assert.deepEqual(enums().summonCostTypes, ["gold", "item"]);
 });
 
-// --- adventures (Phase 7.4 step B) --------------------------------------------
+// --- adventures (Phase 11 — grid maze grammar) --------------------------------
 
 const ADVENTURE_CONFIG = {
-  steps: 5,
-  choices: 2,
-  nodes: [
-    { type: "battle", weight: 50 },
-    { type: "chest", weight: 25 },
-    { type: "gather", weight: 25 },
-  ],
+  width: 8,
+  height: 8,
+  movesBonus: 20,
+  difficulties: {
+    easy: { monsterPct: 12, itemPct: 15, battleGold: { min: 10, max: 25 }, battleExp: { min: 5, max: 10 } },
+    medium: { monsterPct: 20, itemPct: 20, battleGold: { min: 20, max: 45 }, battleExp: { min: 10, max: 20 } },
+    hard: { monsterPct: 30, itemPct: 30, battleGold: { min: 40, max: 80 }, battleExp: { min: 20, max: 40 } },
+  },
   encounters: [
     { speciesId: "sp_vorth", weight: 40 },
     { speciesId: "sp_mesha", weight: 35 },
@@ -551,9 +552,6 @@ const ADVENTURE_CONFIG = {
   loot: [
     { itemId: "it_potion_small", weight: 50, qtyMin: 1, qtyMax: 2 },
     { itemId: "it_enhance_stone", weight: 40, qtyMin: 1, qtyMax: 3 },
-  ],
-  gather: [
-    { itemId: "it_enhance_stone", weight: 80, qtyMin: 1, qtyMax: 2 },
   ],
   catchPct: 25,
 };
@@ -600,17 +598,25 @@ test("validateAdventure's config.enemies defaults to {min:1,max:3}, round-trips 
 test("validateAdventure rejects malformed config shapes", () => {
   const base = { id: "ad_x", name: "X" };
   const cfg = (patch) => ({ ...ADVENTURE_CONFIG, ...patch });
+  const diffs = (patch) => ({ ...ADVENTURE_CONFIG.difficulties, ...patch });
 
-  rejects(() => validateAdventure({ ...base, config: cfg({ steps: 2 }) }), "steps below min");
-  rejects(() => validateAdventure({ ...base, config: cfg({ steps: 11 }) }), "steps above max");
-  rejects(() => validateAdventure({ ...base, config: cfg({ choices: 1 }) }), "choices below min");
-  rejects(() => validateAdventure({ ...base, config: cfg({ choices: 4 }) }), "choices above max");
-  rejects(() => validateAdventure({ ...base, config: cfg({ nodes: [] }) }), "empty nodes");
-  rejects(() => validateAdventure({ ...base, config: cfg({ nodes: [{ type: "shop", weight: 1 }] }) }),
-    "unknown node type");
+  rejects(() => validateAdventure({ ...base, config: cfg({ width: 4 }) }), "width below min");
+  rejects(() => validateAdventure({ ...base, config: cfg({ width: 21 }) }), "width above max");
+  rejects(() => validateAdventure({ ...base, config: cfg({ height: 4 }) }), "height below min");
+  rejects(() => validateAdventure({ ...base, config: cfg({ height: 21 }) }), "height above max");
+  rejects(() => validateAdventure({ ...base, config: cfg({ movesBonus: 501 }) }), "movesBonus above max");
+  rejects(() => validateAdventure({ ...base, config: cfg({ movesBonus: -1 }) }), "movesBonus below min");
+
   rejects(() => validateAdventure({ ...base, config: cfg({
-    nodes: [{ type: "battle", weight: 1 }, { type: "battle", weight: 2 }],
-  }) }), "duplicate node type");
+    difficulties: { easy: ADVENTURE_CONFIG.difficulties.easy, medium: ADVENTURE_CONFIG.difficulties.medium },
+  }) }), "missing difficulties.hard");
+  rejects(() => validateAdventure({ ...base, config: cfg({
+    difficulties: diffs({ easy: { ...ADVENTURE_CONFIG.difficulties.easy, monsterPct: 50, itemPct: 40 } }),
+  }) }), "monsterPct + itemPct above 80");
+  rejects(() => validateAdventure({ ...base, config: cfg({
+    difficulties: diffs({ easy: { ...ADVENTURE_CONFIG.difficulties.easy, battleGold: { min: 30, max: 10 } } }),
+  }) }), "battleGold.max below min");
+
   rejects(() => validateAdventure({ ...base, config: cfg({ encounters: [] }) }), "empty encounters");
   rejects(() => validateAdventure({ ...base, config: cfg({
     encounters: [{ speciesId: "sp_vorth", weight: 1 }, { speciesId: "sp_vorth", weight: 2 }],
@@ -627,12 +633,13 @@ test("validateAdventure rejects malformed config shapes", () => {
   }) }), "qtyMax < qtyMin");
   rejects(() => validateAdventure({ ...base, config: cfg({ catchPct: -1 }) }), "catchPct below min");
   rejects(() => validateAdventure({ ...base, config: cfg({ catchPct: 101 }) }), "catchPct above max");
+  rejects(() => validateAdventure({ ...base, config: cfg({ steps: 5 }) }), "old-grammar key (steps) is unknown");
   rejects(() => validateAdventure({ name: "X", config: ADVENTURE_CONFIG }), "missing id");
   rejects(() => validateAdventure({ id: "adbad", name: "X", config: ADVENTURE_CONFIG }), "id must be ad_*");
 });
 
-test("enums include adventureNodeTypes", () => {
-  assert.deepEqual(enums().adventureNodeTypes, ["battle", "chest", "gather"]);
+test("enums include adventureDifficulties", () => {
+  assert.deepEqual(enums().adventureDifficulties, ["easy", "medium", "hard"]);
 });
 
 // --- events: shared schedule + reward grammar (Phase 9.1) --------------------

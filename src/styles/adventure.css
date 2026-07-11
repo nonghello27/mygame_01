@@ -2,7 +2,9 @@
    family as the Summon Hall / Arena panels (header, msgs, body). Phase
    10.9: the party picker is now ui/partyPicker.js's shared 3-lane
    drag-and-drop widget (styles/team.css's `team-*`/`party-picker` classes,
-   global) — this file no longer styles it. */
+   global) — this file no longer styles it. Phase 11.3: the run itself is a
+   fog-of-war grid maze (`.adv-map` > `.adv-grid` > `.adv-tile`) instead of a
+   step list. */
 
 .adventure{
   margin-top:18px;background:var(--panel);border:1px solid var(--line);
@@ -33,6 +35,13 @@
 .adv-card b{font-size:14.5px}
 .adv-desc{margin:0;font-size:12.5px;color:var(--muted)}
 
+/* a route card's difficulty picker + Set out button, side by side */
+.adv-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.adv-select{
+  background:var(--bg-2);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:6px 8px;font-size:12.5px;
+}
+
 button.btn.adv-small{align-self:flex-start;padding:8px 16px;font-size:12.5px;border-radius:9px}
 button.btn.adv-small:disabled{opacity:0.5;cursor:default}
 button.btn.adv-danger{align-self:flex-start;color:var(--hp-low);border-color:var(--hp-low)}
@@ -44,6 +53,11 @@ button.btn.adv-danger{align-self:flex-start;color:var(--hp-low);border-color:var
   border-radius:9px;padding:6px 10px;font-size:12.5px;
 }
 
+/* HUD: moves left / loot count / Leave / Abandon, all in one row */
+.adv-hud{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.adv-hud > span{font-size:12.5px;color:var(--muted)}
+.adv-hud button.btn{align-self:auto}
+
 .adv-options{display:flex;gap:10px;flex-wrap:wrap}
 .adv-option{flex:1 1 140px;align-items:flex-start}
 .adv-option-icon{font-size:22px}
@@ -54,3 +68,44 @@ button.btn.adv-danger{align-self:flex-start;color:var(--hp-low);border-color:var
   padding:6px 10px;background:var(--bg-2);border-radius:8px;
 }
 .adv-log-icon{font-size:14px}
+
+/* --- the maze grid (Phase 11.3) --- */
+.adv-map{
+  overflow:auto;max-height:62vh;border:1px solid var(--line);border-radius:10px;
+  background:var(--bg-2);padding:8px;-webkit-overflow-scrolling:touch;
+}
+.adv-grid{
+  --adv-tile:34px;
+  display:grid;gap:2px;width:max-content;
+}
+.adv-tile{
+  width:var(--adv-tile);height:var(--adv-tile);border-radius:4px;border:none;
+  display:grid;place-items:center;position:relative;font-size:16px;
+  padding:0;margin:0;user-select:none;background:transparent;
+}
+.adv-tile--fog{background:#0a0c10}
+.adv-tile--rock{background:linear-gradient(160deg,#4a4a52,#2c2c33);cursor:default}
+.adv-tile--grass{background:linear-gradient(160deg,#2f4a34,#233a29);cursor:default}
+.adv-tile--visited{background:linear-gradient(160deg,#3a5c41,#2a4530)}
+.adv-tile--entrance{box-shadow:inset 0 0 0 2px var(--muted)}
+.adv-tile--here{box-shadow:inset 0 0 0 2px var(--a);transform:scale(1.06);z-index:2}
+.adv-tile--cleared{filter:brightness(0.82)}
+.adv-tile--reachable{cursor:pointer;box-shadow:inset 0 0 0 2px var(--hp-good)}
+.adv-tile--reachable:disabled{cursor:default}
+@media (hover:hover){
+  .adv-tile--reachable:hover{box-shadow:inset 0 0 0 2px var(--text)}
+}
+
+.adv-tile-mark{position:absolute;bottom:1px;right:2px;font-size:9px;opacity:0.75;line-height:1}
+.adv-tile-marker{width:80%;height:80%;object-fit:contain;font-size:calc(var(--adv-tile) * 0.55)}
+img.adv-tile-marker{display:block}
+
+/* mobile pass (Phase 10.15 precedent) — smaller tiles, HUD wraps; desktop
+   untouched. No separate `pointer:coarse` rule is needed: `.adv-tile--reachable`'s
+   ring is already a static box-shadow, never a `:hover`-gated affordance, so
+   touch gets it for free. */
+@media (max-width: 560px){
+  .adv-grid{--adv-tile:30px}
+  .adv-hud{gap:10px}
+  .adv-hud button.btn{flex:0 0 auto}
+}

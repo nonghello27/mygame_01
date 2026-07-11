@@ -1,9 +1,13 @@
-// SQL for Adventure (Phase 7.4 step B): the enabled route list, one session
-// per trainer (at most one 'active' row — db/migrations/011_adventures.sql's
-// partial unique index is the DB-level guarantee), and the party's busy lock.
-// Only server/services/adventure.js calls these — the rules (map generation,
-// node resolution, lazy expiry, compensating releases) live there, the
-// queries live here. Same division of labor as server/repos/summons.js.
+// SQL for Adventure (Phase 7.4 step B's session engine, rebuilt on the grid
+// in Phase 11.2): the enabled route list, one session per trainer (at most
+// one 'active' row — db/migrations/011_adventures.sql's partial unique index
+// is the DB-level guarantee), the grid session's move/exit claims, and the
+// party's busy lock. Only server/services/adventure.js calls these — the
+// rules (map generation, node resolution, lazy expiry, compensating
+// releases) live there, the queries live here. Same division of labor as
+// server/repos/summons.js.
+
+import { cellKey } from "../../shared/rules/adventure.js";
 
 function shapeSession(r) {
   return {
@@ -18,6 +22,12 @@ function shapeSession(r) {
     loot: r.loot,
     endsAt: r.ends_at,
     pendingBattle: r.pending_battle ?? null,
+    difficulty: r.difficulty,
+    pos: { x: r.pos_x, y: r.pos_y },
+    movesTotal: Number(r.moves_total),
+    movesLeft: Number(r.moves_left),
+    visited: r.visited ?? [],
+    cleared: r.cleared ?? [],
   };
 }
 
@@ -45,128 +55,146 @@ export async function getAdventureDef(sql, id) {
  *  guarantees there is at most one. */
 export async function getActiveSession(sql, trainerId) {
   const rows = await sql`
-    SELECT id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle
+    SELECT id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle,
+           difficulty, pos_x, pos_y, moves_total, moves_left, visited, cleared
     FROM adventure_sessions WHERE trainer_id = ${trainerId} AND state = 'active'`;
   return rows[0] ? shapeSession(rows[0]) : null;
 }
 
 /**
- * Mint a new session row (state 'active', position 0). Guarded only by
+ * Mint a new session row (state 'active'). `position` (the legacy step-index
+ * column, unused by the grid engine — kept in place rather than dropped, see
+ * 024_adventure_grid.sql's header) is still written 0 for compatibility with
+ * its NOT NULL default; the grid's own cursor is `pos_x`/`pos_y`, seeded from
+ * `map.entrance`. `visited` starts holding just the entrance's own cellKey()
+ * (the party can already see the cell it's standing on and its neighbors —
+ * server/services/adventure.js's toSessionView derives the rest via
+ * visibleCellKeys()); `cleared` starts empty. Guarded only by
  * `adventure_sessions_one_active_idx` — a race loses this INSERT with a
  * unique-violation (code 23505), which the SERVICE (not this repo, unlike
  * server/repos/pvp.js insertSeason's precedent) catches and turns into a 409,
  * per this task's design.
  */
-export async function insertSession(sql, { trainerId, adventureId, seed, map, party, hours }) {
+export async function insertSession(sql, { trainerId, adventureId, difficulty, seed, map, party, movesTotal, hours }) {
   const rows = await sql`
-    INSERT INTO adventure_sessions (trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at)
-    VALUES (${trainerId}, ${adventureId}, ${seed}, ${JSON.stringify(map)}::jsonb,
-            ${JSON.stringify(party)}::jsonb, 0, 'active', '[]'::jsonb,
-            now() + make_interval(hours => ${hours}))
-    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle`;
+    INSERT INTO adventure_sessions (
+      trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at,
+      difficulty, pos_x, pos_y, moves_total, moves_left, visited, cleared
+    )
+    VALUES (
+      ${trainerId}, ${adventureId}, ${seed}, ${JSON.stringify(map)}::jsonb,
+      ${JSON.stringify(party)}::jsonb, 0, 'active', '[]'::jsonb,
+      now() + make_interval(hours => ${hours}),
+      ${difficulty}, ${map.entrance.x}, ${map.entrance.y}, ${movesTotal}, ${movesTotal},
+      ${JSON.stringify([cellKey(map.entrance.x, map.entrance.y)])}::jsonb, '[]'::jsonb
+    )
+    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle,
+              difficulty, pos_x, pos_y, moves_total, moves_left, visited, cleared`;
   return shapeSession(rows[0]);
 }
 
 /**
- * Advance one step — the exactly-once gate for move()'s chest/gather path
- * (Phase 10.14: a battle option no longer calls this at all — move() 409s
- * up front whenever `pending_battle IS NOT NULL`, so a session with a staged
- * fight can never reach this claim; battle()/claimSettleBattle below is the
- * battle path's own exactly-once gate). Same philosophy as matches.js's
- * claimResolve: the WHERE clause re-checks ownership, `active`, AND that
- * `position` still matches what the caller read. A raced double-POST's
- * second request reads the same `expectedPosition` and loses.
- * @returns {Promise<number|null>} the NEW position, or null when the claim lost.
- */
-export async function claimAdvance(sql, sessionId, trainerId, expectedPosition) {
-  const rows = await sql`
-    UPDATE adventure_sessions
-    SET position = position + 1, updated_at = now()
-    WHERE id = ${sessionId} AND trainer_id = ${trainerId}
-      AND state = 'active' AND position = ${expectedPosition}
-    RETURNING position`;
-  return rows[0] ? Number(rows[0].position) : null;
-}
-
-/**
- * Stage a battle node (Phase 10.14) — the exactly-once gate for move()'s
- * battle path, playing claimAdvance's role but WITHOUT advancing `position`:
- * a staged fight still occupies the current step until battle()/surrender()
- * resolves it. The WHERE clause re-checks ownership, `active`, that
- * `position` still matches what the caller read, AND that no battle is
- * already staged (`pending_battle IS NULL`) — a raced double-POST's second
- * request loses on either the position or the pending_battle check.
- * @param {object} pendingBattle {position, choice, nodeSeed, catchSeed, enemy}
+ * The grid engine's one move claim (Phase 11.2) — the exactly-once gate for
+ * move(), playing claimAdvance's old role but widened to the grid's shape:
+ * the WHERE clause re-checks ownership, `active`, no battle already staged,
+ * AND that the party is still standing at `fromX,fromY` with exactly
+ * `movesLeftExpected` moves left (a raced double-POST's second request loses
+ * on the position or moves_left check, same "the whole gate lives in the
+ * WHERE" precedent as claimSettleBattle). ONE statement moves the cursor,
+ * decrements the budget, appends to `visited`/`cleared`/`loot` (each an
+ * already-JSON-stringified array — `[]` when nothing to append — so `||`
+ * concatenates two jsonb arrays rather than nesting), optionally STAGES a
+ * battle (`pendingBattle` object or null — the WHERE's own `pending_battle
+ * IS NULL` check means this is always a fresh set, never an overwrite), and
+ * optionally flips to a terminal `state` (the settleSession COALESCE
+ * precedent — omitted/null leaves state untouched, e.g. the stranded rule
+ * flipping 'active' -> 'failed' in the same statement as the move that
+ * triggered it).
+ * @param {{fromX:number, fromY:number, toX:number, toY:number,
+ *   movesLeftExpected:number, visitedAppend:string[], clearedAppend:string[],
+ *   lootAppend:object[], pendingBattle:(object|null), state:(string|null)}} opts
  * @returns the refreshed session row, or null when the claim lost.
  */
-export async function claimStageBattle(sql, sessionId, trainerId, expectedPosition, pendingBattle) {
+export async function claimMove(sql, sessionId, trainerId, opts) {
+  const { fromX, fromY, toX, toY, movesLeftExpected, visitedAppend, clearedAppend, lootAppend, pendingBattle, state } = opts;
   const rows = await sql`
     UPDATE adventure_sessions
-    SET pending_battle = ${JSON.stringify(pendingBattle)}::jsonb, updated_at = now()
+    SET pos_x = ${toX}, pos_y = ${toY},
+        moves_left = moves_left - 1,
+        visited = visited || ${JSON.stringify(visitedAppend)}::jsonb,
+        cleared = cleared || ${JSON.stringify(clearedAppend)}::jsonb,
+        loot = loot || ${JSON.stringify(lootAppend)}::jsonb,
+        pending_battle = ${pendingBattle ? JSON.stringify(pendingBattle) : null}::jsonb,
+        state = COALESCE(${state}::text, state),
+        updated_at = now()
     WHERE id = ${sessionId} AND trainer_id = ${trainerId}
-      AND state = 'active' AND position = ${expectedPosition} AND pending_battle IS NULL
-    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle`;
+      AND state = 'active' AND pending_battle IS NULL
+      AND pos_x = ${fromX} AND pos_y = ${fromY}
+      AND moves_left = ${movesLeftExpected} AND moves_left > 0
+    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle,
+              difficulty, pos_x, pos_y, moves_total, moves_left, visited, cleared`;
   return rows[0] ? shapeSession(rows[0]) : null;
 }
 
 /**
- * Resolve a staged battle (Phase 10.14) — the exactly-once gate for
- * battle()/surrender(): the WHERE clause re-checks ownership, `active`, AND
- * that a battle IS staged (`pending_battle IS NOT NULL`), so a raced
- * double-POST's second request loses. ONE statement clears the stage, moves
- * `position` forward only on a win (`advance` is a plain boolean turned into
- * a parameterized 0/1 addend, never SQL branching), optionally flips to a
- * terminal `state` (the settleSession COALESCE precedent — omitted/null
- * leaves state untouched), and appends `lootAppend` to the running log.
- * @param {{advance:boolean, state?:(string|null), lootAppend:object[]}} opts
+ * Leave the maze (Phase 11.2) — the exactly-once gate for exit(): a guarded
+ * `active -> completed` flip. The WHERE clause re-checks ownership, `active`,
+ * no battle staged, AND that the party is standing AT the entrance
+ * (`pos_x/pos_y = x/y`, the caller passes the map's own entrance coords) —
+ * standing-at-the-entrance is part of the claim itself, never a separate
+ * pre-check that could race between the read and the write.
+ * @returns the refreshed (now 'completed') session row, or null when the
+ *   claim lost (already resolved, or the party isn't at the entrance after
+ *   all — a stale client read racing a move that's already left it).
+ */
+export async function claimExit(sql, sessionId, trainerId, { x, y }) {
+  const rows = await sql`
+    UPDATE adventure_sessions
+    SET state = 'completed', updated_at = now()
+    WHERE id = ${sessionId} AND trainer_id = ${trainerId}
+      AND state = 'active' AND pending_battle IS NULL
+      AND pos_x = ${x} AND pos_y = ${y}
+    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle,
+              difficulty, pos_x, pos_y, moves_total, moves_left, visited, cleared`;
+  return rows[0] ? shapeSession(rows[0]) : null;
+}
+
+/**
+ * Resolve a staged battle (Phase 10.14, adapted to the grid in 11.2): the
+ * exactly-once gate for battle()/surrender(): the WHERE clause re-checks
+ * ownership, `active`, AND that a battle IS staged (`pending_battle IS NOT
+ * NULL`), so a raced double-POST's second request loses. ONE statement clears
+ * the stage, appends `clearedAppend` (the fought cell's key, on a win — an
+ * empty array by default, on a loss/surrender), appends `lootAppend` to the
+ * running log, and optionally flips to a terminal `state` (the claimMove
+ * COALESCE precedent — omitted/null leaves state untouched). UNLIKE Phase
+ * 10.14's version, this never advances a step-index `position` — battles
+ * never move the party on the grid; only exit() (via claimExit) or a
+ * stranded claimMove ever completes/fails a run from here on.
+ * @param {{state?:(string|null), lootAppend:object[], clearedAppend?:string[]}} opts
  * @returns the refreshed session row, or null when the claim lost.
  */
-export async function claimSettleBattle(sql, sessionId, trainerId, { advance, state = null, lootAppend }) {
+export async function claimSettleBattle(sql, sessionId, trainerId, { state = null, lootAppend, clearedAppend = [] }) {
   const rows = await sql`
     UPDATE adventure_sessions
     SET pending_battle = NULL,
-        position = position + ${advance ? 1 : 0},
+        cleared = cleared || ${JSON.stringify(clearedAppend)}::jsonb,
         state = COALESCE(${state}::text, state),
         loot = loot || ${JSON.stringify(lootAppend)}::jsonb,
         updated_at = now()
     WHERE id = ${sessionId} AND trainer_id = ${trainerId}
       AND state = 'active' AND pending_battle IS NOT NULL
-    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle`;
-  return rows[0] ? shapeSession(rows[0]) : null;
-}
-
-/**
- * Persist one chest/gather move's outcome: append `lootAppend` (an array of
- * one log entry, wrapped so `||` concatenates two jsonb arrays rather than
- * nesting) to the running loot log, and optionally flip to a terminal
- * `state` — one statement, no separate read-then-write. `state` omitted
- * (undefined/null) leaves the row's current state untouched (the COALESCE),
- * which is what a non-terminal move (still 'active') needs. Battle nodes no
- * longer go through here (Phase 10.14) — see claimStageBattle/
- * claimSettleBattle above.
- * @returns the refreshed session row.
- */
-export async function settleSession(sql, sessionId, { state = null, lootAppend }) {
-  const rows = await sql`
-    UPDATE adventure_sessions
-    SET loot = loot || ${JSON.stringify(lootAppend)}::jsonb,
-        state = COALESCE(${state}::text, state),
-        updated_at = now()
-    WHERE id = ${sessionId}
-    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle`;
+    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle,
+              difficulty, pos_x, pos_y, moves_total, moves_left, visited, cleared`;
   return rows[0] ? shapeSession(rows[0]) : null;
 }
 
 /**
  * Guarded UPDATE for abandon(): 'active' -> 'abandoned', same shape as
- * claimAdvance (id + trainer + state='active' is the whole gate) but not
- * listed alongside claimAdvance/settleSession in this task's original repo
- * function list — added because abandon() needs its own atomic claim rather
- * than reusing settleSession's unguarded WHERE (move()'s claimAdvance is
- * already that gate for move(), but abandon() has no earlier claim step).
+ * claimMove/claimExit (id + trainer + state='active' is the whole gate).
  * Abandoning with a battle still staged simply discards it — `pending_battle`
  * is left as-is on the now-abandoned row (harmless: an abandoned session is
- * never read by move()/battle()/surrender() again).
+ * never read by move()/battle()/surrender()/exit() again).
  * @returns the refreshed session row, or null when the claim lost (already
  *   resolved/abandoned by a racing request).
  */
@@ -175,7 +203,8 @@ export async function claimAbandon(sql, sessionId, trainerId) {
     UPDATE adventure_sessions
     SET state = 'abandoned', updated_at = now()
     WHERE id = ${sessionId} AND trainer_id = ${trainerId} AND state = 'active'
-    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle`;
+    RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle,
+              difficulty, pos_x, pos_y, moves_total, moves_left, visited, cleared`;
   return rows[0] ? shapeSession(rows[0]) : null;
 }
 

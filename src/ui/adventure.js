@@ -1,40 +1,43 @@
-// Adventure panel (Phase 7.4 step B, follow-up UI task): the second
-// player-facing acquisition path — send a 3-monster party down a route,
-// pick an option at each step, come home with loot (and maybe a caught
-// monster). Same tab-less panel shell as ui/summon.js (a msgs div + a body
-// div, one refresh() that re-reads and re-renders); the party picker
-// (Phase 10.9) hosts ui/partyPicker.js's shared 3-lane drag-and-drop widget
-// — the same card-based experience as the Setup Team panel.
+// Adventure panel (Phase 7.4 step B; Phase 11 rebuilds the run around an
+// explorable grid maze). Same tab-less panel shell as ui/summon.js (a msgs
+// div + a body div, one refresh() that re-reads and re-renders); the party
+// picker (Phase 10.9) hosts ui/partyPicker.js's shared 3-lane drag-and-drop
+// widget — the same card-based experience as the Setup Team panel.
 //
-// Pure presentation + action layer: the map, every roll, the enemy team,
+// Pure presentation + action layer: the maze, every roll, the enemy team,
 // and the catch are ALL decided server-side (CLAUDE.md §1.1). This module
 // never computes an outcome — it only narrates whatever the server just
-// resolved. A battle option now (Phase 10.14) STAGES a fight instead of
-// resolving it inline — this panel hands the staged snapshot off to
-// main.js's `enterBattle` hook, which loads it onto the REAL battlefield
-// and replays it through core/battle.js's normal replayer; this module
-// itself never replays events, it only stages/narrates whatever the server
-// has already resolved (CLAUDE.md §1.2).
+// resolved, and it renders only what the server SHIPPED (fog of war: an
+// undiscovered cell is simply absent from `session.cells`, never inferred
+// client-side). A battle option STAGES a fight instead of resolving it
+// inline — this panel hands the staged snapshot off to main.js's
+// `enterBattle` hook, which loads it onto the REAL battlefield and replays
+// it through core/battle.js's normal replayer; this module itself never
+// replays events, it only stages/narrates whatever the server has already
+// resolved (CLAUDE.md §1.2).
 
 import {
-  fetchAdventureState, startAdventure, moveAdventure, abandonAdventure,
+  fetchAdventureState, startAdventure, moveAdventure, exitAdventure, abandonAdventure,
   loadFarm, fetchInventory,
 } from "../services/content.js";
+import { fetchMe } from "../services/auth.js";
+import { showProfile } from "./auth.js";
 import { registerView } from "./views.js";
 import { createPartyPicker } from "./partyPicker.js";
+import { classIconEl } from "./board.js";
 
-const NODE_ICON = { battle: "⚔", chest: "🎁", gather: "🌿" };
-const NODE_LABEL = { battle: "Battle", chest: "Chest", gather: "Gather" };
+const NODE_ICON = { item: "🎁", battle: "⚔", stranded: "⏳" };
 
 let els = null;
 let hooks = null;     // { enterBattle(pendingBattle) } — injected by main.js (initPvp precedent)
 let adventures = [];  // last fetchAdventureState() result's `adventures`
 let session = null;   // the active session view, or null
 let lastTerminal = null; // most recent completed/failed/abandoned session, kept for the summary
+let lastGranted = null;  // exitAdventure()'s `granted` for the just-finished run's summary, or null
 let roster = null;    // loadFarm() result, only loaded while picking a party
 let picker = null;     // the current createPartyPicker() instance, while picking a party
 let items = [];        // owned item stacks, for loot-name lookup only
-let busy = false;      // true while a start/move/abandon request is in flight
+let busy = false;      // true while a start/move/exit/abandon request is in flight
 
 /** @param {{enterBattle:(pending:object)=>Promise<void>}} h main.js's
  *  battlefield handoff — never import main.js here (the initPvp precedent). */
@@ -59,6 +62,9 @@ export function noteAdventureBattleResult(result) {
     session = result.session;
     lastTerminal = null;
   } else {
+    // Only exitAdventure() ever grants anything — a battle-triggered
+    // stranding forfeits everything, same as a lost/abandoned run.
+    lastGranted = null;
     lastTerminal = result.session;
     session = null;
   }
@@ -88,6 +94,13 @@ async function refresh() {
   renderBody();
 }
 
+/** After a completed run's exit grants gold/exp, refresh the header's chips
+ *  the same way the Summon Hall does after a pull — best-effort, never blocks. */
+async function refreshProfile() {
+  const trainer = await fetchMe();
+  if (trainer) showProfile(trainer);
+}
+
 function pushMsg(text, isError = false) {
   const p = document.createElement("p");
   p.textContent = text;
@@ -113,6 +126,13 @@ function button(text, cls, onClick) {
 
 function itemName(itemId) {
   return items.find((it) => it.defId === itemId)?.name ?? itemId;
+}
+
+/** The one place a cell coordinate becomes a lookup key — matches the
+ *  server's own `${x},${y}` wire keys 1:1, never re-derives anything about
+ *  the maze itself (that would mean importing shared/rules into the UI). */
+function key(x, y) {
+  return `${x},${y}`;
 }
 
 // ---------- shell ----------
@@ -161,29 +181,53 @@ function updateSetOutButtons(slots) {
   for (const btn of setOutButtons) btn.disabled = !full;
 }
 
+function difficultySelect(a) {
+  const sel = document.createElement("select");
+  sel.className = "adv-select";
+  for (const d of a.difficulties ?? []) {
+    const opt = document.createElement("option");
+    opt.value = d;
+    opt.textContent = d.charAt(0).toUpperCase() + d.slice(1);
+    if (d === "easy") opt.selected = true;
+    sel.appendChild(opt);
+  }
+  return sel;
+}
+
 function routeCard(a) {
   const card = el("div", "adv-card");
   card.append(el("b", null, a.name));
+  // `a.width` is missing for an old route an admin hasn't re-saved for the
+  // grid grammar yet — skip the dimension line rather than show "undefined".
+  if (a.width) card.append(el("p", "adv-desc", `${a.width}×${a.height} maze`));
   if (a.description) card.append(el("p", "adv-desc", a.description));
+
+  const sel = difficultySelect(a);
+  const row = el("div", "adv-row");
+  row.append(sel);
 
   const setOutBtn = button("Set out", "btn primary adv-small", async () => {
     setOutBtn.disabled = true;
+    sel.disabled = true;
     els.msgs.innerHTML = "";
     try {
-      const result = await startAdventure(a.id, picker.getSlots());
+      const result = await startAdventure(a.id, sel.value, picker.getSlots());
       session = result.session;
       lastTerminal = null;
+      lastGranted = null;
       roster = null;
       picker = null;
-      pushMsg(`Setting out on ${a.name}…`);
+      pushMsg(`Setting out on ${a.name} (${sel.value})…`);
       renderBody();
     } catch (e) {
       pushMsg(e.message, true);
       setOutBtn.disabled = false;
+      sel.disabled = false;
     }
   });
   setOutBtn.disabled = !picker.getSlots().every((id) => id != null);
-  card.append(setOutBtn);
+  row.append(setOutBtn);
+  card.append(row);
   setOutButtons.push(setOutBtn);
   return card;
 }
@@ -194,10 +238,18 @@ function routeName(adventureId) {
   return adventures.find((a) => a.id === adventureId)?.name ?? adventureId;
 }
 
+/** Count of loot-log entries carrying anything the exit haul will actually
+ *  tally — an item drop or a battle's gold/exp roll — for the HUD's simple
+ *  "🎒 N" counter. Display-only; the real numbers live in the log below and,
+ *  ultimately, in exitAdventure()'s own `granted`. */
+function lootCount(loot) {
+  return loot.filter((e) => (e.loot && e.loot.length > 0) || e.gold || e.exp).length;
+}
+
 function renderActive() {
   els.body.appendChild(el(
     "p", "adv-header",
-    `${routeName(session.adventureId)} — step ${session.position + 1}/${session.totalSteps}`
+    `${routeName(session.adventureId)} — ${session.difficulty}`
   ));
 
   const party = el("div", "adv-party");
@@ -208,41 +260,66 @@ function renderActive() {
   }
   els.body.appendChild(party);
 
+  const atEntrance = session.pos.x === session.entrance.x && session.pos.y === session.entrance.y;
+
+  const hud = el("div", "adv-hud");
+  hud.append(el("span", null, `👣 ${session.movesLeft}/${session.movesTotal} moves`));
+  hud.append(el("span", null, `🎒 ${lootCount(session.loot)}`));
+
+  const leaveBtn = button("Leave", "btn primary adv-small", async () => {
+    busy = true;
+    renderBody();
+    els.msgs.innerHTML = "";
+    try {
+      const result = await exitAdventure();
+      lastGranted = result.granted;
+      lastTerminal = result.session;
+      session = null;
+      refreshProfile(); // fire-and-forget, mirrors gold shown by farm.js's showProfile()
+    } catch (e) {
+      pushMsg(e.message, true);
+    } finally {
+      busy = false;
+      renderBody();
+    }
+  });
+  leaveBtn.disabled = busy || !atEntrance || !!session.pendingBattle;
+  hud.append(leaveBtn);
+
+  const abandonBtn = button("Abandon", "btn ghost adv-danger", async () => {
+    if (!window.confirm("Abandon this run? Your party comes home empty-handed.")) return;
+    busy = true;
+    renderBody();
+    els.msgs.innerHTML = "";
+    try {
+      const result = await abandonAdventure();
+      lastGranted = null;
+      lastTerminal = result.session;
+      session = null;
+    } catch (e) {
+      pushMsg(e.message, true);
+    } finally {
+      busy = false;
+      renderBody();
+    }
+  });
+  abandonBtn.disabled = busy;
+  hud.append(abandonBtn);
+
+  els.body.appendChild(hud);
+
   if (session.loot.length > 0) {
     els.body.appendChild(el("h4", "adv-subhead", "Run so far"));
     els.body.appendChild(logView(session.loot));
   }
 
   // A staged battle forces the only two moves left to battle/surrender — the
-  // battlefield itself is where surrender lives now, so this state has no
-  // Abandon button of its own (two different give-up buttons on one screen
-  // would be confusing).
-  if (session.pendingBattle) {
-    renderPendingBattle();
-    return;
-  }
+  // battlefield itself is where surrender lives now — so the notice sits
+  // above the grid; no tile below is clickable while it's up (tileEl() folds
+  // `session.pendingBattle` into its own reachability check).
+  if (session.pendingBattle) renderPendingBattle();
 
-  els.body.appendChild(el("h4", "adv-subhead", "What next?"));
-  const options = el("div", "adv-options");
-  (session.options ?? []).forEach((opt, i) => options.appendChild(optionCard(opt, i)));
-  els.body.appendChild(options);
-
-  const abandonBtn = button("Abandon", "btn ghost adv-danger", async () => {
-    if (!window.confirm("Abandon this run? Your party comes home empty-handed.")) return;
-    abandonBtn.disabled = true;
-    els.msgs.innerHTML = "";
-    try {
-      const result = await abandonAdventure();
-      lastTerminal = result.session;
-      session = null;
-      renderBody();
-    } catch (e) {
-      pushMsg(e.message, true);
-      abandonBtn.disabled = false;
-    }
-  });
-  abandonBtn.disabled = busy;
-  els.body.appendChild(abandonBtn);
+  els.body.appendChild(renderGrid());
 }
 
 /** A battle option was picked — the fight is staged, waiting on the
@@ -251,9 +328,10 @@ function renderPendingBattle() {
   const pb = session.pendingBattle;
   const notice = el("div", "adv-card adv-option");
   notice.append(el("span", "adv-option-icon", NODE_ICON.battle));
+  const count = pb.enemy?.length ?? 0;
   notice.append(el(
     "b", null,
-    `A battle blocks the path — ${pb.enemy.length} wild monster${pb.enemy.length === 1 ? "" : "s"} await.`
+    `A battle blocks the path — ${count} wild monster${count === 1 ? "" : "s"} await.`
   ));
   const enemies = el("div", "adv-party");
   for (const m of pb.enemyDisplay ?? []) {
@@ -266,51 +344,112 @@ function renderPendingBattle() {
   els.body.appendChild(notice);
 }
 
-function optionCard(opt, index) {
-  const card = el("div", "adv-card adv-option");
-  card.append(el("span", "adv-option-icon", NODE_ICON[opt.type] ?? "❔"));
-  card.append(el("b", null, NODE_LABEL[opt.type] ?? opt.type));
-  const goBtn = button("Go", "btn primary adv-small", async () => {
-    busy = true;
-    renderBody();
-    els.msgs.innerHTML = "";
-    try {
-      const result = await moveAdventure(index);
-      if (result.node.staged) {
-        // The fight is staged — hand off to the real battlefield instead of
-        // narrating a text outcome; that view now owns the panel handoff.
-        session = result.session;
-        await hooks.enterBattle(result.session.pendingBattle);
-        return;
-      }
-      pushMsg(nodeOutcomeMsg(result.node));
-      if (result.session.state === "active") {
-        session = result.session;
-      } else {
-        lastTerminal = result.session;
-        session = null;
-      }
-    } catch (e) {
-      pushMsg(e.message, true);
-    } finally {
-      busy = false;
-      renderBody();
+// ---------- the grid ----------
+
+/** Build the fog-of-war maze grid: ALL width×height cells render as tiles,
+ *  looked up against the (sparse) `session.cells` the server actually
+ *  shipped — anything not in there is undiscovered fog, rendered blank. */
+function renderGrid() {
+  const wrap = el("div", "adv-map");
+  const grid = el("div", "adv-grid");
+  grid.style.gridTemplateColumns = `repeat(${session.width}, var(--adv-tile))`;
+
+  const byKey = new Map(session.cells.map((c) => [key(c.x, c.y), c]));
+  for (let y = 0; y < session.height; y++) {
+    for (let x = 0; x < session.width; x++) {
+      grid.appendChild(tileEl(x, y, byKey.get(key(x, y))));
     }
-  });
-  goBtn.disabled = busy;
-  card.append(goBtn);
-  return card;
+  }
+  wrap.appendChild(grid);
+  return wrap;
 }
 
-/** One human-readable line for the node the server just resolved. Battle
- *  nodes no longer reach here at all (Phase 10.14) — a battle option always
- *  stages instead (handled separately in optionCard's Go handler), so this
- *  only ever narrates a chest/gather outcome. */
-function nodeOutcomeMsg(node) {
-  const parts = [];
-  if (node.loot) parts.push(`Found ${lootText(node.loot)}.`);
-  if (node.catch) parts.push(`Caught ${node.catch.name}!`);
-  return parts.join(" ") || "Nothing happened.";
+function tileEl(x, y, cell) {
+  const tile = el("button", "adv-tile");
+  tile.type = "button";
+  tile.disabled = true; // the default; only the reachable branch below flips it on
+
+  if (!cell) {
+    tile.classList.add("adv-tile--fog");
+    return tile;
+  }
+
+  if (cell.terrain === "rock") {
+    tile.classList.add("adv-tile--rock");
+    return tile;
+  }
+
+  // open ground
+  tile.classList.add("adv-tile--grass");
+  if (cell.visited) tile.classList.add("adv-tile--visited");
+  if (cell.cleared) tile.classList.add("adv-tile--cleared");
+
+  const isHere = session.pos.x === x && session.pos.y === y;
+  const isEntrance = x === session.entrance.x && y === session.entrance.y;
+  if (isEntrance) tile.classList.add("adv-tile--entrance");
+
+  if (cell.cleared) tile.append(el("span", "adv-tile-mark", "✓"));
+  if (isEntrance && !isHere) tile.append(el("span", "adv-tile-mark", "🚪"));
+  if (isHere) {
+    tile.classList.add("adv-tile--here");
+    tile.append(frontMarkerEl());
+  }
+
+  const reachable = !session.pendingBattle && !busy && session.state === "active"
+    && (Math.abs(x - session.pos.x) + Math.abs(y - session.pos.y) === 1);
+  if (reachable) {
+    tile.classList.add("adv-tile--reachable");
+    tile.disabled = false;
+    tile.addEventListener("click", () => onMoveTile(x, y));
+  }
+
+  return tile;
+}
+
+/** The party's FRONT unit marks the current cell — a class-icon tile
+ *  (board.js's classIconEl(), the battlefield's own marker) when the unit
+ *  carries a resolvable `cls`, falling back to its emoji otherwise. */
+function frontMarkerEl() {
+  const front = session.party[0];
+  if (front?.cls) {
+    const icon = classIconEl(front.cls);
+    icon.classList.add("adv-tile-marker");
+    return icon;
+  }
+  return el("span", "adv-tile-marker", front?.emoji || "❔");
+}
+
+/** Step onto one adjacent cell — the ONLY choice this sends is the target
+ *  coordinate; everything about what happens next (an item roll, a staged
+ *  battle, a stranding) is the server's own resolution, narrated here. */
+async function onMoveTile(x, y) {
+  busy = true;
+  renderBody();
+  els.msgs.innerHTML = "";
+  try {
+    const result = await moveAdventure(x, y);
+    if (result.node.staged) {
+      // The fight is staged — hand off to the real battlefield instead of
+      // narrating a text outcome; that view now owns the panel handoff.
+      session = result.session;
+      await hooks.enterBattle(result.session.pendingBattle);
+      return;
+    }
+    if (result.node.type === "item") pushMsg(`Found ${lootText(result.node.loot)}.`);
+    if (result.node.stranded) {
+      lastGranted = null;
+      lastTerminal = result.session;
+      session = null;
+      pushMsg("⏳ Out of moves — the party is stranded! Everything found this run is forfeited.", true);
+    } else {
+      session = result.session;
+    }
+  } catch (e) {
+    pushMsg(e.message, true);
+  } finally {
+    busy = false;
+    renderBody();
+  }
 }
 
 function lootText(loot) {
@@ -329,8 +468,9 @@ function logLine(entry) {
   const line = el("div", "adv-log-line");
   line.append(el("span", "adv-log-icon", NODE_ICON[entry.type] ?? "❔"));
   const bits = [];
-  if (entry.error) bits.push(`error: ${entry.error}`);
+  if (entry.type === "stranded") bits.push("stranded — out of moves");
   if (entry.battle) bits.push(entry.battle.won ? "won" : entry.battle.surrendered ? "surrendered" : "lost");
+  if (entry.gold || entry.exp) bits.push(`+${entry.gold ?? 0} gold, +${entry.exp ?? 0} exp`);
   if (entry.loot) bits.push(lootText(entry.loot));
   if (entry.catch) bits.push(`caught ${entry.catch.name}!`);
   line.append(el("span", null, bits.join(" · ") || "—"));
@@ -341,11 +481,15 @@ function logLine(entry) {
 
 function renderTerminal() {
   const lastEntry = lastTerminal.loot[lastTerminal.loot.length - 1];
+  const stranded = lastTerminal.state === "failed" && lastEntry?.type === "stranded";
   const surrendered = lastTerminal.state === "failed" && lastEntry?.battle?.surrendered;
-  const headline = surrendered
+  const headline = lastTerminal.state === "completed"
+    ? "Adventure complete!"
+    : stranded
+    ? "Stranded — the party ran out of moves…"
+    : surrendered
     ? "The party surrendered…"
     : ({
-        completed: "Adventure complete!",
         failed: "The party was defeated…",
         abandoned: "Adventure abandoned.",
       }[lastTerminal.state] ?? "Adventure over.");
@@ -366,16 +510,20 @@ function renderTerminal() {
 
   els.body.appendChild(button("End Adventure", "btn primary adv-small", () => {
     lastTerminal = null;
+    lastGranted = null;
     refresh();
   }));
 }
 
 /** Aggregate a completed run's escrowed loot log into one summary: item
- *  qtys summed across every chest/gather entry, plus each catch by name —
- *  the same figures grantRunRewards() actually granted server-side. */
+ *  qtys summed across every item entry, gold/exp summed across every battle
+ *  entry, plus each catch by name. Prefers the stashed exitAdventure()
+ *  `granted` (the server's own final tally) for gold/exp when it's on hand;
+ *  either way the figures match what grantRunRewards() actually granted. */
 function homeHaulView(loot) {
   const qtyByItem = new Map();
   const catches = [];
+  let gold = 0, exp = 0;
   for (const entry of loot) {
     if (entry.loot) {
       for (const { itemId, qty } of entry.loot) {
@@ -383,12 +531,21 @@ function homeHaulView(loot) {
       }
     }
     if (entry.catch) catches.push(entry.catch);
+    gold += entry.gold ?? 0;
+    exp += entry.exp ?? 0;
   }
+  if (lastGranted) {
+    gold = lastGranted.gold ?? gold;
+    exp = lastGranted.exp ?? exp;
+  }
+
   const wrap = el("div", "adv-log");
-  if (qtyByItem.size === 0 && catches.length === 0) {
+  if (qtyByItem.size === 0 && catches.length === 0 && gold === 0 && exp === 0) {
     wrap.appendChild(el("p", "adv-hint", "The party came home empty-handed."));
     return wrap;
   }
+  if (gold > 0) wrap.appendChild(el("div", "adv-log-line", `+${gold} gold`));
+  if (exp > 0) wrap.appendChild(el("div", "adv-log-line", `+${exp} exp trainer exp`));
   for (const [itemId, qty] of qtyByItem) {
     wrap.appendChild(el("div", "adv-log-line", `+${qty} ${itemName(itemId)}`));
   }

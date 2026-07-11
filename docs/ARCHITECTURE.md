@@ -249,7 +249,7 @@ rank_entries (
   PRIMARY KEY (season_id, trainer_id)
 )
 
--- activities (work / training / adventure steps) ------------------------------
+-- activities (work / training / adventure moves) ------------------------------
 job_defs(id, kind 'work'|'training', name, duration_s INT, rewards JSONB, unlock JSONB)
   -- rewards by kind: work {gold, trainerExp} | training {attr, gain}
 activities(id, trainer_id, monster_id, job_id, started_at, ends_at,
@@ -405,15 +405,20 @@ battles before it grows features.
   seed — then `POST /api/battle/resolve { matchId, playerOrder }` resolves
   once and persists.
   This closes the "client picks the enemy order" hole and rejects replays.
-- **Adventure sessions:** a row holding the generated map + party + position;
-  each move is a POST that validates and claims it exactly once
-  (`claimAdvance` for chest/gather; a battle option instead stages the fight
-  into `pending_battle` via `claimStageBattle`, resolved by a separate
-  `POST /api/adventure/battle` through `claimSettleBattle` — Phase 10.14),
-  resolving battle nodes with a direct `resolveBattle()` call rather than a
-  `matches` row. `ends_at` is the lazy-time valve (same shape as season
-  rollover): an overdue 'active' session is marked 'abandoned' on next read,
-  no cron.
+- **Adventure sessions:** a row holding the generated width×height maze +
+  party + current cell (Phase 11's grid replaced the original step-list);
+  each move is a POST that validates (bounds/passable/adjacent/moves-left)
+  and claims it exactly once via `claimMove` — one guarded UPDATE carrying
+  the cell move, the moves-budget decrement, the visited/cleared/loot
+  appends, and an optional `pending_battle` stage for a monster cell
+  (resolved by a separate `POST /api/adventure/battle` through
+  `claimSettleBattle`, Phase 10.14's two-phase shape, unchanged) — resolving
+  battle cells with a direct `resolveBattle()` call rather than a `matches`
+  row. Only `POST /api/adventure/exit`, standing at the entrance, ever
+  completes a run and grants its escrow (`claimExit`); running the move
+  budget to 0 anywhere else strands (fails) it instead. `ends_at` is the
+  lazy-time valve (same shape as season rollover): an overdue 'active'
+  session is marked 'abandoned' on next read, no cron.
   Only if a future feature needs push (live GVG spectating, chat) do we add
   websockets — and then via a hosted realtime service, since Vercel
   functions can't hold sockets.
@@ -619,44 +624,74 @@ POST /api/admin/monsters/update  { trainerId, monsterId, rank } → { trainer,
                               owned monster (Phase 10.9)
 
 # adventure domain — api/adventure/[...route].js (Phase 7.4 step B; the 6th
-# domain, anticipated by the "not yet built" note this section used to carry)
+# domain, anticipated by the "not yet built" note this section used to
+# carry; rebuilt on a grid maze in Phase 11)
 GET  /api/adventure/state     { adventures, session } → the enabled routes
-                              (id/name/description only — a route's `config`
-                              is server balance data, never shipped) plus the
+                              (id/name/description/width/height/difficulties
+                              only — a route's `config` density/reward knobs
+                              are server balance data, never shipped) plus the
                               trainer's current session view, or null; lazily
                               expires a stale (past ends_at) session first
-POST /api/adventure/start     { adventureId, monsterIds:number[3] } → lock
-                              the party (busy_kind='adventure', 24h),
-                              generate the map from a freshly minted stored
-                              seed, freeze both into a new session; 409
-                              "already on an adventure" / "a monster is busy
-                              or not yours", 404 unknown/disabled route
-POST /api/adventure/move      { choice:number } → resolve the CURRENT step's
-                              chosen option exactly once (claim-guarded, same
-                              shape as battle/resolve's applyOrder): chest/
-                              gather log loot (granted only on run completion,
-                              see battle below); a battle option instead
-                              STAGES the fight (Phase 10.14) — rolls 1-3 wild
-                              enemies (config.enemies) into `pending_battle`
-                              and leaves it for POST /api/adventure/battle to
-                              resolve; 409 "resolve the staged battle first"
-                              while one is pending; returns { session, node }
+POST /api/adventure/start     { adventureId, difficulty, monsterIds:number[3] }
+                              → lock the party (busy_kind='adventure', 24h),
+                              generate the maze from a freshly minted stored
+                              seed at the chosen difficulty, compute the move
+                              budget (party spd sum + config.movesBonus),
+                              freeze it all into a new session; 409 "already
+                              on an adventure" / "a monster is busy or not
+                              yours" / "this route hasn't been re-saved for
+                              grid adventures yet", 404 unknown/disabled
+                              route, 400 unknown difficulty
+POST /api/adventure/move      { x:number, y:number } → step onto an adjacent,
+                              passable cell exactly once (claim-guarded via
+                              claimMove — the whole gate, including the
+                              party's still being at the FROM cell with the
+                              expected moves left, lives in its WHERE): an
+                              open/already-cleared cell just moves; a fresh
+                              item cell rolls loot in the same claim
+                              (escrowed, granted only on exit — see below); a
+                              fresh monster cell instead STAGES a fight (Phase
+                              10.14's shape) — rolls 1-3 wild enemies
+                              (config.enemies) into `pending_battle` and
+                              leaves it for POST /api/adventure/battle to
+                              resolve; running the move budget to 0 anywhere
+                              but the entrance STRANDS the run (fails it) in
+                              the same claim; 409 "resolve the staged battle
+                              first" while one is pending, "no moves left";
+                              400 on an out-of-bounds/impassable/non-adjacent
+                              target; returns { session, node }
 POST /api/adventure/battle    { order:number[] } → resolve a staged battle
                               with the player's own lane order (applyOrder's
                               permutation gate) against the frozen nodeSeed
                               (resolveBattle() directly — no `matches` row),
-                              claims the settlement exactly once, settles rune
-                              durability, and — only once the run reaches
-                              'completed' — grants every escrowed loot/catch
-                              entry logged so far; a lost/drawn battle fails
-                              the run, either way releasing the party; returns
-                              { session, node } (node carries the battle event
-                              log, plus catch/granted summaries — never
-                              persisted to the row); 409 if no battle is staged
+                              claims the settlement exactly once, settles
+                              rune durability, and on a win rolls a
+                              difficulty-tiered gold/exp reward plus the
+                              existing catchPct roll (both escrowed, not
+                              granted here); a win no longer completes the
+                              run by itself — only exit() does — but a win on
+                              the party's LAST move away from the entrance
+                              still strands it; a lost/drawn battle fails the
+                              run; either way releases the party on a
+                              terminal outcome; returns { session, node }
+                              (node carries the battle event log, plus
+                              gold/exp/catch summaries — never persisted to
+                              the row); 409 if no battle is staged
 POST /api/adventure/surrender {} → give up a staged battle — a defeat,
                               forfeiting every escrowed reward, failing the
                               run and releasing the party; returns { session };
                               409 if no battle is staged
+POST /api/adventure/exit      {} → leave the maze from the entrance — the
+                              ONLY way a run ever completes (claimExit: a
+                              guarded 'active'→'completed' flip gated on
+                              standing at the entrance); releases the party
+                              and grants every escrowed chest/item/battle
+                              reward logged this run, all at once
+                              (grantRunRewards — items, a summed gold/exp
+                              trainer credit, minted catches); returns
+                              { session, granted }; 409 unless standing at
+                              the entrance with no battle staged, 404 if no
+                              active session
 POST /api/adventure/abandon   {} → give up the active run early (guarded
                               'active'→'abandoned'), releases the party
                               (discarding any staged battle); 404 if no

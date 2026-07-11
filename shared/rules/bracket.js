@@ -3,7 +3,7 @@
 // rules). No DB, no I/O, no Math.random — every random choice (the seed
 // shuffle, and the tie-break draw placements() uses to order same-round
 // eliminations) flows through makeRng(seed), same determinism contract as
-// shared/rules/summon.js's rollSummon / adventure.js's generateMap: same
+// shared/rules/summon.js's rollSummon / adventure.js's generateGridMap: same
 // entrantIds + same seed ALWAYS produce the identical bracket object,
 // identical round-by-round pairings, and identical placements. The caller
 // (server/services/tournaments.js, a follow-up phase) mints the seed the

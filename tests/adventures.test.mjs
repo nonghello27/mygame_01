@@ -1,20 +1,26 @@
-// Adventure master-data grammar + pure map/loot rules checks (Phase 7.4 step
-// B, foundations + session engine) — the same role tests/summons.test.mjs
+// Adventure master-data grammar + pure grid-maze/loot rules checks (Phase 11
+// — Adventure 2.0, sub-phase 11.1) — the same role tests/summons.test.mjs
 // plays for the Summon Hall: every row of the seed content must pass its own
 // validator unchanged, every referenced species/item must be real, and
-// generateMap()/deriveNodeSeed()/rollLoot()/rollEncounter() must be
-// deterministic (CLAUDE.md §1.6) and obey the documented shape/exit-guard
-// rules. The DB-touching session service (server/services/adventure.js) is
-// exercised the same way matches.js/pvp.js are — not unit-tested here.
+// generateGridMap()/visibleCellKeys()/deriveNodeSeed()/rollLoot()/
+// rollEncounter() must be deterministic (CLAUDE.md §1.6) and obey the
+// documented shape/connectivity/density rules. The DB-touching session
+// service (server/services/adventure.js, Phase 11.2) is exercised the same
+// way matches.js/pvp.js are — not unit-tested here.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ADVENTURES } from "../src/data/adventures.js";
 import { ITEMS } from "../src/data/items.js";
 import { ROSTER_A, ROSTER_B } from "../src/data/units.js";
-import { validateAdventure, ADVENTURE_NODE_TYPES } from "../server/services/adminValidate.js";
-import { generateMap, deriveNodeSeed, rollLoot, rollEncounter } from "../shared/rules/adventure.js";
+import { validateAdventure } from "../server/services/adminValidate.js";
+import {
+  CELL, cellKey, generateGridMap, visibleCellKeys, deriveNodeSeed, rollLoot, rollEncounter,
+} from "../shared/rules/adventure.js";
 import { makeRng } from "../shared/engine/rng.js";
+
+const DIFFICULTIES = ["easy", "medium", "hard"];
+const SEEDS = [1, 42, 12345, 999999, 2026];
 
 test("adventure ids are unique, ad_-prefixed, and every row validates unchanged", () => {
   const ids = ADVENTURES.map((a) => a.id);
@@ -38,66 +44,140 @@ test("every encounters speciesId is a real species id derived from src/data/unit
   }
 });
 
-test("every loot/gather itemId exists in src/data/items.js", () => {
+test("every loot itemId exists in src/data/items.js", () => {
   const itemIds = new Set(ITEMS.map((i) => i.id));
   for (const ad of ADVENTURES) {
-    for (const row of [...ad.config.loot, ...ad.config.gather]) {
+    for (const row of ad.config.loot) {
       assert.ok(itemIds.has(row.itemId), `${ad.id}: itemId "${row.itemId}" is not a known item`);
     }
   }
 });
 
-const CONFIG = {
-  steps: 5,
-  choices: 2,
-  nodes: [
-    { type: "battle", weight: 50 },
-    { type: "chest", weight: 25 },
-    { type: "gather", weight: 25 },
-  ],
-};
+// --- generateGridMap ---------------------------------------------------------
 
-test("generateMap is deterministic: same config + seed always returns the same map", () => {
-  for (const seed of [1, 42, 12345, 999999]) {
-    const first = generateMap(CONFIG, seed);
-    const second = generateMap(CONFIG, seed);
-    assert.deepEqual(second, first, `seed ${seed} must reproduce the same map`);
-  }
-});
-
-test("generateMap shape: config.steps steps, config.choices options each, types from ADVENTURE_NODE_TYPES", () => {
-  const map = generateMap(CONFIG, 7);
-  assert.equal(map.steps.length, CONFIG.steps);
-  for (const step of map.steps) {
-    assert.equal(step.options.length, CONFIG.choices);
-    for (const opt of step.options) {
-      assert.ok(ADVENTURE_NODE_TYPES.includes(opt.type), `unexpected node type "${opt.type}"`);
+/** Flood-fill from the entrance over every non-rock cell; returns the visited-key set. */
+function floodFill(map) {
+  const seen = new Set([cellKey(map.entrance.x, map.entrance.y)]);
+  const stack = [map.entrance];
+  while (stack.length > 0) {
+    const { x, y } = stack.pop();
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || nx >= map.width || ny < 0 || ny >= map.height) continue;
+      if (map.cells[ny][nx] === CELL.ROCK) continue;
+      const key = cellKey(nx, ny);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      stack.push({ x: nx, y: ny });
     }
   }
+  return seen;
+}
+
+for (const ad of ADVENTURES) {
+  for (const difficulty of DIFFICULTIES) {
+    test(`generateGridMap(${ad.id}, ${difficulty}) is deterministic across seeds`, () => {
+      for (const seed of SEEDS) {
+        const first = generateGridMap(ad.config, difficulty, seed);
+        const second = generateGridMap(ad.config, difficulty, seed);
+        assert.deepEqual(second, first, `seed ${seed} must reproduce the same map`);
+      }
+    });
+
+    test(`generateGridMap(${ad.id}, ${difficulty}): dimensions and cell values`, () => {
+      for (const seed of SEEDS) {
+        const map = generateGridMap(ad.config, difficulty, seed);
+        assert.equal(map.width, ad.config.width);
+        assert.equal(map.height, ad.config.height);
+        assert.equal(map.cells.length, ad.config.height, "cells must have `height` rows");
+        for (const row of map.cells) {
+          assert.equal(row.length, ad.config.width, "each row must have `width` cols");
+          for (const c of row) assert.ok(Object.values(CELL).includes(c), `unexpected cell value "${c}"`);
+        }
+      }
+    });
+
+    test(`generateGridMap(${ad.id}, ${difficulty}): entrance is on the border, open, and content-free`, () => {
+      for (const seed of SEEDS) {
+        const map = generateGridMap(ad.config, difficulty, seed);
+        const { x, y } = map.entrance;
+        const onBorder = x === 0 || x === map.width - 1 || y === 0 || y === map.height - 1;
+        assert.ok(onBorder, `seed ${seed}: entrance (${x},${y}) is not on the border`);
+        assert.equal(map.cells[y][x], CELL.OPEN, `seed ${seed}: entrance cell must be open, never content`);
+      }
+    });
+
+    test(`generateGridMap(${ad.id}, ${difficulty}): the whole maze is connected from the entrance`, () => {
+      for (const seed of SEEDS) {
+        const map = generateGridMap(ad.config, difficulty, seed);
+        const reached = floodFill(map);
+        for (let y = 0; y < map.height; y++) {
+          for (let x = 0; x < map.width; x++) {
+            if (map.cells[y][x] === CELL.ROCK) continue;
+            assert.ok(reached.has(cellKey(x, y)), `seed ${seed}: (${x},${y}) is non-rock but unreachable from the entrance`);
+          }
+        }
+      }
+    });
+
+    test(`generateGridMap(${ad.id}, ${difficulty}): monster/item counts match the spec'd round/clamp formula`, () => {
+      const d = ad.config.difficulties[difficulty];
+      for (const seed of SEEDS) {
+        const map = generateGridMap(ad.config, difficulty, seed);
+        let openCount = 0, monsterCount = 0, itemCount = 0;
+        for (let y = 0; y < map.height; y++) {
+          for (let x = 0; x < map.width; x++) {
+            const c = map.cells[y][x];
+            if (x === map.entrance.x && y === map.entrance.y) continue;
+            if (c === CELL.ROCK) continue;
+            openCount++;
+            if (c === CELL.MONSTER) monsterCount++;
+            if (c === CELL.ITEM) itemCount++;
+          }
+        }
+        const expectedMonsters = Math.round((openCount * d.monsterPct) / 100);
+        const expectedItems = Math.min(Math.round((openCount * d.itemPct) / 100), openCount - expectedMonsters);
+        assert.equal(monsterCount, expectedMonsters, `seed ${seed}: monster count mismatch`);
+        assert.equal(itemCount, expectedItems, `seed ${seed}: item count mismatch`);
+      }
+    });
+  }
+}
+
+// --- visibleCellKeys ---------------------------------------------------------
+
+test("visibleCellKeys: includes every visited key plus its orthogonal in-bounds neighbors, excludes diagonals, returns a Set", () => {
+  // A hand-built 5x5 grid, visited = the single interior cell (2,2).
+  const visited = [cellKey(2, 2)];
+  const visible = visibleCellKeys(5, 5, visited);
+  assert.ok(visible instanceof Set);
+  assert.ok(visible.has(cellKey(2, 2)), "visited cell itself must be visible");
+  for (const [x, y] of [[2, 1], [3, 2], [2, 3], [1, 2]]) {
+    assert.ok(visible.has(cellKey(x, y)), `orthogonal neighbor (${x},${y}) must be visible`);
+  }
+  for (const [x, y] of [[1, 1], [3, 1], [1, 3], [3, 3]]) {
+    assert.ok(!visible.has(cellKey(x, y)), `diagonal neighbor (${x},${y}) must NOT be visible`);
+  }
+  assert.equal(visible.size, 5, "exactly the visited cell + its 4 orthogonal neighbors");
 });
 
-test("generateMap forces every final-step option to battle (the exit guard)", () => {
-  for (const seed of [1, 2, 3, 4, 5, 100, 5000]) {
-    const map = generateMap(CONFIG, seed);
-    const finalStep = map.steps[map.steps.length - 1];
-    for (const opt of finalStep.options) {
-      assert.equal(opt.type, "battle", `seed ${seed}: final step option must be "battle"`);
-    }
-  }
+test("visibleCellKeys: drops neighbors that fall out of bounds (a border/corner visited cell)", () => {
+  // Top-left corner of a 5x5 grid — only 2 in-bounds orthogonal neighbors exist.
+  const visible = visibleCellKeys(5, 5, [cellKey(0, 0)]);
+  assert.equal(visible.size, 3, "corner (0,0) + its 2 in-bounds neighbors, nothing negative");
+  assert.ok(visible.has(cellKey(0, 0)));
+  assert.ok(visible.has(cellKey(1, 0)));
+  assert.ok(visible.has(cellKey(0, 1)));
 });
 
-test("generateMap: over many seeds, every non-final node type appears somewhere", () => {
-  const seen = new Set();
-  for (let seed = 0; seed < 300; seed++) {
-    const map = generateMap(CONFIG, seed);
-    for (let i = 0; i < map.steps.length - 1; i++) {
-      for (const opt of map.steps[i].options) seen.add(opt.type);
-    }
-  }
-  for (const n of CONFIG.nodes) {
-    assert.ok(seen.has(n.type), `node type "${n.type}" was never picked across 300 seeds`);
-  }
+test("visibleCellKeys: unions correctly across multiple visited cells", () => {
+  const visible = visibleCellKeys(5, 5, [cellKey(0, 0), cellKey(4, 4)]);
+  assert.ok(visible.has(cellKey(0, 0)) && visible.has(cellKey(4, 4)));
+  assert.ok(visible.has(cellKey(1, 0)) && visible.has(cellKey(3, 4)));
+  assert.equal(visible.size, 6, "two corners, 3 cells apiece, no overlap");
 });
+
+// --- deriveNodeSeed / rollLoot / rollEncounter (unchanged grammar) -----------
 
 test("deriveNodeSeed returns stable ints in [0, 0x7fffffff) and differs across positions", () => {
   const seed = 12345;

@@ -822,7 +822,7 @@ golden-style determinism cases; no runtime surface changed.
 - ✅ Routes ride the EXISTING `battle` domain (`/api/battle/tournaments` list +
   detail, `/api/battle/tournament/register|withdraw` — new rows in
   `server/routers/battle.js`, NOT a new serverless function: the guild
-  domain (9.4) takes one of the two remaining Hobby-cap slots, and Phase 11
+  domain (9.4) takes one of the two remaining Hobby-cap slots, and Phase 12
   may want the last, CLAUDE.md §5). Admin create/cancel/list rides
   `api/admin/` like every other admin write.
 - ✅ Registration (`server/services/tournament.js`): validated against the
@@ -2064,7 +2064,160 @@ DB-mapped icon column an admin can repoint live. Two rounds, same shape as
 `npm test` (206) and `npm run build` both pass — no `shared/engine/` change.
 **Phase 10.17 is done.**
 
-## Phase 11 — Chat, notifications & photo quest (later)
+## Phase 11 — Adventure 2.0: grid expeditions
+
+Staged 2026-07-11 from playtest feedback: the Phase 7.4/10.14 Adventure —
+a linear list of steps the player picks options down — feels like a menu,
+not an expedition. Phase 11 replaces the step-list with an explorable grid
+maze while KEEPING every architectural bone Phase 7.4/10.14 already proved:
+the frozen seed + map living in `adventure_sessions`, the escrowed loot log
+granted only once a run reaches `'completed'` (`grantRunRewards`), a staged
+battle handed off to the real battlefield exactly as Phase 10.14 wired it
+(`pending_battle`, unchanged), lazy expiry of overdue sessions
+(`expireStaleSessions`), and the party busy-lock pair
+(`claimPartyForAdventure`/`releaseParty`). The old `steps`/`choices`/`nodes`/
+`gather` config grammar is retired outright — a deliberate prototype-stage
+breaking change (CLAUDE.md's "content as rows" philosophy still holds, the
+grammar itself is just being replaced): migration `024_adventure_grid.sql`
+abandons any in-flight old-shape run and frees its party locks rather than
+trying to migrate it onto the new shape, and `npm run db:seed` re-seeds the
+three shipped routes in the new grammar.
+
+Design, ahead of the sub-phases below:
+
+- A map def's `config` becomes `width`/`height` (integers 5–20), an optional
+  `movesBonus` (0–500, default 0), and `difficulties` — an object with
+  EXACTLY the keys `easy`/`medium`/`hard`, each `{monsterPct, itemPct,
+  battleGold:{min,max}, battleExp:{min,max}}` where `monsterPct`/`itemPct`
+  are 1–60 with their sum ≤ 80 (hard means denser monsters AND items, fewer
+  empty cells) and `battleGold`/`battleExp` are 0–10000 with `min ≤ max` —
+  plus the SURVIVING `encounters`/`loot`/`catchPct`/`enemies` keys
+  (unchanged grammar, same `rollEncounter()`/`rollLoot()` readers). `gather`,
+  `steps`, `choices`, `nodes` are gone.
+- Maze generation stays pure + seeded, `shared/rules/adventure.js`'s
+  `generateMap()` replaced by `generateGridMap(config, difficulty, seed)`: a
+  randomized-DFS carve over the width×height cell grid — a closed cell may
+  be opened only while it has exactly ONE already-open orthogonal neighbor —
+  starting from a random BORDER entrance cell, yielding a connected,
+  loop-free maze with natural junctions and dead ends (open = grass, closed
+  = rock). Content placement: a seeded shuffle of the open cells (entrance
+  excluded) assigns `round(open × monsterPct/100)` monster cells and
+  `round(open × itemPct/100)` item cells; the rest stay empty. One rng
+  stream, one fixed documented roll order — same config + difficulty + seed
+  always yields the identical map, same determinism contract as every other
+  seeded roll in the game.
+- Moves are the budget the whole run is played against: the SUM of the 3
+  party lanes' derived `spd` (read off the frozen `toLane()` snapshots) plus
+  the map's `movesBonus`, frozen at start as `moves_total` and decremented
+  once per step (backtracking costs the same as any other step). Standing on
+  the entrance, an explicit "Leave" (`POST /api/adventure/exit`) completes
+  the run and grants the escrow; reaching 0 moves anywhere else fails the
+  run and forfeits everything logged so far — the risk/return loop this
+  phase is chasing: go deeper for more loot, or bank what's already banked.
+- Cells: stepping onto an item cell rolls the def's `loot` table once off
+  `deriveNodeSeed(seed, y·width + x)` (escrowed, the cell then clears);
+  stepping onto a monster cell stages a battle IN THE SAME atomic claim as
+  the move itself (the enemy team is pre-rolled deterministically off the
+  cell seed before the claim wins). A win clears the cell, escrows a
+  `battleGold`/`battleExp` roll on top of the existing `catchPct` catch
+  roll, and exploration continues; a loss/surrender fails the run exactly
+  as it does today.
+- Fog of war: the session view ships ONLY visited cells plus their
+  orthogonal neighbors (terrain only, contents hidden) — the full map never
+  leaves the server, the same disclosure philosophy as today's "only the
+  current step is ever shipped."
+
+### Phase 11.1 — Pure rules: the maze, the grammar, the seeds ✅ CODE COMPLETE (2026-07-11)
+
+`generateGridMap()` plus a pure visibility helper (a visited set → the
+currently-visible cell keys) land in `shared/rules/adventure.js`
+(`generateMap` deleted outright; `deriveNodeSeed`/`rollLoot`/`rollEncounter`
+survive unchanged — the node-seeding/loot/encounter grammar was never
+step-shaped to begin with). `validateAdventure()`'s config grammar is
+rewritten in `server/services/adminValidate.js` against the new
+`width`/`height`/`movesBonus`/`difficulties` shape (same onlyKeys/int/str
+validation ladder every other `validate*()` follows). `src/data/adventures.js`
+is rewritten to three shipped maps — 8×8, 10×10, 15×15 — with `movesBonus`
+scaled to size. `tests/adventures.test.mjs` is rewritten: determinism (same
+config+difficulty+seed ⇒ identical map), full connectivity (a flood fill
+from the entrance reaches every open cell), the entrance sits on the border
+and is always open, density counts match `monsterPct`/`itemPct` within
+rounding, the entrance cell never holds content, and the validator's
+accept/reject cases for the new grammar.
+
+Code complete means: the pure rules layer and its tests stand alone, no
+server/client wiring yet — `npm test` green with the new maze/grammar
+coverage in place of the old step-list coverage.
+
+### Phase 11.2 — Schema + the session engine ✅ CODE COMPLETE (2026-07-11)
+
+Migration `024_adventure_grid.sql`: new `adventure_sessions` columns
+(`difficulty`, `pos_x`/`pos_y`, `moves_left`/`moves_total`, `visited` jsonb,
+`cleared` jsonb) plus the data migration abandoning any in-flight old-shape
+run and clearing its `busy_kind='adventure'` locks. `server/repos/
+adventures.js` grows `claimMove` — ONE guarded UPDATE carrying the step, the
+moves decrement, the `visited`/`cleared` appends, an optional loot append,
+an optional `pending_battle` stage, and an optional terminal-state flip, the
+whole gate living in its WHERE (the `claimSettleBattle` precedent) — and
+`claimExit` (a guarded `active → completed` flip, gated on standing at the
+entrance); `claimAdvance` is retired. `server/services/adventure.js` is
+rewritten: `start` takes `{adventureId, difficulty, monsterIds}` and
+freezes both the chosen difficulty and the move budget; `move` takes `{x,
+y}` and validates the bounds/open/adjacent/moves-left ladder before
+claiming; `exit` is new; `battle`/`surrender` keep their exact Phase
+10.14 shape, except a win now clears the cell and escrows the gold/exp roll,
+and "the final step completes the run" is replaced by "only exit completes
+a run" (the stranded rule — 0 moves left anywhere but the entrance — rides
+the same claim shape). `grantRunRewards` additionally credits the run's
+summed gold/exp via a new `creditTrainerReward` repo helper (the same
+trainer-leg shape `settleWork` already uses for job payouts). One new route,
+`exit`, plus its router-table row in `server/routers/adventure.js`.
+
+Code complete means: every endpoint (`state`/`start`/`move`/`battle`/
+`surrender`/`exit`/`abandon`) is wired end to end against the new schema,
+reachable via direct API calls, with `npm test` green (no engine change —
+`resolveBattle()` itself is untouched, so no golden-log regen).
+
+### Phase 11.3 — The client: the map on screen ✅ CODE COMPLETE (2026-07-11)
+
+`src/services/content.js` grows a difficulty argument on `startAdventure`
+plus `moveAdventure(x, y)` and `exitAdventure()`. `src/ui/adventure.js` is
+rebuilt around the grid: route cards show `width×height` alongside a
+difficulty `<select>`; an active run renders the fog-of-war grid (a CSS
+grid in a scrollable container — fog/rock/grass/path/entrance/cleared
+tiles, the party's FRONT unit marking the current cell via `ui/board.js`'s
+`classIconEl()`, falling back to its emoji), tapping an adjacent grass tile
+moves, a HUD tracks moves left and a loot counter with a Leave button lit up
+only at the entrance plus the existing confirm-gated Abandon, the
+`pendingBattle` battlefield handoff is unchanged from Phase 10.14, and the
+terminal summary grows gold/exp lines (preferring `exitAdventure()`'s own
+stashed `granted` tally) alongside its existing loot tally, plus a new
+stranded headline. `src/styles/adventure.css` grows the grid tile styles
+plus a ≤560px pass (CLAUDE.md's mobile precedent, Phase 10.15) — no separate
+`pointer:coarse` rule is needed, since the reachable ring is a static
+box-shadow rather than a `:hover`-gated affordance, and a stray
+self-referencing `--adv-tile` custom property in an early draft of that rule
+was caught and dropped before it could break tile sizing on touch devices.
+
+Code complete means: a full run is playable start to finish from the panel
+alone, no direct API calls required, on both desktop and the ≤560px mobile
+layout. Implementation is complete pending a manual `npm run dev` playtest
+of the live DB-backed flow — this round's `npm test`/`npm run build` only
+prove the code is wired and green, they don't drive a real session. ⚠ Run
+`npm run db:migrate` then `npm run db:seed` before playing — this phase's
+schema/route grammar needs both.
+
+**Done when:** a player picks a map and a difficulty, watches the maze
+reveal itself cell by cell as they explore, banks an escrowed haul by
+walking back out to the entrance and leaving, gets stranded to zero moves
+and forfeits everything if they push too far, and every battle rides the
+real battlefield exactly as Phase 10.14 left it — with the full map never
+appearing in any API response, and `npm test`/`npm run build` both green.
+
+**Phase 11 is done** (11.1–11.3), pending the one manual DB-backed playtest
+11.3 owes.
+
+## Phase 12 — Chat, notifications & photo quest (later)
 
 Communication layers first (they're low-risk and every earlier system wants
 to emit events into them), then the one deliberately-parked high-risk
@@ -2096,7 +2249,7 @@ practice.
   implementation can be an image-embedding similarity call behind an env
   key, swappable without touching quest logic. Needs image storage (object
   store, not the DB), content moderation + abuse handling (pre-score NSFW
-  filter, report/ban hooks into Phase 11's moderation basics), and
+  filter, report/ban hooks into Phase 12's moderation basics), and
   rate/size limits on upload. Ship behind an `enabled` flag on the quest
   def — the retirement lever precedent from `summon_defs`. Percentile
   rewards mean scoring is relative: settle rewards only at window close,

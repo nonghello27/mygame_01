@@ -19,10 +19,10 @@ export const state = {
   cinematic: true,
   /** the PVP opponent {name, rating} for the match just opened, or null for free play */
   opponent: null,
-  /** the staged Adventure fight currently on the battlefield (`{position}`),
-   *  or null when the board holds a normal match; set by
-   *  loadAdventureBattle(), cleared by newMatch()/the Continue handoff in
-   *  main.js */
+  /** the staged Adventure fight currently on the battlefield (`{x, y}`,
+   *  the maze cell it's blocking — only ever checked for truthiness), or
+   *  null when the board holds a normal match; set by loadAdventureBattle(),
+   *  cleared by newMatch()/the Continue handoff in main.js */
   adventureBattle: null,
 };
 
@@ -58,15 +58,15 @@ export async function newMatch(mode, monsterIds, keepEnemyMatchId) {
 /**
  * Load a staged Adventure fight's frozen snapshots (the same toLane() lane
  * shape a match's you/enemy arrive in) onto the battlefield in place of a
- * match (Phase 10.14).
- * @param {{position:number, party:object[], enemy:object[]}} pending the
+ * match (Phase 10.14, carried over to the grid maze by Phase 11).
+ * @param {{x:number, y:number, party:object[], enemy:object[]}} pending the
  *   active session's `pendingBattle` (services/content.js's
  *   fetchAdventureState()/moveAdventure() shape).
  */
 export function loadAdventureBattle(pending) {
   state.matchId = null;
   state.opponent = null;
-  state.adventureBattle = { position: pending.position };
+  state.adventureBattle = { x: pending.x, y: pending.y };
   defs = { you: pending.party, enemy: pending.enemy };
   resetState();
 }

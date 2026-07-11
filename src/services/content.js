@@ -245,16 +245,26 @@ export async function performSummon(summonId) {
 }
 
 /**
- * The Adventure panel's one read (Phase 7.4 step B): the enabled routes
- * (public fields only — id/name/description) plus the trainer's current
- * session, if any (null when nothing is running). The session view exposes
- * ONLY the step in front of the player — the server never ships the whole
- * frozen map. A staged battle (Phase 10.14) replaces the current step's
- * `options` with `null` and adds `pendingBattle` (both sides' frozen lane
- * snapshots) — resolve it via resolveAdventureBattle()/
- * surrenderAdventureBattle() before any further moveAdventure() call.
- * @returns {Promise<{adventures:{id:string,name:string,description:string}[],
- *   session:object|null}>}
+ * The Adventure panel's one read (Phase 7.4 step B; Phase 11 rebuilt the run
+ * itself around an explorable grid maze): the enabled routes (public fields
+ * only — id/name/description/width/height/difficulties) plus the trainer's
+ * current session, if any (null when nothing is running). The session view
+ * is FOG OF WAR — `cells` covers only visited cells plus their orthogonal
+ * neighbors (terrain only, never content); anything absent is undiscovered.
+ * A staged battle (Phase 10.14, carried over to the grid by 11.2) sets
+ * `pendingBattle` (both sides' frozen lane snapshots) until the player
+ * resolves it via resolveAdventureBattle()/surrenderAdventureBattle() — no
+ * further moveAdventure() call is accepted while one is staged.
+ * @returns {Promise<{adventures:{id:string, name:string, description:string,
+ *   width:number, height:number, difficulties:string[]}[]},
+ *   session:{id:number, adventureId:string, difficulty:string, state:string,
+ *   width:number, height:number, entrance:{x:number,y:number},
+ *   pos:{x:number,y:number}, movesLeft:number, movesTotal:number,
+ *   party:object[], loot:object[],
+ *   cells:{x:number,y:number,terrain:"rock"|"open",visited:boolean,
+ *   cleared:boolean}[],
+ *   pendingBattle:{x:number,y:number,party:object[],enemy:object[],
+ *   enemyDisplay:object[]}|null}|null}>}
  */
 export async function fetchAdventureState() {
   return getJson("/api/adventure/state");
@@ -263,48 +273,57 @@ export async function fetchAdventureState() {
 /**
  * Start a run: lock exactly 3 owned, free monsters as the party — their
  * ORDER is the lane order for the whole run — and freeze a freshly
- * generated map behind a seed. 409s if a run is already active or a chosen
- * monster is busy/not owned.
+ * generated maze (sized/densified by the route's own `width`/`height` and
+ * the chosen `difficulty`) behind a seed, plus a move budget derived from
+ * the party's own spd. 409s if a run is already active, the difficulty
+ * isn't one of the route's own, or a chosen monster is busy/not owned.
  * @param {string} adventureId
+ * @param {string} difficulty one of the route's own `difficulties` (e.g.
+ *   "easy"/"medium"/"hard")
  * @param {number[]} monsterIds exactly 3 distinct owned free monster ids
  * @returns {Promise<{session:object}>}
  */
-export async function startAdventure(adventureId, monsterIds) {
-  return postJson("/api/adventure/start", { adventureId, monsterIds });
+export async function startAdventure(adventureId, difficulty, monsterIds) {
+  return postJson("/api/adventure/start", { adventureId, difficulty, monsterIds });
 }
 
 /**
- * Resolve the current step's chosen option. Every roll (loot, the wild
- * team, the fight, the catch) happens server-side, seeded from the frozen
- * session — this only ever sends an index into the step's own options. A
- * battle option no longer resolves inline (Phase 10.14) — it STAGES the
- * fight instead: the node comes back `{..., staged:true}` and the session
- * gains a `pendingBattle` (both sides' frozen `toLane()` lane snapshots,
- * `party`/`enemy`/`enemyDisplay`) with `options:null` until the player
- * resolves it via resolveAdventureBattle()/surrenderAdventureBattle(). Loot
- * is escrowed (logged, not granted) until the run actually completes.
- * @param {number} choice index into the current step's `options`
- * @returns {Promise<{session:object, node:{position:number, choice:number,
- *   type:string, staged?:true, loot?:{itemId:string,qty:number}[],
- *   catch?:{speciesId:string,name:string,monsterId:number}}>}
+ * Step onto one orthogonally adjacent, passable (non-rock) cell — the ONLY
+ * choice this sends is the target coordinate; the server validates
+ * adjacency/bounds/moves-left and resolves whatever the cell holds. A fresh
+ * item cell rolls its loot in the same move (escrowed, not granted); a
+ * fresh monster cell instead STAGES a battle (`node.staged === true` and the
+ * session gains `pendingBattle`) for resolveAdventureBattle()/
+ * surrenderAdventureBattle() to resolve. Running the move budget to 0
+ * anywhere but the entrance STRANDS the run in this same call — the session
+ * comes back `state:"failed"` and `node.stranded === true`, forfeiting
+ * everything escrowed so far.
+ * @param {number} x
+ * @param {number} y
+ * @returns {Promise<{session:object, node:{x:number, y:number,
+ *   type:"step"|"item"|"battle", staged?:true, stranded?:true,
+ *   loot?:{itemId:string,qty:number}[]}>}
  */
-export async function moveAdventure(choice) {
-  return postJson("/api/adventure/move", { choice });
+export async function moveAdventure(x, y) {
+  return postJson("/api/adventure/move", { x, y });
 }
 
 /**
- * Resolve the currently staged Adventure battle (Phase 10.14). `order` is
- * the player's OWN lane order — a permutation of their party's lane
- * indices, front-first, the exact same choice requestBattle() sends for a
- * match; the server owns the enemy, every stat, and the outcome. The
- * response's `node.battle` carries the event log for the replayer, plus
- * `catch`/`granted` summaries when this win just completed the run (loot/
- * catches are escrowed until then).
+ * Resolve the currently staged Adventure battle. `order` is the player's OWN
+ * lane order — a permutation of their party's lane indices, front-first,
+ * the exact same choice requestBattle() sends for a match; the server owns
+ * the enemy, every stat, and the outcome. The response's `node.battle`
+ * carries the event log for the replayer; a win also carries `gold`/`exp`
+ * (escrowed, not yet granted) and an optional `catch`. A win that runs the
+ * party's last move out anywhere but the entrance still STRANDS the run
+ * (`node.stranded === true`) — the fight only cleared the cell, it didn't
+ * grant extra moves. Nothing is ever granted here; only exitAdventure()
+ * grants anything.
  * @param {number[]} order
- * @returns {Promise<{session:object, node:{position:number, choice:number,
+ * @returns {Promise<{session:object, node:{x:number, y:number,
  *   type:"battle", battle:{won:boolean, events:object[]},
- *   catch?:{speciesId:string,name:string,monsterId:number},
- *   granted?:{items:object[], monsters:object[]}}>}
+ *   gold?:number, exp?:number, stranded?:true,
+ *   catch?:{speciesId:string,name:string}}>}
  */
 export async function resolveAdventureBattle(order) {
   return postJson("/api/adventure/battle", { order });
@@ -318,6 +337,18 @@ export async function resolveAdventureBattle(order) {
  */
 export async function surrenderAdventureBattle() {
   return postJson("/api/adventure/surrender", {});
+}
+
+/**
+ * Leave the maze — the ONLY way a run ever completes. Only valid standing
+ * exactly on the entrance cell with no battle staged; 409s otherwise. Grants
+ * everything escrowed across the whole run (every item stack, summed
+ * gold/exp, every caught species minted) in one round trip.
+ * @returns {Promise<{session:object, granted:{items:object[],
+ *   monsters:object[], gold:number, exp:number}}>}
+ */
+export async function exitAdventure() {
+  return postJson("/api/adventure/exit", {});
 }
 
 /** Give up the active run early — same terminal effect as a lost battle,

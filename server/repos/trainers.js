@@ -64,6 +64,22 @@ export async function refundGold(sql, trainerId, amount) {
 }
 
 /**
+ * Unconditional gold + exp credit — Phase 11's completed-run payout leg,
+ * called from server/services/adventure.js's grantRunRewards() ONLY after
+ * exit()'s claim is already won (the same "post-claim, fire at most once"
+ * timing resolveMatch's Elo/rune-wear calls and settleActivities' work payout
+ * follow). Unlike refundGold above (a compensation for a LOST race) this is
+ * always the winning side's actual reward — the settleWork trainer-leg shape
+ * minus the claim, since the run's own exactly-once gate lives on the
+ * session row (claimExit), not here.
+ */
+export async function creditTrainerReward(sql, trainerId, { gold, exp }) {
+  await sql`
+    UPDATE trainers SET gold = gold + ${gold}, exp = exp + ${exp}
+    WHERE id = ${trainerId}`;
+}
+
+/**
  * Admin-only absolute set (Phase 10.1) — deliberately unlike debit/refund's
  * relative math: the admin states the balance. Null means no such trainer.
  */

@@ -36,11 +36,11 @@ export const EQUIP_SLOTS = {
 // server/services/summon.js's REQUIREMENT_CHECKERS registry — never a
 // branch in either validateSummon or performSummon.
 export const SUMMON_COST_TYPES = ["gold", "item"];
-// Phase 7.4 step B — Adventure node kinds a map step's option can be. A
-// later node kind (e.g. a shop, an event) is one more entry here AND one
-// more resolver entry in the step-B session service — never a branch in
-// validateAdventure or generateMap.
-export const ADVENTURE_NODE_TYPES = ["battle", "chest", "gather"];
+// Phase 11 — the three difficulty tiers a grid adventure route's `config`
+// must define, one entry apiece under `config.difficulties`. Re-exported so
+// the admin console's dropdown/labels can never drift from the grammar
+// validateAdventureConfig actually enforces.
+export const ADVENTURE_DIFFICULTIES = ["easy", "medium", "hard"];
 // Phase 9.1 — the closed reward-type list tournaments (9.2) and GVG events
 // (9.5) both validate against; re-exported here (rather than re-declared)
 // so the admin UI's dropdown and the engine's actual grammar can never
@@ -65,7 +65,7 @@ export function enums() {
     equipDomains: EQUIP_DOMAINS,
     equipSlots: EQUIP_SLOTS,
     summonCostTypes: SUMMON_COST_TYPES,
-    adventureNodeTypes: ADVENTURE_NODE_TYPES,
+    adventureDifficulties: ADVENTURE_DIFFICULTIES,
     eventRewardTypes: EVENT_REWARD_TYPES,
   };
 }
@@ -522,24 +522,6 @@ export function validateSummon(input) {
 // --- adventures (Phase 7.4 step B) ------------------------------------------
 
 /**
- * `nodes`: a non-empty list of {type, weight>=1}, type one of
- * ADVENTURE_NODE_TYPES, no duplicate types — the weighted table
- * generateMap() draws each non-final-step option's type from.
- */
-function validateAdventureNodes(list) {
-  if (!Array.isArray(list) || list.length === 0) throw bad("nodes must be a non-empty array");
-  const seen = new Set();
-  return list.map((n, i) => {
-    const label = `nodes[${i}]`;
-    onlyKeys(n ?? {}, ["type", "weight"], label);
-    const type = oneOf(n?.type, ADVENTURE_NODE_TYPES, `${label}.type`);
-    if (seen.has(type)) throw bad(`nodes: duplicate type "${type}"`);
-    seen.add(type);
-    return { type, weight: int(n?.weight, `${label}.weight`, { min: 1, max: 1_000_000 }) };
-  });
-}
-
-/**
  * `encounters`: a non-empty list (max 50) of {speciesId, weight>=1}, no
  * duplicate speciesIds — the wild pool a "battle" node's enemy team is drawn
  * from.
@@ -559,9 +541,10 @@ function validateAdventureEncounters(list) {
 }
 
 /**
- * `loot`/`gather`: a non-empty list (max 50) of
+ * `loot`: a non-empty list (max 50) of
  * {itemId, weight>=1, qtyMin>=1, qtyMax>=qtyMin (both <=100)}, no duplicate
- * itemIds — what a chest drops, or a gather node yields.
+ * itemIds — what stepping onto an item cell rolls (shared/rules/
+ * adventure.js's rollLoot()).
  */
 function validateAdventureLootTable(list, label) {
   if (!Array.isArray(list) || list.length === 0) throw bad(`${label} must be a non-empty array`);
@@ -600,10 +583,63 @@ function validateAdventureEnemies(input) {
 }
 
 /**
+ * One `{min, max}` reward-roll range (Phase 11's `battleGold`/`battleExp`
+ * knobs) — both ints 0-10000, `max >= min`. Same "validate min first, feed
+ * it into max's own min bound" shape the loot table's `qtyMin`/`qtyMax` pair
+ * already uses above.
+ */
+function validateAdventureRewardRange(input, label) {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) throw bad(`${label} must be an object`);
+  onlyKeys(input, ["min", "max"], label);
+  const min = int(input.min, `${label}.min`, { min: 0, max: 10000 });
+  const max = int(input.max, `${label}.max`, { min, max: 10000 });
+  return { min, max };
+}
+
+/**
+ * One difficulty tier under `config.difficulties` (Phase 11): `monsterPct`/
+ * `itemPct` are each 1-60, their SUM capped at 80 (a harder tier packs the
+ * maze denser with both monsters and items, but at least a fifth of the
+ * floor always stays empty) — plus a `battleGold`/`battleExp` reward range
+ * apiece, rolled once per battle-cell win (11.2's session engine).
+ */
+function validateAdventureDifficulty(d, label) {
+  if (typeof d !== "object" || d === null || Array.isArray(d)) throw bad(`${label} must be an object`);
+  onlyKeys(d, ["monsterPct", "itemPct", "battleGold", "battleExp"], label);
+  const monsterPct = int(d.monsterPct, `${label}.monsterPct`, { min: 1, max: 60 });
+  const itemPct = int(d.itemPct, `${label}.itemPct`, { min: 1, max: 60 });
+  if (monsterPct + itemPct > 80) throw bad(`${label}: monsterPct + itemPct must be <= 80`);
+  return {
+    monsterPct,
+    itemPct,
+    battleGold: validateAdventureRewardRange(d.battleGold, `${label}.battleGold`),
+    battleExp: validateAdventureRewardRange(d.battleExp, `${label}.battleExp`),
+  };
+}
+
+/**
+ * `difficulties`: a plain object with EXACTLY the keys "easy"/"medium"/
+ * "hard" (ADVENTURE_DIFFICULTIES), every one required — a route must offer
+ * all three tiers, no picking-and-choosing.
+ */
+function validateAdventureDifficulties(input) {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw bad("config.difficulties must be an object");
+  }
+  onlyKeys(input, ADVENTURE_DIFFICULTIES, "config.difficulties");
+  const out = {};
+  for (const key of ADVENTURE_DIFFICULTIES) {
+    if (input[key] === undefined) throw bad(`config.difficulties must define "${key}"`);
+    out[key] = validateAdventureDifficulty(input[key], `config.difficulties.${key}`);
+  }
+  return out;
+}
+
+/**
  * An adventure route's `config` grammar — see src/data/adventures.js's
  * header for the authoritative description, kept in sync with this
  * validator. Pure grammar only (no DB); the referential checks (every
- * encounters speciesId/loot/gather itemId must be a real row) happen in
+ * encounters speciesId/loot itemId must be a real row) happen in
  * server/services/admin.js's saveAdventure, same split as validateSummon /
  * saveSummon.
  */
@@ -611,14 +647,14 @@ function validateAdventureConfig(config) {
   if (typeof config !== "object" || config === null || Array.isArray(config)) {
     throw bad("config must be a JSON object");
   }
-  onlyKeys(config, ["steps", "choices", "nodes", "encounters", "loot", "gather", "catchPct", "enemies"], "config");
+  onlyKeys(config, ["width", "height", "movesBonus", "difficulties", "encounters", "loot", "catchPct", "enemies"], "config");
   return {
-    steps: int(config.steps, "config.steps", { min: 3, max: 10 }),
-    choices: int(config.choices, "config.choices", { min: 2, max: 3 }),
-    nodes: validateAdventureNodes(config.nodes),
+    width: int(config.width, "config.width", { min: 5, max: 20 }),
+    height: int(config.height, "config.height", { min: 5, max: 20 }),
+    movesBonus: config.movesBonus === undefined ? 0 : int(config.movesBonus, "config.movesBonus", { min: 0, max: 500 }),
+    difficulties: validateAdventureDifficulties(config.difficulties),
     encounters: validateAdventureEncounters(config.encounters),
     loot: validateAdventureLootTable(config.loot, "config.loot"),
-    gather: validateAdventureLootTable(config.gather, "config.gather"),
     catchPct: int(config.catchPct, "config.catchPct", { min: 0, max: 100 }),
     enemies: validateAdventureEnemies(config.enemies),
   };

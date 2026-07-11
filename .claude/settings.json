@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"^Adventure \\(Phase 7.4\\\\|adventure_defs. gets the admin CRUD half\\\\|The 🗺 Adventure$\\\\|The 🗺 Adventure\\\\b\" /Users/karan_64201/Library/CloudStorage/OneDrive-KingPowerGroup/Documents/MyProjects/mygame_01/CLAUDE.md)"
+    ]
+  }
+}

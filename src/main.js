@@ -114,11 +114,15 @@ async function onStart() {
     // into the Adventure panel and swap Surrender for Continue; the panel
     // itself re-renders once the player actually clicks through to it.
     noteAdventureBattleResult(result.adventure);
-    if (result.adventure.node.catch) {
-      log(`You caught <b>${result.adventure.node.catch.name}</b>! It joins you when the run is complete.`, true);
+    const node = result.adventure.node;
+    if (node.gold || node.exp) {
+      log(`Won +${node.gold} gold, +${node.exp} exp — banked in the run's haul.`, true);
     }
-    if (result.adventure.node.granted) {
-      log("🎉 Run complete! Rewards received.", true);
+    if (node.catch) {
+      log(`You caught <b>${node.catch.name}</b>! It joins you when the run is complete.`, true);
+    }
+    if (node.stranded) {
+      log("⏳ Out of moves — the party is stranded! Everything found this run is forfeited.", true);
     }
     surrenderBtn.hidden = true;
     continueBtn.hidden = false;
