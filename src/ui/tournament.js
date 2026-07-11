@@ -20,6 +20,7 @@ import {
   fetchTournaments, registerTournament, withdrawTournament, loadFarm, fetchTournamentDetail,
 } from "../services/content.js";
 import { registerView } from "./views.js";
+import { classIconEl } from "./board.js";
 
 const PARTY_SIZE = 3;
 const BUSY_LABEL = {
@@ -316,7 +317,9 @@ function partyPicker() {
     const isBusy = m.busyUntil && new Date(m.busyUntil) > new Date();
     const pickIdx = picks.indexOf(m.id);
     const row = el("div", "tour-mon" + (pickIdx !== -1 ? " picked" : "") + (isBusy ? " busy" : ""));
-    row.append(el("span", "tour-mon-emoji", m.emoji), el("span", "tour-mon-name", m.name));
+    const icon = el("div", "unit-class-icon tour-mon-icon");
+    icon.appendChild(classIconEl(m.cls));
+    row.append(icon, el("span", "tour-mon-name", m.name));
     if (isBusy) row.append(el("span", "tour-mon-busy-tag", BUSY_LABEL[m.busyKind] ?? m.busyKind ?? "Busy"));
     if (pickIdx !== -1) row.append(el("span", "tour-pick-badge", String(pickIdx + 1)));
     if (!isBusy) row.addEventListener("click", () => togglePick(m.id));

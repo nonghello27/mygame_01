@@ -61,7 +61,11 @@ button.btn.tour-danger{color:var(--hp-low);border-color:var(--hp-low)}
 .tour-mon:hover{border-color:var(--line-strong)}
 .tour-mon.picked{border-color:var(--a-deep);background:var(--a-soft)}
 .tour-mon.busy{opacity:0.6;cursor:default}
-.tour-mon-emoji{font-size:22px}
+/* class-icon tile (Phase 10.17 follow-up: the monsterSetup.css .ms-head-icon
+   precedent) on top of board.css's global .unit-class-icon styles, sized to
+   roughly the ~22px the old emoji occupied. */
+.tour-mon-icon{width:22px;height:22px;border-radius:7px;flex:none}
+.tour-mon-icon .unit-class-icon-img{width:15px;height:15px}
 .tour-mon-name{font-size:13px;font-weight:600;flex:1}
 .tour-mon-busy-tag{font-size:11px;color:var(--clash)}
 .tour-pick-badge{

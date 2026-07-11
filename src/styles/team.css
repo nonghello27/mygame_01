@@ -112,7 +112,11 @@
   padding:12px 14px;display:flex;flex-direction:column;gap:10px;
 }
 .team-detail-header{display:flex;align-items:flex-start;gap:10px}
-.team-detail-emoji{font-size:30px;line-height:1}
+/* class-icon tile (Phase 10.17 follow-up: the monsterSetup.css .ms-head-icon
+   precedent, sized to roughly the ~30px the old emoji occupied) on top of
+   board.css's global .unit-class-icon styles. */
+.team-detail-icon{width:30px;height:30px;border-radius:9px;flex:none}
+.team-detail-icon .unit-class-icon-img{width:20px;height:20px}
 .team-detail-head{flex:1;min-width:0}
 .team-detail-name{font-family:Rajdhani,sans-serif;font-weight:700;font-size:15px}
 .team-detail-sub{font-size:12px;color:var(--muted);margin-top:1px}

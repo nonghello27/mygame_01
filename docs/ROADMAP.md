@@ -2009,6 +2009,17 @@ Staged 2026-07-11, one client-only round, three fixes:
 `npm test` (203) and `npm run build` both pass — client-only, no
 `shared/engine/`/`server/`/`db/` change. **Phase 10.16 is done.**
 
+**Follow-up (2026-07-11, playtest):** the class-icon header treatment this
+phase gave the Setup Monster panel didn't reach every place a monster's
+species emoji still led a detail/picker row. The shared party picker's
+click-for-detail area (`ui/partyPicker.js`, hosted by both Setup Team and
+Adventure) now opens with the same class-icon tile instead of the emoji,
+and the tournament register flow's and GVG team-submit flow's picker rows
+(`ui/tournament.js`, `ui/guild.js`) got the identical treatment — emoji
+retired from all three spots (plain-string bracket/lineup entrant labels
+elsewhere in those two files, and Adventure's party/enemy chips, are
+untouched — they carry no `cls` to look an icon up from).
+
 ## Phase 10.17 — goods icons (items, equipment, runes)
 
 Staged 2026-07-11 from playtest feedback: every item/equipment/rune name in

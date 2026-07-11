@@ -46,6 +46,7 @@ import {
   fetchGvgDetail, loadFarm,
 } from "../services/content.js";
 import { registerView } from "./views.js";
+import { classIconEl } from "./board.js";
 
 const CREATE_COST_LABEL = "500 🪙"; // mirrors GUILD_CREATE_COST server/services/guild.js
 
@@ -613,7 +614,9 @@ function gvgPartyPicker() {
     const isBusy = m.busyUntil && new Date(m.busyUntil) > new Date();
     const pickIdx = gvgPicks.indexOf(m.id);
     const row = el("div", "gvg-mon" + (pickIdx !== -1 ? " picked" : "") + (isBusy ? " busy" : ""));
-    row.append(el("span", "gvg-mon-emoji", m.emoji), el("span", "gvg-mon-name", m.name));
+    const icon = el("div", "unit-class-icon gvg-mon-icon");
+    icon.appendChild(classIconEl(m.cls));
+    row.append(icon, el("span", "gvg-mon-name", m.name));
     if (isBusy) row.append(el("span", "gvg-mon-busy-tag", BUSY_LABEL[m.busyKind] ?? m.busyKind ?? "Busy"));
     if (pickIdx !== -1) row.append(el("span", "gvg-pick-badge", String(pickIdx + 1)));
     if (!isBusy) row.addEventListener("click", () => toggleGvgPick(m.id));

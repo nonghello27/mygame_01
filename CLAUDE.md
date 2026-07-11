@@ -444,7 +444,10 @@ per roadmap phase, don't big-bang rename.)
     │                       # cards render via board.js's shared unitCardEl() over a
     │                       # display-only deriveStats(m.base, m.attrs) lane — full HP, never
     │                       # sent anywhere — and clicking any card opens the click-for-detail
-    │                       # area, stats/attrs/skills/busy state plus "Set lane 1/2/3"/
+    │                       # area, whose header leads with the class-icon tile (board.js's
+    │                       # classIconEl(), the Setup Monster panel's Phase 10.16 precedent,
+    │                       # follow-up 2026-07-11) rather than the species emoji, then
+    │                       # stats/attrs/skills/busy state plus "Set lane 1/2/3"/
     │                       # "Remove from team" actions, the no-drag placement path
     │                       # tap-to-place used to be; the roster row hides any monster
     │                       # already placed in a lane, Phase 10.14 — it shows only the

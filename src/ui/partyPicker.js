@@ -21,7 +21,7 @@
 // (`team-*`) are unchanged and shared globally via styles/team.css — see
 // that file's header comment.
 
-import { unitCardEl } from "./board.js";
+import { unitCardEl, classIconEl } from "./board.js";
 import { skillIconEl } from "./skillMedia.js";
 import { beginPointerDrag } from "./pointerDrag.js";
 import { deriveStats, powerScore, applyGearStats } from "../../shared/rules/formulas.js";
@@ -269,7 +269,9 @@ export function createPartyPicker({ monsters, initialSlots, onChange } = {}) {
     const box = el("div", "team-detail");
 
     const header = el("div", "team-detail-header");
-    header.append(el("span", "team-detail-emoji", m.emoji || "❔"));
+    const iconTile = el("div", "unit-class-icon team-detail-icon");
+    iconTile.appendChild(classIconEl(m.cls));
+    header.append(iconTile);
     const head = el("div", "team-detail-head");
     head.append(el("div", "team-detail-name", m.name));
     head.append(el("div", "team-detail-sub", `${m.cls} · ${m.element}`));

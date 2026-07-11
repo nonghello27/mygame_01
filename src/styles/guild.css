@@ -96,7 +96,11 @@ button.btn.guild-danger{color:var(--hp-low);border-color:var(--hp-low)}
 .gvg-mon:hover{border-color:var(--line-strong)}
 .gvg-mon.picked{border-color:var(--a-deep);background:var(--a-soft)}
 .gvg-mon.busy{opacity:0.6;cursor:default}
-.gvg-mon-emoji{font-size:22px}
+/* class-icon tile (Phase 10.17 follow-up: the monsterSetup.css .ms-head-icon
+   precedent) on top of board.css's global .unit-class-icon styles, sized to
+   roughly the ~22px the old emoji occupied. */
+.gvg-mon-icon{width:22px;height:22px;border-radius:7px;flex:none}
+.gvg-mon-icon .unit-class-icon-img{width:15px;height:15px}
 .gvg-mon-name{font-size:13px;font-weight:600;flex:1}
 .gvg-mon-busy-tag{font-size:11px;color:var(--clash)}
 .gvg-pick-badge{
