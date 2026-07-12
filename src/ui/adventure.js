@@ -25,6 +25,8 @@ import { showProfile } from "./auth.js";
 import { registerView } from "./views.js";
 import { createPartyPicker } from "./partyPicker.js";
 import { classIconEl } from "./board.js";
+import { spriteEl } from "./sprite.js";
+import { spriteFor } from "../data/sprites.js";
 
 const NODE_ICON = { item: "🎁", battle: "⚔", stranded: "⏳" };
 
@@ -38,6 +40,7 @@ let roster = null;    // loadFarm() result, only loaded while picking a party
 let picker = null;     // the current createPartyPicker() instance, while picking a party
 let items = [];        // owned item stacks, for loot-name lookup only
 let busy = false;      // true while a start/move/exit/abandon request is in flight
+let facing = "right"; // "left" | "right" — display-only, which way the marker's art faces
 
 /** @param {{enterBattle:(pending:object)=>Promise<void>}} h main.js's
  *  battlefield handoff — never import main.js here (the initPvp precedent). */
@@ -217,6 +220,7 @@ function routeCard(a) {
       lastGranted = null;
       roster = null;
       picker = null;
+      facing = "right";
       pushMsg(`Setting out on ${a.name} (${sel.value})…`);
       renderBody();
     } catch (e) {
@@ -406,23 +410,38 @@ function tileEl(x, y, cell) {
   return tile;
 }
 
-/** The party's FRONT unit marks the current cell — a class-icon tile
- *  (board.js's classIconEl(), the battlefield's own marker) when the unit
- *  carries a resolvable `cls`, falling back to its emoji otherwise. */
+/** The party's FRONT unit marks the current cell — its sprite PNG when the
+ *  frozen display metadata carries a resolvable `sprite` (still portraits are
+ *  authored facing RIGHT; `facing` flips them after a leftward move), falling
+ *  back to the class-icon tile, then the emoji. */
 function frontMarkerEl() {
   const front = session.party[0];
-  if (front?.cls) {
-    const icon = classIconEl(front.cls);
-    icon.classList.add("adv-tile-marker");
-    return icon;
+  const def = spriteFor(front?.sprite);
+  let marker;
+  if (def?.img) {
+    marker = spriteEl(front); // chroma-keyed <img class="portrait-img">
+  } else if (def?.sheet) {
+    // SHEET kind: a static idle frame (row 0, frame 0) scaled to the tile —
+    // background-size cols*100% makes each square cell exactly the marker's
+    // own size, so position 0 0 is the idle frame at any tile size.
+    marker = el("div", "adv-tile-marker--sheet");
+    marker.style.backgroundImage = `url("${def.sheet}")`;
+    marker.style.backgroundSize = `calc(${def.cols} * 100%) auto`;
+  } else if (front?.cls) {
+    marker = classIconEl(front.cls);
+  } else {
+    marker = el("span", null, front?.emoji || "❔");
   }
-  return el("span", "adv-tile-marker", front?.emoji || "❔");
+  marker.classList.add("adv-tile-marker");
+  if (facing === "left") marker.classList.add("adv-tile-marker--flip");
+  return marker;
 }
 
 /** Step onto one adjacent cell — the ONLY choice this sends is the target
  *  coordinate; everything about what happens next (an item roll, a staged
  *  battle, a stranding) is the server's own resolution, narrated here. */
 async function onMoveTile(x, y) {
+  facing = x < session.pos.x ? "left" : "right";
   busy = true;
   renderBody();
   els.msgs.innerHTML = "";

@@ -4,7 +4,11 @@
    drag-and-drop widget (styles/team.css's `team-*`/`party-picker` classes,
    global) — this file no longer styles it. Phase 11.3: the run itself is a
    fog-of-war grid maze (`.adv-map` > `.adv-grid` > `.adv-tile`) instead of a
-   step list. */
+   step list; the current-cell marker (`.adv-tile-marker`) prefers the
+   party front unit's sprite PNG (a still portrait or a static sheet frame),
+   falling back to the class-icon tile, then the emoji — `.adv-tile-marker
+   --flip` mirrors it after a leftward move, since portrait art is authored
+   facing right (styles/sprite.css's `.army-b .sprite` precedent). */
 
 .adventure{
   margin-top:18px;background:var(--panel);border:1px solid var(--line);
@@ -75,7 +79,7 @@ button.btn.adv-danger{align-self:flex-start;color:var(--hp-low);border-color:var
   background:var(--bg-2);padding:8px;-webkit-overflow-scrolling:touch;
 }
 .adv-grid{
-  --adv-tile:34px;
+  --adv-tile:48px;
   display:grid;gap:2px;width:max-content;
 }
 .adv-tile{
@@ -97,15 +101,17 @@ button.btn.adv-danger{align-self:flex-start;color:var(--hp-low);border-color:var
 }
 
 .adv-tile-mark{position:absolute;bottom:1px;right:2px;font-size:9px;opacity:0.75;line-height:1}
-.adv-tile-marker{width:80%;height:80%;object-fit:contain;font-size:calc(var(--adv-tile) * 0.55)}
+.adv-tile-marker{width:88%;height:88%;object-fit:contain;font-size:calc(var(--adv-tile) * 0.55)}
 img.adv-tile-marker{display:block}
+.adv-tile-marker--sheet{background-repeat:no-repeat;background-position:0 0;image-rendering:pixelated;image-rendering:crisp-edges}
+.adv-tile-marker--flip{transform:scaleX(-1)}
 
 /* mobile pass (Phase 10.15 precedent) — smaller tiles, HUD wraps; desktop
    untouched. No separate `pointer:coarse` rule is needed: `.adv-tile--reachable`'s
    ring is already a static box-shadow, never a `:hover`-gated affordance, so
    touch gets it for free. */
 @media (max-width: 560px){
-  .adv-grid{--adv-tile:30px}
+  .adv-grid{--adv-tile:40px}
   .adv-hud{gap:10px}
   .adv-hud button.btn{flex:0 0 auto}
 }

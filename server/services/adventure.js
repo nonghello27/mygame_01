@@ -150,10 +150,10 @@ export async function start(sql, trainerId, body) {
     const lanes = chosen.map((m, i) =>
       toLane(m, i, equipByMonster.get(m.id) ?? [], runesByMonster.get(m.id) ?? [])
     );
-    // `cls` rides along for the client's current-cell marker (Phase 11.3): a
-    // class-icon tile for the party's front unit, the same display-metadata
-    // bucket emoji already sits in.
-    const display = chosen.map((m) => ({ monsterId: m.id, name: m.name, emoji: m.emoji, cls: m.cls }));
+    // `cls`/`sprite` ride along for the client's current-cell marker (Phase
+    // 11.3): a class-icon tile for the party's front unit, the same
+    // display-metadata bucket emoji already sits in.
+    const display = chosen.map((m) => ({ monsterId: m.id, name: m.name, emoji: m.emoji, cls: m.cls, sprite: m.sprite }));
 
     // Determinism (CLAUDE.md §1.6): a STORED seed, same minting precedent as
     // match creation and Summon Hall pulls.
