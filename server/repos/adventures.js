@@ -62,6 +62,25 @@ export async function getActiveSession(sql, trainerId) {
 }
 
 /**
+ * The trainer's most recently completed session whose rewards are still
+ * unclaimed, or null (the claim() flow's own precondition read, and what a
+ * page reload re-renders the pending accept-rewards summary from). ORDER BY
+ * id DESC + LIMIT 1 rather than a uniqueness guarantee — nothing enforces
+ * "at most one unclaimed" the way the active-session partial index does,
+ * since start() itself is what blocks a second run from ever completing on
+ * top of an uncollected one.
+ */
+export async function getUnclaimedSession(sql, trainerId) {
+  const rows = await sql`
+    SELECT id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle,
+           difficulty, pos_x, pos_y, moves_total, moves_left, visited, cleared
+    FROM adventure_sessions
+    WHERE trainer_id = ${trainerId} AND state = 'completed' AND rewards_claimed = false
+    ORDER BY id DESC LIMIT 1`;
+  return rows[0] ? shapeSession(rows[0]) : null;
+}
+
+/**
  * Mint a new session row (state 'active'). `position` (the legacy step-index
  * column, unused by the grid engine — kept in place rather than dropped, see
  * 024_adventure_grid.sql's header) is still written 0 for compatibility with
@@ -142,7 +161,10 @@ export async function claimMove(sql, sessionId, trainerId, opts) {
  * no battle staged, AND that the party is standing AT the entrance
  * (`pos_x/pos_y = x/y`, the caller passes the map's own entrance coords) —
  * standing-at-the-entrance is part of the claim itself, never a separate
- * pre-check that could race between the read and the write.
+ * pre-check that could race between the read and the write. Also stamps
+ * `rewards_claimed = false` (the Phase 11 follow-up, 025_adventure_claim.sql)
+ * — completing a run banks its escrowed haul as CLAIMABLE, not granted; only
+ * claim()'s own claimRewards() below actually grants it.
  * @returns the refreshed (now 'completed') session row, or null when the
  *   claim lost (already resolved, or the party isn't at the entrance after
  *   all — a stale client read racing a move that's already left it).
@@ -150,12 +172,34 @@ export async function claimMove(sql, sessionId, trainerId, opts) {
 export async function claimExit(sql, sessionId, trainerId, { x, y }) {
   const rows = await sql`
     UPDATE adventure_sessions
-    SET state = 'completed', updated_at = now()
+    SET state = 'completed', rewards_claimed = false, updated_at = now()
     WHERE id = ${sessionId} AND trainer_id = ${trainerId}
       AND state = 'active' AND pending_battle IS NULL
       AND pos_x = ${x} AND pos_y = ${y}
     RETURNING id, trainer_id, adventure_id, seed, map, party, position, state, loot, ends_at, pending_battle,
               difficulty, pos_x, pos_y, moves_total, moves_left, visited, cleared`;
+  return rows[0] ? shapeSession(rows[0]) : null;
+}
+
+/**
+ * Collect a completed run's escrowed rewards — the exactly-once gate for
+ * claim() (the payoutSeason `reward IS NULL`-style precedent, here
+ * `rewards_claimed = false`): the WHERE clause is the WHOLE gate — ownership,
+ * `completed`, and not-already-claimed — so a raced double-POST's second
+ * request cleanly loses. `RETURNING *` (rather than the explicit column list
+ * the other claims use) is fine here: shapeSession() only ever reads the
+ * fields it names off the row, so the extra `rewards_claimed`/`created_at`/
+ * etc. columns are simply ignored.
+ * @returns the refreshed (now-claimed) session row, or null when the claim
+ *   lost (already collected by an earlier request).
+ */
+export async function claimRewards(sql, sessionId, trainerId) {
+  const rows = await sql`
+    UPDATE adventure_sessions
+    SET rewards_claimed = true, updated_at = now()
+    WHERE id = ${sessionId} AND trainer_id = ${trainerId}
+      AND state = 'completed' AND rewards_claimed = false
+    RETURNING *`;
   return rows[0] ? shapeSession(rows[0]) : null;
 }
 

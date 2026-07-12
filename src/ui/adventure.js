@@ -14,11 +14,16 @@
 // `enterBattle` hook, which loads it onto the REAL battlefield and replays
 // it through core/battle.js's normal replayer; this module itself never
 // replays events, it only stages/narrates whatever the server has already
-// resolved (CLAUDE.md §1.2).
+// resolved (CLAUDE.md §1.2). Exiting the maze (Leave) only COMPLETES a run —
+// it banks the escrowed haul claimable, it doesn't grant it; the terminal
+// summary's End Adventure button is what actually collects it for a
+// completed run (claimAdventureRewards(), a Phase 11 follow-up), while a
+// failed/abandoned run's End Adventure stays a client-only dismiss (there's
+// nothing left to collect).
 
 import {
-  fetchAdventureState, startAdventure, moveAdventure, exitAdventure, abandonAdventure,
-  loadFarm, fetchInventory,
+  fetchAdventureState, startAdventure, moveAdventure, exitAdventure, claimAdventureRewards,
+  abandonAdventure, loadFarm, fetchInventory,
 } from "../services/content.js";
 import { fetchMe } from "../services/auth.js";
 import { showProfile } from "./auth.js";
@@ -35,7 +40,7 @@ let hooks = null;     // { enterBattle(pendingBattle) } — injected by main.js 
 let adventures = [];  // last fetchAdventureState() result's `adventures`
 let session = null;   // the active session view, or null
 let lastTerminal = null; // most recent completed/failed/abandoned session, kept for the summary
-let lastGranted = null;  // exitAdventure()'s `granted` for the just-finished run's summary, or null
+let lastGranted = null;  // claimAdventureRewards()'s `granted` for the just-collected run's summary, or null
 let roster = null;    // loadFarm() result, only loaded while picking a party
 let picker = null;     // the current createPartyPicker() instance, while picking a party
 let items = [];        // owned item stacks, for loot-name lookup only
@@ -65,7 +70,7 @@ export function noteAdventureBattleResult(result) {
     session = result.session;
     lastTerminal = null;
   } else {
-    // Only exitAdventure() ever grants anything — a battle-triggered
+    // Only claimAdventureRewards() ever grants anything — a battle-triggered
     // stranding forfeits everything, same as a lost/abandoned run.
     lastGranted = null;
     lastTerminal = result.session;
@@ -85,6 +90,14 @@ async function refresh() {
     adventures = state.adventures;
     session = state.session;
     items = inventory?.items ?? items;
+    // A completed-but-unclaimed run (Phase 11 follow-up) survives a page
+    // reload — re-hydrate the pending accept-rewards summary from it rather
+    // than losing it, same "server state, not client state, is truth"
+    // precedent as everything else this panel narrates.
+    if (!session && state.unclaimed) {
+      lastTerminal = state.unclaimed;
+      lastGranted = null;
+    }
     if (!session && !lastTerminal) {
       roster = await loadFarm();
       picker = createPartyPicker({ monsters: roster.monsters, onChange: updateSetOutButtons });
@@ -97,7 +110,7 @@ async function refresh() {
   renderBody();
 }
 
-/** After a completed run's exit grants gold/exp, refresh the header's chips
+/** After collecting a completed run's gold/exp, refresh the header's chips
  *  the same way the Summon Hall does after a pull — best-effort, never blocks. */
 async function refreshProfile() {
   const trainer = await fetchMe();
@@ -141,10 +154,30 @@ function key(x, y) {
 // ---------- shell ----------
 
 function renderBody() {
+  // Scroll-preservation (Phase 10.16 precedent, farm.js/monsterSetup.js's
+  // renderList): every move wipes and rebuilds `.adv-map`, which would
+  // otherwise reset its scroll to top-left on every single step. Capture
+  // both axes off the OUTGOING map before the wipe (setup/terminal renders
+  // have no `.adv-map` at all, hence the null guard).
+  const oldMap = els.body.querySelector(".adv-map");
+  const scroll = oldMap ? { left: oldMap.scrollLeft, top: oldMap.scrollTop } : null;
+
   els.body.innerHTML = "";
   if (session) renderActive();
   else if (lastTerminal) renderTerminal();
   else renderSetup();
+
+  // Restore the prior scroll position onto the fresh map, then make sure the
+  // party's current tile is in view — this also makes the viewport FOLLOW
+  // the marker as it walks toward an edge, rather than letting it wander out
+  // of sight; scrollIntoView({block/inline:"nearest"}) is a no-op when the
+  // tile is already visible (no jumpiness) and, on a fresh panel open with no
+  // saved scroll, brings the party into view for free.
+  const map = els.body.querySelector(".adv-map");
+  if (map) {
+    if (scroll) { map.scrollLeft = scroll.left; map.scrollTop = scroll.top; }
+    map.querySelector(".adv-tile--here")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
 }
 
 // ---------- no session: route list + party picker ----------
@@ -242,10 +275,10 @@ function routeName(adventureId) {
   return adventures.find((a) => a.id === adventureId)?.name ?? adventureId;
 }
 
-/** Count of loot-log entries carrying anything the exit haul will actually
- *  tally — an item drop or a battle's gold/exp roll — for the HUD's simple
- *  "🎒 N" counter. Display-only; the real numbers live in the log below and,
- *  ultimately, in exitAdventure()'s own `granted`. */
+/** Count of loot-log entries carrying anything the eventual haul will
+ *  actually tally — an item drop or a battle's gold/exp roll — for the HUD's
+ *  simple "🎒 N" counter. Display-only; the real numbers live in the log
+ *  below and, ultimately, in claimAdventureRewards()'s own `granted`. */
 function lootCount(loot) {
   return loot.filter((e) => (e.loot && e.loot.length > 0) || e.gold || e.exp).length;
 }
@@ -276,10 +309,13 @@ function renderActive() {
     els.msgs.innerHTML = "";
     try {
       const result = await exitAdventure();
-      lastGranted = result.granted;
+      // exitAdventure() only completes the run now (Phase 11 follow-up) —
+      // it banks the haul CLAIMABLE, it doesn't grant anything, so there's
+      // no profile refresh here; that happens once the player actually
+      // clicks "End Adventure" and claimAdventureRewards() runs.
+      lastGranted = null;
       lastTerminal = result.session;
       session = null;
-      refreshProfile(); // fire-and-forget, mirrors gold shown by farm.js's showProfile()
     } catch (e) {
       pushMsg(e.message, true);
     } finally {
@@ -515,9 +551,11 @@ function renderTerminal() {
 
   els.body.appendChild(el("p", "adv-header", `${routeName(lastTerminal.adventureId)} — ${headline}`));
 
-  if (lastTerminal.state === "completed") {
+  const completed = lastTerminal.state === "completed";
+  if (completed) {
     els.body.appendChild(el("h4", "adv-subhead", "What you brought home"));
     els.body.appendChild(homeHaulView(lastTerminal.loot));
+    els.body.appendChild(el("p", "adv-hint", "Click End Adventure to collect these rewards."));
   } else {
     els.body.appendChild(el("p", "adv-hint", "Everything found on this run was forfeited."));
   }
@@ -527,18 +565,70 @@ function renderTerminal() {
     els.body.appendChild(logView(lastTerminal.loot));
   }
 
-  els.body.appendChild(button("End Adventure", "btn primary adv-small", () => {
-    lastTerminal = null;
-    lastGranted = null;
-    refresh();
-  }));
+  // A COMPLETED run's "End Adventure" is now a real accept-rewards action
+  // (Phase 11 follow-up) — it calls claimAdventureRewards(), which grants
+  // the escrowed haul exactly once, server-side; a failed/abandoned/stranded
+  // run has nothing to collect, so its button stays the old client-only
+  // dismiss.
+  const endBtn = button("End Adventure", "btn primary adv-small", completed
+    ? async () => {
+      endBtn.disabled = true;
+      els.msgs.innerHTML = "";
+      try {
+        const result = await claimAdventureRewards();
+        lastGranted = result.granted;
+        lastTerminal = null;
+        refreshProfile(); // fire-and-forget, mirrors gold shown by farm.js's showProfile()
+        await refresh();
+        pushMsg(collectedSummary(result.granted));
+      } catch (e) {
+        // postJson() never carries an HTTP status onto its thrown Error, only
+        // the server's own message text — so "already collected"/"nothing to
+        // collect" (a raced double-click, or stale local state) is matched by
+        // message and just clears the local summary and re-reads; any other
+        // error stays on this screen so the player can retry.
+        if (/already collected|no adventure rewards/.test(e.message)) {
+          lastTerminal = null;
+          lastGranted = null;
+          await refresh();
+        } else {
+          pushMsg(e.message, true);
+          endBtn.disabled = false;
+        }
+      }
+    }
+    : () => {
+      lastTerminal = null;
+      lastGranted = null;
+      refresh();
+    });
+  els.body.appendChild(endBtn);
+}
+
+/** A one-line "what you just collected" summary for claimAdventureRewards()'s
+ *  own `granted` — item counts (not per-item names, the log above already
+ *  spells those out) plus gold/exp/catches, for the msgs area's confirmation
+ *  line after the panel has already moved on to the route list. */
+function collectedSummary(granted) {
+  const bits = [`+${granted.gold ?? 0} gold`, `+${granted.exp ?? 0} exp`];
+  if (granted.items?.length > 0) {
+    const qty = granted.items.reduce((sum, it) => sum + it.qty, 0);
+    bits.push(`${qty} item${qty === 1 ? "" : "s"}`);
+  }
+  if (granted.monsters?.length > 0) {
+    bits.push(`${granted.monsters.length} caught monster${granted.monsters.length === 1 ? "" : "s"}`);
+  }
+  return `Collected: ${bits.join(", ")}`;
 }
 
 /** Aggregate a completed run's escrowed loot log into one summary: item
  *  qtys summed across every item entry, gold/exp summed across every battle
- *  entry, plus each catch by name. Prefers the stashed exitAdventure()
- *  `granted` (the server's own final tally) for gold/exp when it's on hand;
- *  either way the figures match what grantRunRewards() actually granted. */
+ *  entry, plus each catch by name — this is what renderTerminal() shows
+ *  BEFORE the player clicks End Adventure, so it's really just a preview of
+ *  what claiming will grant (Phase 11 follow-up: exit() no longer returns a
+ *  `granted` tally, only claimAdventureRewards() does, so `lastGranted` is
+ *  normally null here; kept as a fallback in case it's ever set anyway —
+ *  either way the figures match what grantRunRewards() actually grants). */
 function homeHaulView(loot) {
   const qtyByItem = new Map();
   const catches = [];

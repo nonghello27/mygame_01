@@ -256,7 +256,7 @@ per roadmap phase, don't big-bang rename.)
 │   │                       # inventory (+ its sell), equipment.js (equip, enhance),
 │   │                       # runes.js (socket, repair), summon.js (summonHall, summon),
 │   │                       # adventure.js (state, start, move, battle, surrender, exit,
-│   │                       # abandon), market.js
+│   │                       # claim, abandon), market.js
 │   │                       # (browse, mine, list, buy, cancel), tournament.js
 │   │                       # (tournaments list, register, withdraw, detail — rides the
 │   │                       # battle domain), admin.js (master + classes/skills/species/jobs/
@@ -314,13 +314,15 @@ per roadmap phase, don't big-bang rename.)
 │                           # (performSummon: pluggable REQUIREMENT_CHECKERS pay/refund per
 │                           # cost leg, seeded rollSummon() + mint + audit insert,
 │                           # compensating refund/unmint on failure), adventure.js
-│                           # (getState/start/move/battle/surrender/exit/abandon: a grid
-│                           # maze (Phase 11) instead of the original step list — lazy
+│                           # (getState/start/move/battle/surrender/exit/claim/abandon: a
+│                           # grid maze (Phase 11) instead of the original step list — lazy
 │                           # session expiry, party busy-claim with compensating release,
 │                           # claimMove's one-statement move+stage+strand claim, a fog-of-
 │                           # war session view, the stranded rule (0 moves left anywhere but
-│                           # the entrance fails the run), and exit()-only run completion —
-│                           # battle calls resolveBattle() directly, no matches row), market.js
+│                           # the entrance fails the run), exit()-only run completion, and
+│                           # (a Phase 11 follow-up) claim()-only reward granting via a
+│                           # guarded rewards_claimed flip, split out of exit() — battle
+│                           # calls resolveBattle() directly, no matches row), market.js
 │                           # (list/buy/cancel claim-first-then-pay with LIFO
 │                           # compensations after a won claim), tournament.js (list/
 │                           # register/withdraw claim-first-then-pay with LIFO
@@ -782,14 +784,20 @@ never a cell's CONTENT, only its `visited`/`cleared` flags, since an item
 cell clears the instant it's stepped on and a monster cell is either the
 pending battle or `cleared` — plus, while one is staged, both sides' frozen
 lane snapshots under `pendingBattle` (the same disclosure level `POST
-/api/battle/match`'s `you`/`enemy` already sets). `POST /api/adventure/start
-{adventureId, difficulty, monsterIds}` claims the 3-monster party's busy lock
-in one statement (`claimPartyForAdventure`, same shape as
-`claimMonsterForJob`, `busy_kind = 'adventure'`) with a compensating
-`releaseParty()` on any later failure (same spirit as Summon Hall's unmint/
-refund), then mints the seed, generates the maze at the chosen difficulty,
-computes the move budget, and freezes it all into a new session (`visited`
-seeded with just the entrance's own `cellKey()`). `POST /api/adventure/move
+/api/battle/match`'s `you`/`enemy` already sets), plus (a Phase 11 follow-up)
+`unclaimed` — the trainer's most recently `completed` session whose rewards
+are still uncollected, if any, in the same shape as `session`, so a page
+reload can re-render the pending accept-rewards summary rather than lose it.
+`POST /api/adventure/start {adventureId, difficulty, monsterIds}` 409s while
+an active session already exists, and (the same follow-up) 409s while an
+unclaimed session sits uncollected — `getUnclaimedSession()` is checked right
+alongside the active-session check, before anything else — otherwise claims
+the 3-monster party's busy lock in one statement (`claimPartyForAdventure`,
+same shape as `claimMonsterForJob`, `busy_kind = 'adventure'`) with a
+compensating `releaseParty()` on any later failure (same spirit as Summon
+Hall's unmint/refund), then mints the seed, generates the maze at the chosen
+difficulty, computes the move budget, and freezes it all into a new session
+(`visited` seeded with just the entrance's own `cellKey()`). `POST /api/adventure/move
 {x, y}` validates the target cell (in bounds, not rock, orthogonally
 adjacent to the party's current cell, moves remaining) against the CURRENT
 session state — never trust it blind (409 "resolve the staged battle first"
@@ -835,15 +843,24 @@ order needed. `POST /api/adventure/exit {}` (Phase 11.2, new) is now the
 **ONLY** way a run ever completes: a guarded `active → completed` flip
 (`claimExit`) gated on the party actually standing at the maze's entrance —
 standing-there is part of the claim's own WHERE, never a separate pre-check
-that could race. Loot/catches/rewards are ESCROWED, not granted as they're
-logged: every item/battle outcome only appends to `loot`; `grantRunRewards()`
-walks that whole log and grants every item stack, sums every logged
-gold/exp roll into ONE `creditTrainerReward()` call
-(`server/repos/trainers.js` — the unconditional-credit sibling of
-`refundGold`), and mints every escrowed catch, but ONLY once, from `exit()`,
-the moment the completion claim is won — a defeat, a surrender, a stranding,
-an abandon, or lazy expiry forfeits everything logged so far. The battle
-event log never touches the session row (re-derivable forever from the
+that could race — which ALSO stamps `rewards_claimed = false` (migration
+`025_adventure_claim.sql`, a Phase 11 follow-up): completing a run only
+BANKS its escrowed haul as claimable, it no longer grants anything itself.
+Loot/catches/rewards stay ESCROWED, logged not granted, right up through
+exit(): every item/battle outcome only appends to `loot`. Granting is now a
+separate, explicit step — `POST /api/adventure/claim {}` (the "End
+Adventure" button's real action) — guarded by `claimRewards()`'s
+`rewards_claimed = false → true` flip, the exact `payoutSeason`-style
+`reward IS NULL` gate this codebase always reaches for: the WHERE clause
+(ownership, `state = 'completed'`, not-already-claimed) is the whole
+exactly-once guarantee, so a raced double-click cleanly 409s on its second
+request. Only once that claim wins does `grantRunRewards()` walk the whole
+loot log and grant every item stack, sum every logged gold/exp roll into ONE
+`creditTrainerReward()` call (`server/repos/trainers.js` — the
+unconditional-credit sibling of `refundGold`), and mint every escrowed
+catch — a defeat, a surrender, a stranding, an abandon, or lazy expiry never
+reaches a claimable state at all, forfeiting everything logged so far. The
+battle event log never touches the session row (re-derivable forever from the
 stored seed, CLAUDE.md §1.6) — it only ever rides in the response's
 `node.battle.events`. `POST /api/adventure/abandon {}` gives up early
 (guarded `active → abandoned`), releasing the party (discarding any staged
@@ -852,10 +869,10 @@ of the Phase 5 workflow (`validateAdventure()`, guarded 409 delete, a
 `sessionCount` usage badge, and a 🗺 Adventures tab in `src/ui/admin.js`
 mirroring Summons' one-JSON-textarea-for-config approach). The 🗺 Adventure
 panel (`src/ui/adventure.js`, rebuilt around the grid in Phase 11.3) is pure
-display + action over SEVEN endpoints (`src/services/content.js`'s
+display + action over EIGHT endpoints (`src/services/content.js`'s
 `fetchAdventureState()`/`startAdventure()`/`moveAdventure()`/
 `resolveAdventureBattle()`/`surrenderAdventureBattle()`/`exitAdventure()`/
-`abandonAdventure()`): no session shows a route list with a shared party
+`claimAdventureRewards()`/`abandonAdventure()`): no session shows a route list with a shared party
 picker (borrowed straight from the Arena defense editor's row shape —
 `loadFarm()`'s `busyUntil`/`busyKind` disable a busy monster), each route
 card now also showing a `width×height` dimension line and a difficulty
@@ -876,13 +893,19 @@ confirm-gated Abandon) and the run's loot log so far. A staged battle
 chips ABOVE the grid (both on picking a fresh battle cell and, since
 `pendingBattle` rides every session read, on resuming one after a page
 refresh); a terminal session (completed/failed/abandoned) is narrated from
-the just-returned outcome and kept in module memory for a one-screen
-summary (same precedent as `ui/summon.js`'s results map) — a headline that
-now also covers a stranded run, an aggregated "what you brought home" tally
-(item qtys, gold, exp — preferring `exitAdventure()`'s own stashed `granted`
-totals when on hand — plus any catches) on a completed run vs. a one-line
-"forfeited" hint otherwise — until "End Adventure" is clicked. Battles still
-never replay inside this panel (Phase 10.14's client slice, unchanged by the
+the just-returned outcome (or, on a page reload, `state.unclaimed` — a Phase
+11 follow-up) and kept in module memory for a one-screen summary (same
+precedent as `ui/summon.js`'s results map) — a headline that now also covers
+a stranded run, an aggregated "what you brought home" tally (item qtys,
+gold, exp, plus any catches, off the still-escrowed loot log — a PREVIEW
+only, since `exitAdventure()` no longer grants anything) on a completed run
+vs. a one-line "forfeited" hint otherwise. "End Adventure" is now a real
+accept-rewards action on a completed run — it calls
+`claimAdventureRewards()`, which grants the escrowed haul exactly once
+server-side, then refreshes the header's gold/exp chips and shows a
+"Collected: …" summary line — while a failed/abandoned/stranded run's End
+Adventure stays the old client-only dismiss (nothing left to collect).
+Battles still never replay inside this panel (Phase 10.14's client slice, unchanged by the
 grid): "To battle" hands `pendingBattle` off through an injected
 `enterBattle` hook (main.js's `enterAdventureBattle()`, the
 `initPvp(startRankedBattle)` precedent — this module never imports

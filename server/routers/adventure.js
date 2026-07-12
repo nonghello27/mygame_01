@@ -6,7 +6,7 @@
 // (prod) and vite.config.js's dev middleware (local) both just call route().
 
 import { createRouter } from "../http.js";
-import { state, start, move, battle, surrender, exit, abandon } from "../routes/adventure.js";
+import { state, start, move, battle, surrender, exit, claim, abandon } from "../routes/adventure.js";
 
 export const route = createRouter({
   "/api/adventure/state": { GET: state },
@@ -15,5 +15,6 @@ export const route = createRouter({
   "/api/adventure/battle": { POST: battle },
   "/api/adventure/surrender": { POST: surrender },
   "/api/adventure/exit": { POST: exit },
+  "/api/adventure/claim": { POST: claim },
   "/api/adventure/abandon": { POST: abandon },
 });

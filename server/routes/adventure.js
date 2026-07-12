@@ -19,9 +19,13 @@
 // POST /api/adventure/surrender {} -> give up a staged battle — a defeat,
 //   forfeiting every escrowed reward -> { session }.
 // POST /api/adventure/exit      {} -> leave the maze from the entrance —
-//   THE ONLY way a run completes; grants every escrowed chest/item/battle
-//   reward logged so far, all at once -> { session, granted }. 409 unless
-//   standing at the entrance.
+//   THE ONLY way a run completes; banks every escrowed chest/item/battle
+//   reward logged so far as CLAIMABLE (not yet granted) -> { session }. 409
+//   unless standing at the entrance.
+// POST /api/adventure/claim     {} -> collect a completed run's escrowed
+//   rewards exactly once (the Phase 11 follow-up's guarded rewards_claimed
+//   flip) -> { session, granted }. 404 with nothing unclaimed, 409 if
+//   already collected.
 // POST /api/adventure/abandon   {} -> give up the active run -> { session }.
 //
 // Same "act, then hand back everything the client needs to refresh"
@@ -36,7 +40,7 @@ import { trainerIdFromRequest } from "../auth.js";
 import {
   getState, start as startAdventure, move as moveAdventure,
   battle as battleAdventure, surrender as surrenderAdventure,
-  exit as exitAdventure, abandon as abandonAdventure,
+  exit as exitAdventure, claim as claimAdventure, abandon as abandonAdventure,
 } from "../services/adventure.js";
 
 export async function state(req, res) {
@@ -88,6 +92,14 @@ export async function exit(req, res) {
 
   const sql = db();
   sendJson(res, 200, await exitAdventure(sql, trainerId));
+}
+
+export async function claim(req, res) {
+  const trainerId = trainerIdFromRequest(req);
+  if (!trainerId) return sendJson(res, 401, { error: "not logged in" });
+
+  const sql = db();
+  sendJson(res, 200, await claimAdventure(sql, trainerId));
 }
 
 export async function abandon(req, res) {

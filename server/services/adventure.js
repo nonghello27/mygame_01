@@ -24,11 +24,15 @@
 // on, so a run only ever completes via the explicit exit() endpoint.
 //
 // Escrow philosophy unchanged from Phase 10.14: every chest/item/battle
-// outcome only ever appends to the session's `loot` log; the actual grants
-// (items, gold, exp, minted catches) happen exactly once, only when exit()
-// completes the run. A defeat, a surrender, a stranding, an abandon, or lazy
-// expiry forfeits everything logged so far — nothing is granted until the
-// player actually walks back out.
+// outcome only ever appends to the session's `loot` log. exit() completes
+// the run and banks that whole log as CLAIMABLE (a Phase 11 follow-up,
+// 025_adventure_claim.sql's `rewards_claimed` flag) — it no longer grants
+// anything itself. The actual grants (items, gold, exp, minted catches)
+// happen exactly once, only when the player explicitly claim()s them
+// (POST /api/adventure/claim, the "End Adventure" button) — the same
+// payoutSeason-style guarded-claim gate as everywhere else in this codebase.
+// A defeat, a surrender, a stranding, an abandon, or lazy expiry forfeits
+// everything logged so far — those never reach a claimable state at all.
 
 import { httpError } from "../http.js";
 import { resolveBattle } from "../../shared/engine/resolve.js";
@@ -38,8 +42,8 @@ import {
 } from "../../shared/rules/adventure.js";
 import { ADVENTURE_DIFFICULTIES } from "./adminValidate.js";
 import {
-  listEnabledAdventureDefs, getAdventureDef, getActiveSession, insertSession,
-  claimMove, claimExit, claimSettleBattle, claimAbandon, expireStaleSessions,
+  listEnabledAdventureDefs, getAdventureDef, getActiveSession, getUnclaimedSession, insertSession,
+  claimMove, claimExit, claimRewards, claimSettleBattle, claimAbandon, expireStaleSessions,
   claimPartyForAdventure, releaseParty,
 } from "../repos/adventures.js";
 import { listMonstersByTrainer, mintMonster } from "../repos/monsters.js";
@@ -61,12 +65,16 @@ export const PARTY_SIZE = 3;
  *  fields only — `config`'s density/reward knobs are server balance data,
  *  never shipped; width/height and the difficulty tier NAMES are fair to
  *  show, since a route card needs to advertise its size and let the player
- *  pick a difficulty) and the trainer's current session, if any. */
+ *  pick a difficulty), the trainer's current session, if any, and — the
+ *  Phase 11 follow-up — their most recently completed but still-unclaimed
+ *  session, if any, so a page reload can re-render the pending
+ *  accept-rewards summary instead of losing it. */
 export async function getState(sql, trainerId) {
   await expireStaleSessions(sql, trainerId);
-  const [defs, session] = await Promise.all([
+  const [defs, session, unclaimedSession] = await Promise.all([
     listEnabledAdventureDefs(sql),
     getActiveSession(sql, trainerId),
+    getUnclaimedSession(sql, trainerId),
   ]);
   return {
     adventures: defs.map((d) => ({
@@ -75,6 +83,7 @@ export async function getState(sql, trainerId) {
       difficulties: Object.keys(d.config.difficulties ?? {}),
     })),
     session: session ? toSessionView(session) : null,
+    unclaimed: unclaimedSession ? toSessionView(unclaimedSession) : null,
   };
 }
 
@@ -90,6 +99,7 @@ export async function getState(sql, trainerId) {
 export async function start(sql, trainerId, body) {
   await expireStaleSessions(sql, trainerId);
   if (await getActiveSession(sql, trainerId)) throw httpError(409, "already on an adventure");
+  if (await getUnclaimedSession(sql, trainerId)) throw httpError(409, "collect your last adventure's rewards first");
 
   const adventureId = body?.adventureId;
   if (typeof adventureId !== "string" || !adventureId) throw httpError(400, "adventureId is required");
@@ -447,9 +457,10 @@ export async function surrender(sql, trainerId) {
  * for a friendly error); claimExit() below re-checks the exact same thing
  * atomically as its own claim, so a race between this check and the claim
  * can never let a run complete from the wrong cell. Once the claim wins, the
- * party is freed and every escrowed chest/item/battle reward logged this run
- * is granted, all at once, via grantRunRewards() — the moment (and the only
- * moment) this run's loot log turns into anything the trainer actually owns.
+ * party is freed and the run's whole loot log is banked CLAIMABLE
+ * (`rewards_claimed = false`, stamped by claimExit itself — the Phase 11
+ * follow-up) — exit() no longer grants anything itself; only claim() below
+ * does, and only once the player explicitly asks for it.
  */
 export async function exit(sql, trainerId) {
   await expireStaleSessions(sql, trainerId);
@@ -466,8 +477,28 @@ export async function exit(sql, trainerId) {
   if (!updated) throw httpError(409, "adventure already resolved — refresh");
 
   await releaseParty(sql, trainerId, partyMonsterIds(session));
-  const granted = await grantRunRewards(sql, trainerId, updated);
-  return { session: toSessionView(updated), granted };
+  return { session: toSessionView(updated) };
+}
+
+/**
+ * Collect a completed run's escrowed rewards (Phase 11 follow-up) — the
+ * "End Adventure" button's real action now, rather than a client-only
+ * dismiss. Reads the trainer's own most-recently-completed unclaimed
+ * session (never trusts a session id from the client — there's nothing to
+ * trust, the endpoint takes no body at all), claims it exactly once via the
+ * `rewards_claimed = false -> true` guarded UPDATE (the payoutSeason
+ * `reward IS NULL`-style gate, one level up in server/repos/adventures.js),
+ * then grants everything the claim just won the right to grant.
+ */
+export async function claim(sql, trainerId) {
+  const session = await getUnclaimedSession(sql, trainerId);
+  if (!session) throw httpError(404, "no adventure rewards to collect");
+
+  const claimed = await claimRewards(sql, session.id, trainerId);
+  if (!claimed) throw httpError(409, "rewards already collected — refresh");
+
+  const granted = await grantRunRewards(sql, trainerId, claimed);
+  return { session: toSessionView(claimed), granted };
 }
 
 /** Give up the run early: fails no differently from a lost battle, except by
@@ -490,12 +521,13 @@ export async function abandon(sql, trainerId) {
 /**
  * Walk a COMPLETED session's loot log, granting every escrowed item stack,
  * summing every escrowed gold/exp roll into ONE trainer credit, and minting
- * every escrowed catch, all at once. Called ONLY from exit() — Phase 11.2
- * retired the old "the final step completes the run" path entirely, so
- * grantRunRewards now fires from exactly one call site. Fires only after the
- * completion claim (claimExit) is already won — a crash between that claim
- * and this call would leave the grant unapplied even though the session
- * already reads 'completed', same accepted wrinkle as resolveMatch's
+ * every escrowed catch, all at once. Called ONLY from claim() (the Phase 11
+ * follow-up split exit()'s old "complete AND grant" behavior into two
+ * separate steps — exit() only completes the run now; claim() is
+ * grantRunRewards' one call site). Fires only after the rewards claim
+ * (claimRewards) is already won — a crash between that claim and this call
+ * would leave the grant unapplied even though the session already reads
+ * `rewards_claimed = true`, same accepted wrinkle as resolveMatch's
  * post-claim Elo/rune wear (the persisted `loot` log stays auditable so a
  * reconciliation pass could replay it later if this ever matters).
  * @returns {Promise<{items:object[], monsters:object[], gold:number, exp:number}>}

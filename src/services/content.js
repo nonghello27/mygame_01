@@ -255,6 +255,10 @@ export async function performSummon(summonId) {
  * `pendingBattle` (both sides' frozen lane snapshots) until the player
  * resolves it via resolveAdventureBattle()/surrenderAdventureBattle() — no
  * further moveAdventure() call is accepted while one is staged.
+ * `unclaimed` (Phase 11 follow-up) is the trainer's most recently completed
+ * but not-yet-collected session, if any — the same session shape as
+ * `session`, present so a page reload can re-render the pending
+ * accept-rewards summary instead of losing it.
  * @returns {Promise<{adventures:{id:string, name:string, description:string,
  *   width:number, height:number, difficulties:string[]}[]},
  *   session:{id:number, adventureId:string, difficulty:string, state:string,
@@ -264,7 +268,7 @@ export async function performSummon(summonId) {
  *   cells:{x:number,y:number,terrain:"rock"|"open",visited:boolean,
  *   cleared:boolean}[],
  *   pendingBattle:{x:number,y:number,party:object[],enemy:object[],
- *   enemyDisplay:object[]}|null}|null}>}
+ *   enemyDisplay:object[]}|null}|null, unclaimed:object|null}>}
  */
 export async function fetchAdventureState() {
   return getJson("/api/adventure/state");
@@ -317,8 +321,9 @@ export async function moveAdventure(x, y) {
  * (escrowed, not yet granted) and an optional `catch`. A win that runs the
  * party's last move out anywhere but the entrance still STRANDS the run
  * (`node.stranded === true`) — the fight only cleared the cell, it didn't
- * grant extra moves. Nothing is ever granted here; only exitAdventure()
- * grants anything.
+ * grant extra moves. Nothing is ever granted here; only
+ * claimAdventureRewards() grants anything, once the run is completed and
+ * its rewards are explicitly collected.
  * @param {number[]} order
  * @returns {Promise<{session:object, node:{x:number, y:number,
  *   type:"battle", battle:{won:boolean, events:object[]},
@@ -341,14 +346,26 @@ export async function surrenderAdventureBattle() {
 
 /**
  * Leave the maze — the ONLY way a run ever completes. Only valid standing
- * exactly on the entrance cell with no battle staged; 409s otherwise. Grants
- * everything escrowed across the whole run (every item stack, summed
- * gold/exp, every caught species minted) in one round trip.
- * @returns {Promise<{session:object, granted:{items:object[],
- *   monsters:object[], gold:number, exp:number}}>}
+ * exactly on the entrance cell with no battle staged; 409s otherwise. Banks
+ * everything escrowed across the whole run as CLAIMABLE — nothing is granted
+ * yet; call claimAdventureRewards() to actually collect it (Phase 11
+ * follow-up).
+ * @returns {Promise<{session:object}>}
  */
 export async function exitAdventure() {
   return postJson("/api/adventure/exit", {});
+}
+
+/**
+ * Collect a completed run's escrowed rewards — the "End Adventure" button's
+ * real action (Phase 11 follow-up): every item stack, summed gold/exp, and
+ * every caught species minted, all at once, exactly once. 404 with nothing
+ * unclaimed, 409 if already collected (a raced double-click).
+ * @returns {Promise<{session:object, granted:{items:object[],
+ *   monsters:object[], gold:number, exp:number}}>}
+ */
+export async function claimAdventureRewards() {
+  return postJson("/api/adventure/claim", {});
 }
 
 /** Give up the active run early — same terminal effect as a lost battle,
