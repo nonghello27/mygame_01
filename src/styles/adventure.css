@@ -79,7 +79,7 @@ button.btn.adv-danger{align-self:flex-start;color:var(--hp-low);border-color:var
   background:var(--bg-2);padding:8px;-webkit-overflow-scrolling:touch;
 }
 .adv-grid{
-  --adv-tile:48px;
+  --adv-tile:96px;
   display:grid;gap:2px;width:max-content;
 }
 .adv-tile{
@@ -111,7 +111,7 @@ img.adv-tile-marker{display:block}
    ring is already a static box-shadow, never a `:hover`-gated affordance, so
    touch gets it for free. */
 @media (max-width: 560px){
-  .adv-grid{--adv-tile:40px}
+  .adv-grid{--adv-tile:80px}
   .adv-hud{gap:10px}
   .adv-hud button.btn{flex:0 0 auto}
 }
